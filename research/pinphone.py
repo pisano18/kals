@@ -626,6 +626,7 @@ HELP_TEXT = Html("""📱 <b>Commands</b>
 /hedges — insurance and whether it was needed
 /brief — the daily briefing: money, what changed, what it did, the market, what to watch
 /bars — every running test against its pre-registered bar: numbers so far, days into the window, PASS / KILL / EXTEND / TOO EARLY
+/features — what each bot does and the settings it runs with now (read from boot_all.ps1), and the rules they run under
 
 🎛 <b>Controls</b>
 /pause — no new bets, wait for open ones, then stop
@@ -2905,6 +2906,234 @@ def _funds_page(f, sizes, now, hist, show):
     return Html("\n".join(L))
 
 
+# ===========================================================================
+# /features -- what every bot does, and the settings it runs with right now.
+#
+# THE OPERATOR, 2026-10-22: one block a bot -- its name, what it does in a sentence, its live settings. The
+# settings are NOT typed here: boot_all.ps1 is read when the command comes and every python launch's argument
+# array is turned into "flag: value" lines, so the page cannot say a setting the machine is not running. The
+# ladder's rails (the share of the bank allowed in open bids, the daily loss stop, the contract cap) are read
+# the same way from research\cleanroom\ladder_live.py's constants. Nothing is executed: both files are text.
+#
+# boot_all.ps1 starts a python program in three shapes, and boot_launches() reads all three:
+#   $cleanroom = @( @{ n = "label"; ...; a = @("-u", "research\x.py", "--flag", "v"); ... }, ... )
+#   Start-Process -FilePath $py -ArgumentList @("-u", "$repo\research\x.py", ...)      (an `if ($false -and`
+#       guard above it means OFF, and the launch is not listed)
+#   $live = @(...) + $a.x + @("--arm-name", $a.n) -- the pin bot's paper arms: one block, the shared flags.
+# `$repo`, `$res`, `$kals` inside the strings are filled from the script's own assignments.
+# ===========================================================================
+BOOT_ALL = os.path.join(os.path.dirname(HERE), "boot_all.ps1")
+LADDER_PY = os.path.join(HERE, "cleanroom", "ladder_live.py")
+
+# the roster: (script file, a flag it must have or None, a flag it must NOT have or None, label, one sentence).
+# A launch in boot_all that matches no row is still shown (by boot_all's own label); a row with no launch says so.
+FEATURES = (
+    ("pinrun.py", "--live", None, "Pin bot (LIVE, main account)",
+     "Buys the near-certain side of a 15-minute coin market in its last seconds, when the price has pinned."),
+    ("pinracearm.py", "--live", None, "Coin race (LIVE, main account)",
+     "Bets real money on which coin finishes a 15-minute race ahead, with the bet growing with the bank."),
+    ("forecaster_live.py", None, None, "Penny forecaster (LIVE, subaccount 2)",
+     "Buys a 15-minute coin market at 98c when its own forecast says that side is as good as decided."),
+    ("ladder_live.py", None, None, "Penny ladder (LIVE, subaccount 1)",
+     "Rests bids a few cents below fair on the already-decided side of 15-minute coin closes and collects the "
+     "last cents when they fill."),
+    ("dipsell_live.py", None, None, "Weather dip-seller (LIVE, subaccount 3)",
+     "Sells daily high-temperature markets (KXHIGH) into dips, in Kalshi's weather cash pool."),
+    ("pinracearm.py", None, "--live", "Coin race paper arms",
+     "Watch the same coin races on paper with other entry rules; no orders."),
+    ("pinrun.py", None, "--live", "Pin bot paper arms",
+     "The pin rule under variant settings (bands, early leg, confidence), on paper; no orders."),
+    ("locked_average_ladder_re_paper.py", None, None, "Ladder paper shadow",
+     "The ladder's rule on paper across every coin, to compare with the live one; no orders."),
+    ("bettor_paper.py", None, None, "Clean-room bettor (paper)",
+     "The clean-room bettor's rule on paper; no orders."),
+    ("fc_variants_paper.py", None, None, "Forecaster variants (paper)",
+     "The forecaster's variants side by side on paper (main, quiet and crash-guard runs); no orders."),
+    ("rain_paper.py", None, None, "Rain tail NO desk (paper, SJ02)",
+     "Sells the far tail of rain markets on paper; no orders."),
+    ("pinledgerd.py", None, None, "Ledger refresher",
+     "Fetches Kalshi's settlements and keeps results\\kalshi_ledger.json current; trades nothing."),
+    ("cdc_record.py", None, None, "Crypto.com recorder",
+     "Records Crypto.com prices to the tape (public data, no key, no orders)."),
+    ("pinphone.py", None, None, "Phone link", "This Telegram link: answers one paired chat, opens no port."),
+)
+
+# plain words for the flags an operator meets most; any other flag is shown by its own name
+FLAG_WORDS = {"subaccount": "subaccount", "live": "real money", "minutes": "runs for (minutes)", "coins": "coins",
+              "levels": "rungs (levels)", "auto-size": "bet size follows the pot", "auto-scale": "bet size follows the pot",
+              "market-cap-x": "cap per market (x bid size)", "pot-per-contract": "pot dollars per contract of size",
+              "max-contracts": "most contracts a bet", "max-stake": "most dollars a bet",
+              "live-max-losses": "losses a day before it stops", "max-losses": "losses a day before it stops",
+              "live-min-price": "lowest price it buys", "min-price": "lowest price it buys", "log": "log file",
+              "size": "contracts a bet", "loss-abort": "day stop (dollars)", "variant": "variant", "variants": "variants",
+              "crash-gap": "crash guard gap (dollars)", "model": "price model"}
+
+_PS_STR = re.compile(r'"([^"]*)"|\'([^\']*)\'')
+_PS_VAR = re.compile(r"^\$(\w+) = \"([^\"]*)\"\s*$", re.M)
+_PS_ENTRY = re.compile(r'n = "(?P<n>[^"]*)";(?P<rest>[^{}]*?)\ba = @\((?P<a>[^)]*)\)')
+_PS_INLINE = re.compile(r"-ArgumentList @\(([^)]*)\)")
+_PS_LIVE = re.compile(r"\$live = @\(([^)]*)\)")
+_PS_ARM = re.compile(r'@\{ n = "(arm-[^"]+)";\s*x = ')
+_PY_CONST = re.compile(r"^([A-Z_][A-Z_0-9]*(?:, [A-Z_][A-Z_0-9]*)*) = (-?[\d.]+(?:, -?[\d.]+)*)\s*(?:#.*)?$", re.M)
+
+
+def _ps_strings(array_text, vars_):
+    """The quoted strings of a PowerShell @( ... ) body, in order, $name filled from `vars_`."""
+    out = []
+    for m in _PS_STR.finditer(array_text):
+        s = m.group(1) if m.group(1) is not None else m.group(2)
+        out.append(re.sub(r"\$(\w+)", lambda v: vars_.get(v.group(1), v.group(0)), s))
+    return out
+
+
+def boot_launches(text):
+    """Every python program boot_all.ps1 starts, as [{"label", "script", "argv", "arms"}] in file order. `label`
+    is boot_all's own (`n = "..."`), or None for a bare Start-Process; `script` the .py file name; `arms` the arm
+    names for the pin bot's paper set (otherwise [])."""
+    vars_ = dict(_PS_VAR.findall(text))
+    for _ in range(2):                                           # $res = "$repo\results": two levels deep at most
+        vars_ = {k: re.sub(r"\$(\w+)", lambda v: vars_.get(v.group(1), v.group(0)), s) for k, s in vars_.items()}
+    found = []
+    for m in _PS_ENTRY.finditer(text):
+        found.append((m.start(), m.group("n"), _ps_strings(m.group("a"), vars_), []))
+    for m in _PS_INLINE.finditer(text):
+        guard = text.rfind("if (", 0, m.start())                 # the nearest `if (` above: `$false -and` = OFF
+        if guard >= 0 and "$false" in text[guard:text.find("\n", guard)]:
+            continue
+        found.append((m.start(), None, _ps_strings(m.group(1), vars_), []))
+    m = _PS_LIVE.search(text)
+    if m:
+        found.append((m.start(), None, _ps_strings(m.group(1), vars_), _PS_ARM.findall(text)))
+    out = []
+    for _pos, label, argv, arms in sorted(found, key=lambda f: f[0]):
+        script = next((re.split(r"[\\/]", a)[-1] for a in argv if a.lower().endswith(".py")), "")
+        if script:
+            out.append({"label": label, "script": script, "argv": argv, "arms": arms})
+    return out
+
+
+def _is_flag(t):
+    return t.startswith("--") or (len(t) > 1 and t[0] == "-" and t[1].isalpha())
+
+
+def flag_value(argv, flag):
+    """The token after `flag` in argv, or None when the flag is missing or has nothing after it."""
+    i = argv.index(flag) if flag in argv else -1
+    return argv[i + 1] if 0 <= i < len(argv) - 1 else None
+
+
+def argv_lines(argv):
+    """'flag: value' lines for one launch, plain words where FLAG_WORDS has them. -u and the script path are
+    left out; a flag with no value reads 'on'; a file path shows its name; 'A,B,C' reads 'A, B, C'."""
+    toks = [t for t in argv if t != "-u" and not t.lower().endswith(".py")]
+    out, i = [], 0
+    while i < len(toks):
+        if not _is_flag(toks[i]):
+            out.append(esc(toks[i]))
+            i += 1
+            continue
+        flag, vals, j = toks[i].lstrip("-"), [], i + 1
+        while j < len(toks) and not _is_flag(toks[j]):
+            v = toks[j]
+            if re.search(r"[\\/]", v):
+                v = re.split(r"[\\/]", v)[-1]
+            vals.append(v.replace(",", ", "))
+            j += 1
+        out.append("%s: %s" % (esc(FLAG_WORDS.get(flag, flag.replace("-", " "))), esc(" ".join(vals) or "on")))
+        i = j
+    return out
+
+
+def py_consts(text, names):
+    """{name: value} for the module-level number constants `names` in a python file's text, from plain
+    `X = 1` lines and tuple lines `A, B = 0.20, 0.70` alike (the first assignment of each wins)."""
+    out = {}
+    for m in _PY_CONST.finditer(text):
+        ks, vs = m.group(1).split(", "), m.group(2).split(", ")
+        for k, v in zip(ks, vs):
+            if k in names and k not in out:
+                out[k] = float(v)
+    return out
+
+
+def ladder_rules_html(path=None):
+    """'Rules the bots run under': the ladder's rails from ladder_live.py's constants, read now."""
+    path = path or LADDER_PY
+    L = ["<b>Rules the bots run under</b> (%s)" % esc(os.path.basename(path))]
+    try:
+        with open(path, encoding="utf-8") as fh:
+            c = py_consts(fh.read(), ("COMMIT_FRAC", "DAY_STOP_FRAC", "MAX_CONTRACTS"))
+    except OSError as e:
+        L.append(esc("could not read it: %s" % e))
+        return L
+    if "COMMIT_FRAC" in c:
+        L.append("Open bids: at most <b>%d%%</b> of the bank in resting bids at once (COMMIT_FRAC %s)."
+                 % (round(c["COMMIT_FRAC"] * 100), esc(c["COMMIT_FRAC"])))
+    if "DAY_STOP_FRAC" in c:
+        L.append("Daily loss stop: down <b>%d%%</b> of the day's first pot and it stops bidding until tomorrow "
+                 "(DAY_STOP_FRAC %s)." % (round(c["DAY_STOP_FRAC"] * 100), esc(c["DAY_STOP_FRAC"])))
+    if "MAX_CONTRACTS" in c:
+        L.append("Contracts out at once: at most <b>%dx</b> the bid size, resting and held together (MAX_CONTRACTS "
+                 "%d per contract of size)." % (int(c["MAX_CONTRACTS"]), int(c["MAX_CONTRACTS"])))
+    for k in ("COMMIT_FRAC", "DAY_STOP_FRAC", "MAX_CONTRACTS"):
+        if k not in c:
+            L.append(esc("%s: not found in the file" % k))
+    return L
+
+
+def features_html(boot_path=None, ladder_path=None):
+    """The /features page: a block a bot from FEATURES, its settings from boot_all.ps1 as it is now, the ladder's
+    goal and rungs, then the rules block. Longer than one message: Telegram.send cuts it at a blank line."""
+    boot_path = boot_path or BOOT_ALL
+    try:
+        with open(boot_path, encoding="utf-8") as fh:
+            launches = boot_launches(fh.read())
+        boot_err = None
+    except OSError as e:
+        launches, boot_err = [], str(e)
+    L = ["🧩 <b>Features</b> -- what each bot does, and the settings it runs with now (read from %s)"
+         % esc(os.path.basename(boot_path))]
+    if boot_err:
+        L.append(esc("could not read it: %s -- the settings below are missing" % boot_err))
+    used = set()
+    for script, must, must_not, label, what in FEATURES:
+        mine = [k for k, x in enumerate(launches) if x["script"] == script
+                and (must is None or must in x["argv"]) and (must_not is None or must_not not in x["argv"])]
+        used.update(mine)
+        L.append("")
+        L.append("<b>%s</b>" % esc(label))
+        L.append(esc(what))
+        if script == "ladder_live.py":
+            L.append("goal <b>1%/day</b> of its bank")
+            L.append("98c rung: buy the already-decided side 2c below fair")
+            if any("1" in (flag_value(launches[k]["argv"], "--levels") or "").split(",") for k in mine):
+                L.append("95c rung: the same at 5c below fair")
+        if not mine:
+            L.append(i_("not started by boot_all" + (" (watch_bot.ps1 starts the live pin bot)"
+                                                      if script == "pinrun.py" and must == "--live" else "")))
+            continue
+        for n, k in enumerate(mine, 1):
+            x = launches[k]
+            if len(mine) > 1:                                    # several launches: boot_all's label, or a count
+                L.append(i_(x["label"] or "%d of %d" % (n, len(mine))))
+            L.extend(argv_lines(x["argv"]))
+            if x["arms"]:
+                L.append("arms: <b>%d</b> -- %s" % (len(x["arms"]), esc(", ".join(x["arms"]))))
+                L.append(i_("each arm adds its own band, early-leg or confidence flags to the shared ones above"))
+    for k, x in enumerate(launches):
+        if k not in used:
+            L.append("")
+            L.append("<b>%s</b>" % esc(x["label"] or x["script"]))
+            L.append(i_("started by boot_all; not written up here yet"))
+            L.extend(argv_lines(x["argv"]))
+    L.append("")
+    L.extend(ladder_rules_html(ladder_path))
+    L.append("")
+    L.append(i_("Read from the files each time you ask. A bot that is up keeps the settings it started with until "
+                "boot_all starts it again (within 10 minutes of it stopping)."))
+    return Html("\n".join(L))
+
+
 class Phone:
     def __init__(self, cfg, transport, ledger=None, health_fn=None, cfg_path=CONFIG, now_fn=None,
                  procs_fn=None, versions_path=None, race30_epoch=None):
@@ -3852,11 +4081,22 @@ class Phone:
         if cmd == "/unmute":
             self.muted = False
             return Html("🔔 Alerts on.")
+        if cmd == "/features":
+            return self.text_features()
         if cmd == "/update":
             return self.text_update()
         if cmd in ("/help", "/?"):
             return HELP_TEXT
         return Html("I did not understand that.\n\n" + HELP_TEXT)
+
+    def text_features(self):
+        """/features (operator 10-22): every bot's job and its settings as boot_all.ps1 has them now, plus the
+        ladder's rails from ladder_live.py -- features_html reads both files on each call. No Kalshi read."""
+        try:
+            return features_html()
+        except Exception as e:                                  # noqa: BLE001
+            log(traceback.format_exc())
+            return "Could not build /features: %s" % str(e)[:200]
 
     def text_update(self):
         """/update (operator 10-22): load the newest phone code. This process runs elevated, so nothing else can
@@ -5225,6 +5465,85 @@ def selftest():
             globals()["LOG"] = _sv_log
         ck(all(c in HELP_TEXT for c in ("/bots", "/pin", "/forecaster", "/fc", "/ladder", "/weather", "/wx")),
            "/bots /pin /forecaster /fc /ladder /weather /wx are in /help")
+        # ---- /features (2026-10-22): the settings come from boot_all.ps1's text, the rails from ladder_live.py's
+        _ps = ('$repo = "C:\\kals-repo"\n$res = "$repo\\results"\n'
+               '$live = @("-u", "$repo\\research\\pinrun.py", "--size", "20", "--minutes", "4320",\n'
+               '          "--loss-abort", "-60.00", "--sweep-depth")\n'
+               '@{ n = "arm-b-control"; x = $band + @("--early-tau", "45") + $m15 },\n'
+               '@{ n = "arm-pin0.97"; x = @("--pin", "0.97") }\n'
+               'if ($false -and -not (RunningPy \'*cmdlive.py*\')) {\n'
+               '    Start-Process -FilePath $py -ArgumentList @("-u", "$repo\\research\\cmdlive.py", "--live", "--signoff", '
+               '\'"commodity penny test"\', "--size", "20") -WorkingDirectory $repo\n}\n'
+               'if (-not (RunningPy \'*pinledgerd.py*\')) {\n'
+               '    Start-Process -FilePath $py -ArgumentList @("-u", "$repo\\research\\pinledgerd.py") `\n'
+               '        -WorkingDirectory $repo\n}\n'
+               '$cleanroom = @(\n'
+               '    @{ n = "ladder_live (LIVE, subaccount 1)"; like = "*ladder_live.py*--live*"; unlike = @("*a*", "*b*"); stop = "$res\\ladder-live.stop";\n'
+               '       a = @("-u", "research\\cleanroom\\ladder_live.py", "--subaccount", "1", "--live", "--auto-size", '
+               '"--market-cap-x", "2", "--levels", "0,1", "--coins", "KXNEAR15M,KXZEC15M", "--minutes", "10080");\n'
+               '       o = "$res\\ladder-live-stdout.log"; e = "$res\\ladder-live-stderr.log" },\n'
+               '    @{ n = "coin race (LIVE, main account)"; like = "*pinracearm.py --live*"; unlike = ""; stop = "";\n'
+               '       a = @("-u", "research/pinracearm.py", "--live", "--max-contracts", "20", "--log", '
+               '"C:/kals-repo/results/pinracepenny-live.jsonl");\n'
+               '       o = "$res\\x.out"; e = "$res\\x.err" }\n)\n')
+        _ls = boot_launches(_ps)
+        ck([(x["label"], x["script"]) for x in _ls] ==
+           [(None, "pinrun.py"), (None, "pinledgerd.py"), ("ladder_live (LIVE, subaccount 1)", "ladder_live.py"),
+            ("coin race (LIVE, main account)", "pinracearm.py")]
+           and _ls[0]["arms"] == ["arm-b-control", "arm-pin0.97"] and _ls[0]["argv"][1] == "C:\\kals-repo\\research\\pinrun.py"
+           and _ls[2]["argv"][-2:] == ["--minutes", "10080"] and _ls[2]["label"].startswith("ladder_live"),
+           "boot_launches: the three launch shapes in file order, $repo filled, the arm names, and the `$false -and` "
+           "(OFF) launch left out")
+        ck(argv_lines(_ls[0]["argv"]) == ["contracts a bet: 20", "runs for (minutes): 4320", "day stop (dollars): -60.00",
+                                          "sweep depth: on"]
+           and argv_lines(_ls[2]["argv"])[1:4] == ["real money: on", "bet size follows the pot: on", "cap per market (x bid size): 2"]
+           and "coins: KXNEAR15M, KXZEC15M" in argv_lines(_ls[2]["argv"])
+           and argv_lines(_ls[3]["argv"])[-1] == "log file: pinracepenny-live.jsonl",
+           "argv_lines: -u and the script hidden, a negative number is a value, a bare flag is 'on', paths by name")
+        ck(py_consts("X = 1\nDAY_STOP_FRAC, COMMIT_FRAC = 0.20, 0.70\nMAX_CONTRACTS = 10\nMAX_CONTRACTS = 99\n",
+                     ("COMMIT_FRAC", "DAY_STOP_FRAC", "MAX_CONTRACTS")) == {"DAY_STOP_FRAC": 0.2, "COMMIT_FRAC": 0.7,
+                                                                            "MAX_CONTRACTS": 10.0},
+           "py_consts: a tuple line and a plain line; the first assignment wins")
+        with tempfile.TemporaryDirectory() as _tdf:
+            _bp, _lp = os.path.join(_tdf, "boot_all.ps1"), os.path.join(_tdf, "ladder_live.py")
+            with open(_bp, "w", encoding="utf-8") as _fh:
+                _fh.write(_ps)
+            with open(_lp, "w", encoding="utf-8") as _fh:
+                _fh.write("SIZE = Decimal('1')\nMAX_CONTRACTS = 10\nDAY_STOP_FRAC, COMMIT_FRAC = 0.20, 0.70\n")
+            _sv_paths = globals()["BOOT_ALL"], globals()["LADDER_PY"]
+            globals()["BOOT_ALL"], globals()["LADDER_PY"] = _bp, _lp
+            try:
+                r = ph.handle(111, "/features")
+                t_ = P(r)
+                ck(getattr(r, "is_html", False) and not tg_html_problems(r) and fits(r) and t_.startswith("🧩 Features")
+                   and "Penny ladder (LIVE, subaccount 1)\n" in t_ and "goal 1%/day of its bank" in t_
+                   and "98c rung: buy the already-decided side 2c below fair\n95c rung: the same at 5c below fair\n" in t_
+                   and "rungs (levels): 0, 1" in t_ and "coins: KXNEAR15M, KXZEC15M" in t_
+                   and "Pin bot (LIVE, main account)\n" in t_ and "not started by boot_all" in t_
+                   and "Pin bot paper arms\n" in t_ and "arms: 2 -- arm-b-control, arm-pin0.97" in t_
+                   and "Weather dip-seller (LIVE, subaccount 3)\nSells daily high-temperature markets (KXHIGH) into "
+                       "dips, in Kalshi's weather cash pool.\nnot started by boot_all\n" in t_
+                   and "Rules the bots run under (ladder_live.py)\nOpen bids: at most 70% of the bank" in t_
+                   and "Daily loss stop: down 20% of the day's first pot" in t_
+                   and "Contracts out at once: at most 10x the bid size" in t_ and "cmdlive" not in t_,
+                   "/features: a block a bot with its live flags from boot_all.ps1, the ladder's goal and both rungs "
+                   "(--levels 0,1), 'not started by boot_all' for the pin bot, the arms counted, the rails from "
+                   "ladder_live.py, the OFF launch absent; valid HTML that fits Telegram's limit")
+                globals()["BOOT_ALL"] = os.path.join(_tdf, "missing.ps1")
+                t_ = P(ph.handle(111, "/features"))
+                ck("could not read it" in t_ and t_.count("not started by boot_all") == len(FEATURES)
+                   and "Open bids: at most 70%" in t_, "/features without boot_all.ps1: says so, every bot unstarted, rules kept")
+                with open(_bp, "w", encoding="utf-8") as _fh:
+                    _fh.write('$cleanroom = @(@{ n = "new thing"; a = @("-u", "research\\new_bot.py", "--x", "1") })\n')
+                globals()["BOOT_ALL"] = _bp
+                t_ = P(ph.handle(111, "/features"))
+                ck("new thing\nstarted by boot_all; not written up here yet\nx: 1" in t_,
+                   "/features: a launch boot_all has that the roster does not know is still shown, by boot_all's label")
+            finally:
+                globals()["BOOT_ALL"], globals()["LADDER_PY"] = _sv_paths
+        t_ = P(ph.handle(111, "/features"))
+        ck("/features" in HELP_TEXT and t_.startswith("🧩 Features") and "Rules the bots run under" in t_
+           and fits(ph.handle(111, "/features")), "/features is in /help and the real boot_all.ps1 renders")
         _bs_mode["m"], ph.bs_procs = "planted", _bs_procs
         r = ph.handle(111, "/stop")
         ck("/stop yes" in P(r) and "STOP stops right now" in P(r) and not ph.busy,
