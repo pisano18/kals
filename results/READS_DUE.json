@@ -1000,6 +1000,22 @@
    "bar": "PASS: fills <= 0.25 x model credit AND main pool 0 up >= 0.90 x credit at 48 h; KILL: fills > 0.50 x or payment < 0.5 x",
    "status": "read",
    "read_note": "10-23 08:25Z: KILLED after 2 races -- fills $17.43 vs $2.61 modelled credit (6.7x; kill line 0.5x). Realised -$17.43. Sub 4 ~$27.6 to return to main. No more reward research (operator 10-23: 'the LEAST likely place')."
+  },
+  {
+   "id": "ladder-single98-deploy",
+   "due": "2026-10-24T12:00Z",
+   "what": "v-ladder-single98 (one 98c rung on the whole 70% rail, --levels 0, 91 bids a coin at $648): VERIFIED 10-23 10:3xZ by both replay models (+4% over 25 days, +26% over the last 7, wins 14 of the last 15 days; same ceiling, same worst market). Waits for the operator's boot_all one-liner, then the scratchpad restart_ladder_single.ps1. Supersedes the 97c flag.",
+   "how": "boot_all.ps1 ladder line carries \"--levels\", \"0\"; newest ladder start record in results/ladder-live-orders.jsonl shows live_levels [0] and size ~91",
+   "bar": "deployed = one new start record with levels [0] and ~91 bids; then open ladder-single98-read for 10-30 (live contracts/day and $/day vs the two-rung days 10-22 15:40Z..deploy)",
+   "status": "open"
+  },
+  {
+   "id": "hourly-99c-day1",
+   "due": "2026-10-24T12:00Z",
+   "what": "Hourly 99c/98c lock-bid study on a FULL day of the hourly tape (C:\\kals\\kalshi_data_hourly; recorder pid 2445764 since 10-23 08:12:37Z). The 2-close first look (.sweep/q-2026-10-23/hourlyfirst/) gave $303-900/day (x24) at size 5,000 with 3 strike-closes carrying 83-98% and the loss rate of inside-the-last-15-min locks unmeasured.",
+   "how": "cd .sweep/q-2026-10-23/hourlyfirst; python -I hourlyfirst.py 2026-10-23THH for every complete close; python -I report.py",
+   "bar": "worth a paper arm only if >= 20 closes show >= $5/close at size 1,000 under the STRICT (paper cancel) rule AND 0 wrong inside-window locks AND the minimum post-lock lead stays >= the 21.2-bp floor on >= 90% of them; otherwise drop the hourly 99c idea",
+   "status": "open"
   }
  ]
 }
