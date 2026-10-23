@@ -1022,6 +1022,10 @@ def main():
                          "the model-5c bid (95c). Pair 0,1 with --market-cap-x 2 (one bid of each a market)")
     ap.add_argument("--pot-per-contract", type=float, default=14.0,
                     help="v-ladder-optc: --auto-size bid = floor(pot / this) (default 14 = unchanged)")
+    ap.add_argument("--rung1-offset", type=float, default=0.05,
+                    help="v-ladder-rung97 (candidate, 10-23 tape study): the second rung's distance under the model price "
+                         "(default 0.05 = the paper's 95c rung; 0.03 = a 97c rung). Only the live engine's LEVELS change; "
+                         "the paper shadow keeps 0.05")
     ap.add_argument("--commit-frac", type=float, default=0.70,
                     help="v-ladder-fit: share of the pot that may rest in bids + be held (default 0.70 = unchanged). "
                          "1.0 with --pot-per-contract 10 lets every rung of every coin rest at once at $643")
@@ -1036,10 +1040,14 @@ def main():
         raise SystemExit("--pot-per-contract %s is outside 4..100" % a.pot_per_contract)
     if not (0.5 <= a.commit_frac <= 1.0):
         raise SystemExit("--commit-frac %s is outside 0.5..1.0" % a.commit_frac)
+    if not (0.021 <= a.rung1_offset <= 0.149):
+        raise SystemExit("--rung1-offset %s is outside 0.021..0.149 (must sit between the 98c and 85c rungs)" % a.rung1_offset)
     if not selftest() or not P.selftest():
         raise SystemExit("self-test failed; refusing to run")
     COINS, POT_PER_CONTRACT = coins, float(a.pot_per_contract)      # set after the self-test (it assumes the defaults)
     COMMIT_FRAC = float(a.commit_frac)                               # v-ladder-fit: likewise (apply_size reads it at each rescale)
+    if abs(a.rung1_offset - 0.05) > 1e-9:                            # v-ladder-rung97: the engine reads LEVELS at every decision
+        P.LEVELS = (P.LEVELS[0], float(a.rung1_offset), P.LEVELS[2])
     global LIVE_LEVELS
     lv = tuple(sorted({int(x) for x in a.levels.split(",") if x.strip()}))
     if not lv or not set(lv) <= {0, 1}:
@@ -1047,10 +1055,12 @@ def main():
     LIVE_LEVELS = lv
     if a.selftest:
         n643 = size_for_pot(643.47)
-        need = n643 * (len(COINS) if COINS else 9) * sum({0: 0.98, 1: 0.95}[l] for l in LIVE_LEVELS)
-        print("argv: coins %s, pot_per_contract %s -> $643.47 bids %d, levels %s, market_cap_x %s, commit_frac %s "
+        rung_px = {0: 1.0 - P.LEVELS[0], 1: 1.0 - P.LEVELS[1]}
+        need = n643 * (len(COINS) if COINS else 9) * sum(rung_px[l] for l in LIVE_LEVELS)
+        print("argv: coins %s, pot_per_contract %s -> $643.47 bids %d, levels %s (rungs %s), market_cap_x %s, commit_frac %s "
               "(every rung of every coin at once = $%.0f vs $%.0f allowed: %s)" % (
-                  sorted(COINS) if COINS else "all", POT_PER_CONTRACT, n643, list(LIVE_LEVELS), a.market_cap_x,
+                  sorted(COINS) if COINS else "all", POT_PER_CONTRACT, n643, list(LIVE_LEVELS),
+                  " ".join("%dc" % round(100 * rung_px[l]) for l in LIVE_LEVELS), a.market_cap_x,
                   COMMIT_FRAC, need, COMMIT_FRAC * 643.47, "all fit" if need <= COMMIT_FRAC * 643.47 else "NOT all fit"))
     if a.selftest:
         return 0
@@ -1098,7 +1108,7 @@ def main():
                auto_size=bool(a.auto_size), pot=pot, auto=auto,
                rails={"size": int(SIZE), "max_contracts": MAX_CONTRACTS, "max_commit": MAX_COMMIT, "day_stop": DAY_STOP,
                       "start_cap": MAX_SUB_BALANCE, "max_live_per_close": MAX_LIVE_PER_CLOSE,
-                      "live_levels": list(LIVE_LEVELS), "writes_per_s": WRITES_PER_S,
+                      "live_levels": list(LIVE_LEVELS), "levels_offsets": list(P.LEVELS), "writes_per_s": WRITES_PER_S,
                       "market_cap_x": MARKET_CAP_X, "close_cap_x": CLOSE_CAP_X,
                       "coins": sorted(COINS) if COINS is not None else None, "pot_per_contract": POT_PER_CONTRACT})
     threading.Thread(target=br.run_writer, daemon=True).start()
