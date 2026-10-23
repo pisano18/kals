@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# VERSION: 2026-10-23-hourly-v1   (verify with: python <file> --version-check)
+# VERSION: 2026-10-23-hourly-v2   (verify with: python <file> --version-check)
 r"""hourly_collector.py -- READ-ONLY WebSocket recorder for the HOURLY crypto markets.
 
 Clean-room counterpart of C:\kals\kalshi_collector.py (v4) for the hourly series
@@ -7,6 +7,23 @@ KXBTCD / KXETHD / KXSOLD. It records to a SEPARATE root, C:\kals\kalshi_data_hou
 in the v4 record shape, so .sweep/q-2026-10-23/recorder/queue97_exact.py's rebuild
 (seed from the subscribe-time orderbook_snapshot, apply deltas with the same sid and
 seq > snapshot seq) works on it unchanged.
+
+--fifteen-min (v2, default OFF; without it v1 behaviour is unchanged)
+    A SECOND instance, with its own --out root and --pidfile, records the 15-MINUTE
+    FX / commodity markets (default --series: the 5 FX pairs and 8 commodities in
+    DEFAULT_SERIES_15M, all verified live on 2026-10-23). The ticker filter becomes
+    <SERIES>-<YYMMMDD><HHMM>-<MM> (KXEURUSD15M-26OCT231300-00, KXGOLD15M-26OCT231315-15)
+    AND close_time - open_time <= 1000 s. These markets carry ONE strike each, so the
+    near-strike rule is skipped: every tracked market is wanted from --pre-open-seconds
+    (120) before its open until --grace-seconds after its close. Discovery per series
+    asks status=open AND status=unopened (the next markets are listed ahead), runs
+    10 s after each quarter hour instead of each top of the hour, and a lifecycle
+    `created` frame for a configured series (market_ticker, open_ts, close_ts) tracks
+    that market at once, so its subscribe-time snapshot lands before the open. The
+    record format, disk guard, pid-file refusal, rotation and the GET-only / three-cmd
+    whitelist are the same code paths as the hourly mode.
+        python hourly_collector.py --fifteen-min --out C:\kals\kalshi_data_fx ^
+               --pidfile C:\kals-repo\results\fx-collector.pid      (start_fx_collector.ps1)
 
 It cannot place an order. The only HTTP verb in this file is GET (the REST signer
 takes no method argument), and the only WebSocket commands it can send are
@@ -106,7 +123,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from decimal import Decimal
 
-__VERSION__ = "2026-10-23-hourly-v1"
+__VERSION__ = "2026-10-23-hourly-v2"
 
 REST_BASE = "https://api.elections.kalshi.com"
 REST_PREFIX = "/trade-api/v2"
@@ -117,12 +134,18 @@ KEY_FILE = os.environ.get("KALSHI_KEY_FILE", r"C:\kals\kalshi.pem")
 DEFAULT_OUT = r"C:\kals\kalshi_data_hourly"
 DEFAULT_PIDFILE = r"C:\kals-repo\results\hourly-collector.pid"
 DEFAULT_SERIES = ["KXBTCD", "KXETHD", "KXSOLD"]
+DEFAULT_SERIES_15M = ["KXEURUSD15M", "KXGBPUSD15M", "KXUSDJPY15M", "KXUSDCAD15M", "KXAUDUSD15M",
+                      "KXGOLD15M", "KXSILVER15M", "KXCOPPER15M", "KXPLATINUM15M", "KXPALLADIUM15M",
+                      "KXWTI15M", "KXBRENT15M", "KXNATGAS15M"]      # all 13: GET /series/<t> -> 200 on 2026-10-23
 DATA_CHANNELS = ["orderbook_delta", "trade"]
 LIFECYCLE_CHANNEL = "market_lifecycle_v2"
 ALLOWED_CMDS = ("subscribe", "unsubscribe", "update_subscription")
 RECORD_KEYS = ("type", "sid", "seq", "msg", "sending_ts_ms", "_rx_ms", "_conn")
 HOURLY_DATE_RE = re.compile(r"^\d{2}[A-Z]{3}\d{2}\d{2}$")      # YYMMMDDHH, e.g. 26OCT2204
 MAX_HOURLY_LIFE_S = 3700
+FIFTEEN_DATE_RE = re.compile(r"^\d{2}[A-Z]{3}\d{2}\d{4}$")     # YYMMMDDHHMM, e.g. 26OCT230430
+FIFTEEN_SUFFIX_RE = re.compile(r"^\d{2}$")                     # the trailing -MM (two digits; FX use -30 on an :45 close, commodities -45)
+MAX_FIFTEEN_LIFE_S = 1000
 
 
 def utcnow_str():
@@ -177,6 +200,46 @@ def is_hourly(ticker, open_ts=None, close_ts=None):
     if open_ts is not None and close_ts is not None:
         return 0 < (close_ts - open_ts) <= MAX_HOURLY_LIFE_S
     return True
+
+
+def is_fifteen_min_ticker(ticker):
+    """Ticker rule for the 15-minute families: exactly <SERIES>-<YYMMMDDHHMM>-<MM>
+    (KXEURUSD15M-26OCT231300-00, KXGOLD15M-26OCT231315-15). An hourly ticker's date
+    part is 9 characters and its strike part starts with T, so it fails."""
+    parts = (ticker or "").split("-")
+    return (len(parts) == 3 and bool(FIFTEEN_DATE_RE.match(parts[1]))
+            and bool(FIFTEEN_SUFFIX_RE.match(parts[2])))
+
+
+def is_fifteen_min(ticker, open_ts=None, close_ts=None):
+    """--fifteen-min filter: the 15-minute ticker form AND (when both times are
+    known) a life of at most 1000 s."""
+    if not is_fifteen_min_ticker(ticker):
+        return False
+    if open_ts is not None and close_ts is not None:
+        return 0 < (close_ts - open_ts) <= MAX_FIFTEEN_LIFE_S
+    return True
+
+
+def market_filter(fifteen_min):
+    """The row filter the collector applies: v1's is_hourly unless --fifteen-min."""
+    return is_fifteen_min if fifteen_min else is_hourly
+
+
+def resolve_series(series, fifteen_min):
+    """--series as given (a list, possibly empty) or, when absent, the mode's default."""
+    if series is not None:
+        return list(series)
+    return list(DEFAULT_SERIES_15M if fifteen_min else DEFAULT_SERIES)
+
+
+def next_discovery_time(t0, now, period_s, boundary_s=3600, after_s=10):
+    """When the next discovery pass starts: period_s after the last one began, or
+    after_s past the next boundary (top of the hour; quarter hour with --fifteen-min),
+    whichever is first. Same arithmetic as v1 for boundary_s=3600."""
+    nxt = t0 + period_s
+    top = (int(now // boundary_s) + 1) * boundary_s + after_s
+    return min(nxt, top)
 
 
 def to_float(x):
@@ -254,6 +317,31 @@ def select_markets(markets, now, lo=0.03, hi=0.97, near_pct=0.015, all_last_s=90
                 kept += 1
         info[ev] = {"mode": "closed" if closed else ("all" if last else "near"),
                     "centre": centre, "n": len(items), "kept": kept, "close_ts": close}
+    return wanted, prio, info
+
+
+def select_all(markets, now, grace_s=90, lead_s=120):
+    """The --fifteen-min rule (one strike per event, no ladder): EVERY tracked market
+    is wanted from lead_s before its open (a listed-ahead market gets its subscribe-time
+    snapshot before the open) until grace_s after its close (final deltas, determination,
+    cleared book). Same return shape as select_markets: (wanted, prio, info); info mode
+    is 'listed' (not yet wanted), 'all' (live) or 'closed'; centre is always None."""
+    wanted, prio, info = set(), {}, {}
+    for tk, m in markets.items():
+        c, o = m.get("close_ts"), m.get("open_ts")
+        if c is None or c + grace_s < now:
+            continue
+        ev = m.get("event") or tk
+        i = info.setdefault(ev, {"mode": "all", "centre": None, "n": 0, "kept": 0, "close_ts": c})
+        i["n"] += 1
+        if o is not None and o - lead_s > now:
+            i["mode"] = "listed"
+            continue
+        wanted.add(tk)
+        closed = c < now
+        prio[tk] = 100.0 if closed else 0.0
+        i["kept"] += 1
+        i["mode"] = "closed" if closed else "all"
     return wanted, prio, info
 
 
@@ -676,6 +764,12 @@ class Collector:
         self.a = a
         self.series = list(a.series)
         self.prefixes = tuple(s + "-" for s in self.series)
+        self.fifteen = bool(getattr(a, "fifteen_min", False))
+        self.accept = market_filter(self.fifteen)                 # v1: is_hourly; --fifteen-min: is_fifteen_min
+        self.kind = "15-minute" if self.fifteen else "hourly"
+        self.statuses = ("open", "unopened") if self.fifteen else ("open",)
+        self.boundary_s = 900 if self.fifteen else 3600
+        self.pre_open_s = float(getattr(a, "pre_open_seconds", 120))
         self.signer = Signer(a.key_id, a.key_file)
         self.rest = Rest(self.signer, gap=a.rest_gap)
         self.w = Writer(a.out, member_seconds=a.member_seconds, min_free_gb=a.min_free_gb)
@@ -704,7 +798,7 @@ class Collector:
         if not tk:
             return
         o, c = parse_ts(m.get("open_time")), parse_ts(m.get("close_time"))
-        if not is_hourly(tk, o, c):
+        if not self.accept(tk, o, c):
             self.skipped_nonhourly += 1
             return
         self.markets[tk] = {"series": series, "event": m.get("event_ticker") or tk,
@@ -713,27 +807,44 @@ class Collector:
                             "ask": to_float(m.get("yes_ask_dollars")),
                             "open_ts": o, "close_ts": c, "seen": now}
 
+    def ingest_created(self, msg, now):
+        """--fifteen-min only: a market_lifecycle_v2 `created` frame for a configured
+        series (market_ticker, open_ts, close_ts in epoch seconds) tracks the market at
+        once, ahead of the next REST pass. REST rows, when they arrive, overwrite it."""
+        tk = msg.get("market_ticker")
+        o, c = msg.get("open_ts"), msg.get("close_ts")
+        if not tk or tk in self.markets or not isinstance(o, (int, float)) or not isinstance(c, (int, float)):
+            return False
+        if not self.accept(tk, float(o), float(c)):
+            self.skipped_nonhourly += 1
+            return False
+        self.markets[tk] = {"series": tk.split("-")[0], "event": tk.rsplit("-", 1)[0], "strike": None,
+                            "bid": None, "ask": None, "open_ts": float(o), "close_ts": float(c), "seen": now}
+        self.stats["lifecycle_tracked"] += 1
+        return True
+
     async def discover_once(self):
         now = time.time()
         found = 0
-        for series in self.series:
-            if self.stop:
-                return
-            cursor, pages = None, 0
-            while True:
-                params = {"series_ticker": series, "status": "open", "limit": 1000}
-                if cursor:
-                    params["cursor"] = cursor
-                st, body = await self.rest.get("/markets", params)
-                if st != 200 or not isinstance(body, dict):
-                    break
-                for m in body.get("markets") or []:
-                    self.ingest(series, m, now)
-                    found += 1
-                cursor = body.get("cursor")
-                pages += 1
-                if not cursor or pages >= 3:
-                    break
+        for status in self.statuses:                 # v1: ("open",) -- the same request sequence
+            for series in self.series:
+                if self.stop:
+                    return
+                cursor, pages = None, 0
+                while True:
+                    params = {"series_ticker": series, "status": status, "limit": 1000}
+                    if cursor:
+                        params["cursor"] = cursor
+                    st, body = await self.rest.get("/markets", params)
+                    if st != 200 or not isinstance(body, dict):
+                        break
+                    for m in body.get("markets") or []:
+                        self.ingest(series, m, now)
+                        found += 1
+                    cursor = body.get("cursor")
+                    pages += 1
+                    if not cursor or pages >= 3:
+                        break
         # forget markets long past their close that discovery no longer returns
         cutoff = now - self.a.grace_seconds - 600
         for tk in [tk for tk, m in self.markets.items()
@@ -742,8 +853,8 @@ class Collector:
             self.home.pop(tk, None)
         self.stats["discoveries"] += 1
         if self.a.verbose:
-            log(f"[discover] rows {found} hourly tracked {len(self.markets)} "
-                f"non-hourly skipped so far {self.skipped_nonhourly}")
+            log(f"[discover] rows {found} {self.kind} tracked {len(self.markets)} "
+                f"non-{self.kind} skipped so far {self.skipped_nonhourly}")
 
     async def discovery_loop(self):
         while not self.stop:
@@ -753,10 +864,17 @@ class Collector:
             except Exception as e:
                 log(f"[discover] {type(e).__name__}: {e}")
             now = time.time()
-            nxt = t0 + self.a.discover_seconds
-            top = (int(now // 3600) + 1) * 3600 + 10        # 10 s after the next top of the hour
-            nxt = min(nxt, top)
+            # 10 s after the next top of the hour (quarter hour with --fifteen-min), or the period
+            nxt = next_discovery_time(t0, now, self.a.discover_seconds, self.boundary_s)
             await asyncio.sleep(max(1.0, nxt - now))
+
+    def select(self, now):
+        if self.fifteen:
+            return select_all(self.markets, now, grace_s=self.a.grace_seconds, lead_s=self.pre_open_s)
+        return select_markets(
+            self.markets, now, lo=self.a.band_lo, hi=self.a.band_hi,
+            near_pct=self.a.near_pct / 100.0, all_last_s=self.a.all_last_minutes * 60,
+            grace_s=self.a.grace_seconds, prev_centres=self.centres)
 
     # ---------------- subscription manager (ONE loop) ----------------
     def new_conn(self):
@@ -767,10 +885,7 @@ class Collector:
 
     async def manage_once(self):
         now = time.time()
-        wanted, prio, info = select_markets(
-            self.markets, now, lo=self.a.band_lo, hi=self.a.band_hi,
-            near_pct=self.a.near_pct / 100.0, all_last_s=self.a.all_last_minutes * 60,
-            grace_s=self.a.grace_seconds, prev_centres=self.centres)
+        wanted, prio, info = self.select(now)
         self.sel_info = info
         for ev, i in info.items():
             if i["centre"]:
@@ -935,12 +1050,15 @@ class Collector:
                 self.minute["snap_levels"] += 1
         elif t == "ticker":
             return                                   # never subscribed; never written
-        elif t in (LIFECYCLE_CHANNEL, "event_lifecycle") and not self.a.lifecycle_all:
+        elif t in (LIFECYCLE_CHANNEL, "event_lifecycle"):
             # the lifecycle subscription is exchange-wide; keep only the configured series
             tk = msg.get("market_ticker") or msg.get("event_ticker") or ""
-            if not (tk.startswith(self.prefixes) or msg.get("series_ticker") in self.series):
+            ours = tk.startswith(self.prefixes) or msg.get("series_ticker") in self.series
+            if not ours and not self.a.lifecycle_all:
                 self.stats["lifecycle_dropped"] += 1
                 return
+            if ours and self.fifteen and t == LIFECYCLE_CHANNEL and msg.get("event_type") == "created":
+                self.ingest_created(msg, time.time())
         try:
             self.w.write(t, m)
         except DiskGuard as e:
@@ -967,9 +1085,7 @@ class Collector:
         except DiskGuard as e:
             self.request_stop(str(e), code=2)
             return
-        modes = ",".join(f"{ev.split('-')[0]}:{i['mode']}:{i['kept']}/{i['n']}" +
-                         (f"@{i['centre']:.4g}" if i['centre'] else "")
-                         for ev, i in sorted(self.sel_info.items()))
+        modes = self.modes_str()
         log(f"[health] conns {up}/{len(self.conns)} up subs={subs} wanted={wanted} overflow={self.overflow} "
             f"deltas/s={self.minute['orderbook_delta'] / dt:.1f} trades={self.minute['trade']} "
             f"snaps={self.minute['orderbook_snapshot']}(lvl {self.minute['snap_levels']}) "
@@ -979,6 +1095,21 @@ class Collector:
             f"reconn={self.stats['reconnects']} gaps={self.stats['SEQ_GAPS']} wserr={self.stats['ws_errors']} "
             f"free={free / 1e9:.1f}GB [{modes}]")
         self.minute.clear()
+
+    def modes_str(self):
+        """Selection summary for the health line. v1 text per event; with --fifteen-min
+        one entry per series: <series>:<subscribed>/<tracked>(<listed ahead>)."""
+        if not self.fifteen:
+            return ",".join(f"{ev.split('-')[0]}:{i['mode']}:{i['kept']}/{i['n']}" +
+                            (f"@{i['centre']:.4g}" if i['centre'] else "")
+                            for ev, i in sorted(self.sel_info.items()))
+        per = defaultdict(lambda: [0, 0, 0])
+        for ev, i in self.sel_info.items():
+            p = per[ev.split("-")[0]]
+            p[0] += i["kept"]
+            p[1] += i["n"]
+            p[2] += 1 if i["mode"] == "listed" else 0
+        return ",".join(f"{s}:{k}/{n}" + (f"({l}l)" if l else "") for s, (k, n, l) in sorted(per.items()))
 
     async def health_loop(self):
         while not self.stop:
@@ -1033,7 +1164,8 @@ class Collector:
             f"[summary] bytes written: gz {gz / 1e6:.2f} MB (raw json {self.w.raw_bytes / 1e6:.1f} MB) in {run_s / 3600:.3f} h "
             f"=> ~{gz * 3600 / run_s / 1e6:.1f} MB/h gz at this subscription set",
             f"[summary] REST: {self.rest.n} GETs, 429s {self.rest.n429}, other errors {self.rest.nerr}; "
-            f"discoveries {s['discoveries']}; hourly markets tracked {len(self.markets)}, non-hourly rows skipped {self.skipped_nonhourly}",
+            f"discoveries {s['discoveries']}; {self.kind} markets tracked {len(self.markets)}, non-{self.kind} rows skipped {self.skipped_nonhourly}"
+            + (f", tracked first by lifecycle `created` {s['lifecycle_tracked']}" if self.fifteen else ""),
             f"[summary] per-channel lines: " + ", ".join(f"{k}={v}" for k, v in sorted(self.w.lines_by_chan.items())),
         ]
         try:
@@ -1042,7 +1174,9 @@ class Collector:
                          f"{100.0 * (ct.user + ct.system) / run_s:.1f}% of one core over the run")
         except Exception:
             pass
-        if self.sel_info:
+        if self.sel_info and self.fifteen:
+            lines.append("[summary] selection at exit: " + self.modes_str())
+        elif self.sel_info:
             lines.append("[summary] selection at exit: " + ", ".join(
                 f"{ev}:{i['mode']} {i['kept']}/{i['n']}" + (f" centre {i['centre']:.6g}" if i['centre'] else "")
                 for ev, i in sorted(self.sel_info.items())))
@@ -1235,6 +1369,51 @@ def selftest():
     ck(not is_hourly("KXBTC15M-26OCT230215-15"), "15-minute ticker (12-char date part) rejected")
     ck(not is_hourly("") and not is_hourly("KXBTCD"), "junk rejected")
 
+    # (3b) --fifteen-min: the 15-minute filter, the mode switch, per-mode defaults, schedule, selection
+    F1, F2 = "KXEURUSD15M-26OCT231300-00", "KXGOLD15M-26OCT231315-15"
+    ck(is_fifteen_min(F1) and is_fifteen_min(F2), "15-minute ticker form <SERIES>-<YYMMMDD><HHMM>-<MM> accepted by ticker alone")
+    ck(is_fifteen_min(F2, parse_ts("2026-10-23T17:00:00Z"), parse_ts("2026-10-23T17:15:00Z")), "15-minute ticker with a 900 s life accepted")
+    ck(not is_fifteen_min(F2, parse_ts("2026-10-23T16:15:00Z"), parse_ts("2026-10-23T17:15:00Z")), "15-minute ticker form but a 3600 s life (> 1000 s) rejected")
+    ck(not is_fifteen_min("KXBTCD-26OCT2204-T110999.99") and not is_fifteen_min("KXBTCD-26OCT23-T82000"),
+       "hourly and daily tickers rejected by the 15-minute filter")
+    ck(not is_fifteen_min("") and not is_fifteen_min("KXGOLD15M-26OCT231315") and not is_fifteen_min("KXGOLD15M-26OCT231315-T15")
+       and not is_fifteen_min("KXGOLD15M-26OCT2313-15"), "junk / wrong 15-minute shapes rejected")
+    ck(market_filter(False) is is_hourly and not market_filter(False)(F1) and not market_filter(False)("KXBTC15M-26OCT230215-15"),
+       "WITHOUT --fifteen-min the v1 filter still rejects 15-minute tickers")
+    ck(market_filter(True) is is_fifteen_min and market_filter(True)(F1) and market_filter(True)("KXBTC15M-26OCT230215-15")
+       and not market_filter(True)("KXBTCD-26OCT2204-T110999.99"), "WITH --fifteen-min 15-minute tickers pass and hourly ones do not")
+    ck(resolve_series(None, False) == DEFAULT_SERIES and resolve_series(None, True) == DEFAULT_SERIES_15M
+       and resolve_series(["KXGOLD15M"], True) == ["KXGOLD15M"] and resolve_series([], False) == [],
+       "--series default per mode; an explicit list wins")
+    ck(len(DEFAULT_SERIES_15M) == 13 == len(set(DEFAULT_SERIES_15M)) and all(s.endswith("15M") for s in DEFAULT_SERIES_15M),
+       "13 distinct 15-minute series (5 FX pairs + 8 commodities)")
+    ck(next_discovery_time(1792742360.0, 1792742385.0, 60) == 1792742410.0 == (int(1792742385.0 // 3600) + 1) * 3600 + 10
+       and next_discovery_time(1792738900.0, 1792738930.0, 60) == 1792738960.0,
+       "hourly schedule: 10 s after the top of the hour, else the period (v1 arithmetic)")
+    ck(next_discovery_time(1792739660.0, 1792739685.0, 60, 900) == 1792739710.0
+       and next_discovery_time(1792739660.0, 1792739685.0, 60) == 1792739720.0,
+       "15-minute schedule: 10 s after the quarter hour (07:15:10Z), where the hourly schedule would wait the period")
+    T0 = 1792744200.0                                                 # 2026-10-23T08:30:00Z
+    G30, G45, G00, G15 = ("KXGOLD15M-26OCT230430-30", "KXGOLD15M-26OCT230445-45",
+                          "KXGOLD15M-26OCT230500-00", "KXGOLD15M-26OCT230415-15")
+    WTI = "KXWTI15M-26OCT230430-30"
+    mk15 = {G30: {"series": "KXGOLD15M", "event": "KXGOLD15M-26OCT230430", "open_ts": T0 - 900, "close_ts": T0, "bid": 0.9, "ask": 0.92},
+            G45: {"series": "KXGOLD15M", "event": "KXGOLD15M-26OCT230445", "open_ts": T0, "close_ts": T0 + 900},
+            G00: {"series": "KXGOLD15M", "event": "KXGOLD15M-26OCT230500", "open_ts": T0 + 900, "close_ts": T0 + 1800},
+            G15: {"series": "KXGOLD15M", "event": "KXGOLD15M-26OCT230415", "open_ts": T0 - 1800, "close_ts": T0 - 900},
+            WTI: {"series": "KXWTI15M", "event": "KXWTI15M-26OCT230430", "open_ts": T0 - 900, "close_ts": T0, "bid": 0.0, "ask": 1.0}}
+    w15, p15, i15 = select_all(mk15, T0 - 60)                         # 08:29:00Z
+    ck(w15 == {G30, G45, WTI} and p15[WTI] == 0.0,
+       f"all live markets wanted whatever their price (WTI book empty), the one opening in 60 s pre-subscribed, listed-ahead and long-closed not: {sorted(w15)}")
+    ck(i15["KXGOLD15M-26OCT230500"]["mode"] == "listed" and i15["KXGOLD15M-26OCT230430"]["mode"] == "all"
+       and "KXGOLD15M-26OCT230415" not in i15 and all(i["centre"] is None for i in i15.values()), f"15-minute selection info: {i15}")
+    w15c, p15c, i15c = select_all(mk15, T0 + 30)                      # 08:30:30Z
+    ck(G30 in w15c and p15c[G30] == 100.0 and p15c[G45] == 0.0 and i15c["KXGOLD15M-26OCT230430"]["mode"] == "closed" and G00 not in w15c,
+       "closed 30 s ago: still wanted at the lowest priority; the market 870 s from its open not yet")
+    ck(select_all(mk15, T0 + 120)[0] == {G45} and select_all(mk15, T0 + 800)[0] == {G45, G00},
+       "closed > 90 s ago dropped; a market 100 s from its open wanted (120 s lead)")
+    ck(select_all(mk15, T0 - 60, lead_s=0)[0] == {G30, WTI}, "lead 0: nothing is subscribed before its open")
+
     # (4) disk guard
     ck(disk_ok(8.0e9, 8.0) and not disk_ok(7.99e9, 8.0), "disk_ok threshold")
     wd = Writer(tempfile.mkdtemp(prefix="hourlycol-dg-"), free_fn=lambda: 7.5e9)
@@ -1294,8 +1473,11 @@ def selftest():
         a8 = _types.SimpleNamespace(key_id=KEY_ID, key_file=KEY_FILE, out=root8, series=DEFAULT_SERIES, rest_gap=2.0,
                                     member_seconds=60, min_free_gb=8.0, lifecycle_all=False, verbose=False, minutes=0,
                                     per_conn=120, max_conns=8, band_lo=0.03, band_hi=0.97, near_pct=1.5,
-                                    all_last_minutes=15, grace_seconds=90, manage_seconds=5, discover_seconds=60)
+                                    all_last_minutes=15, grace_seconds=90, manage_seconds=5, discover_seconds=60,
+                                    fifteen_min=False, pre_open_seconds=120)
         col = Collector(a8)
+        ck(col.accept is is_hourly and col.statuses == ("open",) and col.boundary_s == 3600 and col.kind == "hourly",
+           "flag absent: the v1 filter, the v1 request sequence (status=open only), the hourly schedule")
         c8 = Conn(0)
         T = "KXBTCD-26OCT2304-T81599.99"
         for fr in ({"type": "subscribed", "id": 1, "msg": {"channel": "orderbook_delta", "sid": 2}, "sending_ts_ms": 1},
@@ -1318,6 +1500,54 @@ def selftest():
         with gzip.open(os.path.join(d8, os.listdir(d8)[0]), "rt", encoding="utf-8") as f:
             r = json.loads(f.readline())
         ck(r["msg"]["market_ticker"] == T and r["_conn"] == 0 and "_rx_ms" in r and r["seq"] == 1, "lifecycle record shape")
+
+        # (9) the same Collector with --fifteen-min: ingest filter, lifecycle `created` head start, selection, health text
+        root15 = tempfile.mkdtemp(prefix="hourlycol-15-")
+        a15 = _types.SimpleNamespace(**{**vars(a8), "out": root15, "series": list(DEFAULT_SERIES_15M), "fifteen_min": True})
+        col15 = Collector(a15)
+        ck(col15.accept is is_fifteen_min and col15.statuses == ("open", "unopened") and col15.boundary_s == 900
+           and col15.kind == "15-minute" and col15.pre_open_s == 120.0, "flag set: 15-minute filter, open+unopened discovery, quarter-hour schedule")
+        row15 = {"ticker": G30, "event_ticker": "KXGOLD15M-26OCT230430", "open_time": "2026-10-23T08:15:00Z",
+                 "close_time": "2026-10-23T08:30:00Z", "floor_strike": 4013.6, "yes_bid_dollars": "0.9030", "yes_ask_dollars": "0.9160"}
+        row_h = {"ticker": T, "event_ticker": "KXBTCD-26OCT2304", "open_time": "2026-10-23T07:00:00Z", "close_time": "2026-10-23T08:00:00Z",
+                 "floor_strike": 81600.0, "yes_bid_dollars": "0.5000", "yes_ask_dollars": "0.5200"}
+        row_long = {"ticker": "KXGOLD15M-26OCT230500-00", "event_ticker": "KXGOLD15M-26OCT230500",
+                    "open_time": "2026-10-23T08:00:00Z", "close_time": "2026-10-23T09:00:00Z"}
+        for s_, r_ in (("KXGOLD15M", row15), ("KXBTCD", row_h), ("KXGOLD15M", row_long)):
+            col15.ingest(s_, r_, T0 - 60)
+        ck(set(col15.markets) == {G30} and col15.skipped_nonhourly == 2
+           and col15.markets[G30]["open_ts"] == T0 - 900 and col15.markets[G30]["close_ts"] == T0 and col15.markets[G30]["strike"] == 4013.6,
+           f"--fifteen-min ingest: the 15-minute row tracked, the hourly row and the 1 h-life 15M-shaped row skipped: {dict(col15.markets)}")
+        n_skip = col.skipped_nonhourly
+        col.ingest("KXGOLD15M", row15, T0 - 60)
+        col.ingest("KXBTCD", row_h, T0 - 60)
+        ck(G30 not in col.markets and T in col.markets and col.skipped_nonhourly == n_skip + 1,
+           "flag absent: the v1 collector still skips the 15-minute row and tracks the hourly one")
+        created = {"type": "market_lifecycle_v2", "sid": 1, "seq": 5, "sending_ts_ms": 1,
+                   "msg": {"market_ticker": "KXEURUSD15M-26OCT230445-45", "event_type": "created",
+                           "open_ts": int(T0), "close_ts": int(T0 + 900), "exchange_index": 0}}
+        c15 = Conn(0)
+        col15.handle(c15, json.dumps(created))
+        col15.handle(c15, json.dumps(dict(created, seq=6, msg=dict(created["msg"], market_ticker="KXBTC15M-26OCT230445-45"))))
+        col15.handle(c15, json.dumps(dict(created, seq=7, msg=dict(created["msg"], event_type="determined"))))
+        col15.w.close()
+        E45 = "KXEURUSD15M-26OCT230445-45"
+        ck(E45 in col15.markets and col15.markets[E45]["open_ts"] == T0 and col15.markets[E45]["close_ts"] == T0 + 900
+           and col15.markets[E45]["event"] == "KXEURUSD15M-26OCT230445" and col15.stats["lifecycle_tracked"] == 1,
+           f"a `created` lifecycle frame for a configured series tracks the market before its open: {dict(col15.markets)}")
+        ck(col15.w.lines_by_chan["market_lifecycle_v2"] == 2 and col15.stats["lifecycle_dropped"] == 1,
+           "the series' lifecycle frames are still written; the foreign-series (KXBTC15M) one dropped, not tracked")
+        n_drop = col.stats["lifecycle_dropped"]
+        col.handle(c8, json.dumps(created))
+        col.w.close()
+        ck(E45 not in col.markets and col.stats["lifecycle_dropped"] == n_drop + 1, "flag absent: a foreign-series `created` frame is dropped, nothing tracked")
+        w_, p_, i_ = col15.select(T0 - 60)
+        ck(w_ == {G30, E45} and p_ == {G30: 0.0, E45: 0.0}, f"--fifteen-min selection: every market wanted, the one opening in 60 s included: {sorted(w_)}")
+        col15.sel_info = col15.select(T0 - 300)[2]
+        ck(col15.modes_str() == "KXEURUSD15M:0/1(1l),KXGOLD15M:1/1", f"15-minute health text per series: {col15.modes_str()!r}")
+        col.sel_info = {"KXBTCD-26OCT2304": {"mode": "near", "centre": 81750.0, "n": 188, "kept": 25, "close_ts": T0}}
+        ck(col.modes_str() == "KXBTCD:near:25/188@8.175e+04", f"hourly health text unchanged: {col.modes_str()!r}")
+        shutil.rmtree(root15, ignore_errors=True)
         shutil.rmtree(root8, ignore_errors=True)
     else:
         print("  (key file not present: live frame-path check skipped)")
@@ -1354,7 +1584,13 @@ def main():
     ap.add_argument("--key-id", default=KEY_ID)
     ap.add_argument("--key-file", default=KEY_FILE)
     ap.add_argument("--out", default=DEFAULT_OUT, help="tape root (never C:\\kals\\kalshi_data)")
-    ap.add_argument("--series", nargs="*", default=DEFAULT_SERIES)
+    ap.add_argument("--series", nargs="*", default=None,
+                    help=f"default {DEFAULT_SERIES}; with --fifteen-min {DEFAULT_SERIES_15M}")
+    ap.add_argument("--fifteen-min", action="store_true",
+                    help="record 15-minute markets (<SERIES>-<YYMMMDD><HHMM>-<MM>, life <= 1000 s): all markets, "
+                         "no near-strike rule; run it as a second instance with its own --out and --pidfile")
+    ap.add_argument("--pre-open-seconds", type=float, default=120,
+                    help="with --fifteen-min: subscribe a listed market this long before it opens")
     ap.add_argument("--minutes", type=float, default=0, help="stop after this many minutes (0 = run until stopped)")
     ap.add_argument("--per-conn", type=int, default=120, help="max markets per WebSocket connection")
     ap.add_argument("--max-conns", type=int, default=8)
@@ -1375,6 +1611,7 @@ def main():
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--version-check", action="store_true")
     a = ap.parse_args()
+    a.series = resolve_series(a.series, a.fifteen_min)
     if a.version_check:
         print(__VERSION__)
         return 0
@@ -1395,7 +1632,8 @@ def main():
         log(f"[pid] REFUSED: {why}")
         return 3
     log(f"[start] {__VERSION__} out={a.out} series={a.series} per_conn={a.per_conn} max_conns={a.max_conns} "
-        f"minutes={a.minutes:g} rest_gap={a.rest_gap}s free={free / 1e9:.1f}GB pid={os.getpid()} pidfile={a.pidfile}")
+        f"minutes={a.minutes:g} rest_gap={a.rest_gap}s free={free / 1e9:.1f}GB pid={os.getpid()} pidfile={a.pidfile}"
+        + (f" mode=15-minute pre_open={a.pre_open_seconds:g}s" if a.fifteen_min else ""))
     code = 0
     try:
         code = asyncio.run(main_async(a))
