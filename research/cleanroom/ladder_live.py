@@ -1022,8 +1022,11 @@ def main():
                          "the model-5c bid (95c). Pair 0,1 with --market-cap-x 2 (one bid of each a market)")
     ap.add_argument("--pot-per-contract", type=float, default=14.0,
                     help="v-ladder-optc: --auto-size bid = floor(pot / this) (default 14 = unchanged)")
+    ap.add_argument("--commit-frac", type=float, default=0.70,
+                    help="v-ladder-fit: share of the pot that may rest in bids + be held (default 0.70 = unchanged). "
+                         "1.0 with --pot-per-contract 10 lets every rung of every coin rest at once at $643")
     a = ap.parse_args()
-    global COINS, POT_PER_CONTRACT
+    global COINS, POT_PER_CONTRACT, COMMIT_FRAC
     coins = None
     if a.coins.strip():
         coins = frozenset(x.strip().upper() for x in a.coins.split(",") if x.strip())
@@ -1031,17 +1034,24 @@ def main():
             raise SystemExit("--coins takes 15-minute series like KXNEAR15M; got %s" % sorted(coins))
     if not (4.0 <= a.pot_per_contract <= 100.0):
         raise SystemExit("--pot-per-contract %s is outside 4..100" % a.pot_per_contract)
+    if not (0.5 <= a.commit_frac <= 1.0):
+        raise SystemExit("--commit-frac %s is outside 0.5..1.0" % a.commit_frac)
     if not selftest() or not P.selftest():
         raise SystemExit("self-test failed; refusing to run")
     COINS, POT_PER_CONTRACT = coins, float(a.pot_per_contract)      # set after the self-test (it assumes the defaults)
+    COMMIT_FRAC = float(a.commit_frac)                               # v-ladder-fit: likewise (apply_size reads it at each rescale)
     global LIVE_LEVELS
     lv = tuple(sorted({int(x) for x in a.levels.split(",") if x.strip()}))
     if not lv or not set(lv) <= {0, 1}:
         raise SystemExit("--levels takes 0 or 0,1; got %s" % a.levels)
     LIVE_LEVELS = lv
     if a.selftest:
-        print("argv: coins %s, pot_per_contract %s -> $643.47 bids %d, levels %s, market_cap_x %s" % (
-            sorted(COINS) if COINS else "all", POT_PER_CONTRACT, size_for_pot(643.47), list(LIVE_LEVELS), a.market_cap_x))
+        n643 = size_for_pot(643.47)
+        need = n643 * (len(COINS) if COINS else 9) * sum({0: 0.98, 1: 0.95}[l] for l in LIVE_LEVELS)
+        print("argv: coins %s, pot_per_contract %s -> $643.47 bids %d, levels %s, market_cap_x %s, commit_frac %s "
+              "(every rung of every coin at once = $%.0f vs $%.0f allowed: %s)" % (
+                  sorted(COINS) if COINS else "all", POT_PER_CONTRACT, n643, list(LIVE_LEVELS), a.market_cap_x,
+                  COMMIT_FRAC, need, COMMIT_FRAC * 643.47, "all fit" if need <= COMMIT_FRAC * 643.47 else "NOT all fit"))
     if a.selftest:
         return 0
     if not a.subaccount or a.subaccount < 1:

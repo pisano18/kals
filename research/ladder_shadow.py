@@ -112,8 +112,11 @@ def live_pot():
 
 
 def score(c, pot, since):
-    S14, S78 = int(pot // 14), int(pot // 7.8)
-    opts = {"A": (None, S14, 2, (0,)), "C": (TOP5, S78, 1, (0,)), "C+": (TOP5, S78, 1, (0, 1))}
+    S14, S78, S10 = int(pot // 14), int(pot // 7.8), int(pot // 10)
+    # "fit" (10-22 study): pot/10 a bid so every rung of every coin rests at once under a 100% money rail (the live C+
+    # at pot/7.8 + 70% defers most 95c bids). Unconstrained replay like the others; the rail-aware replay is in
+    # .sweep/q-2026-10-22/ladfit/.
+    opts = {"A": (None, S14, 2, (0,)), "C": (TOP5, S78, 1, (0,)), "C+": (TOP5, S78, 1, (0, 1)), "fit": (TOP5, S10, 1, (0, 1))}
     out = {k: collections.Counter() for k in opts}
     days, losers = set(), []
     for tk, m in c["markets"].items():
@@ -147,7 +150,7 @@ def score(c, pot, since):
                 out[k]["lost_markets"] += 0 if won else 1
             out[k]["filled_markets"] += got_any
     nd = max(1, len(days))
-    res = {"since": since, "days": len(days), "pot": round(pot, 2), "sizes": {"A": S14, "C": S78, "C+": S78},
+    res = {"since": since, "days": len(days), "pot": round(pot, 2), "sizes": {"A": S14, "C": S78, "C+": S78, "fit": S10},
            "losers": sorted(losers, key=lambda x: x["day"])}
     for k, o in out.items():
         res[k] = {"filled_markets": int(o["filled_markets"]), "lost_markets": int(o["lost_markets"]),
@@ -193,7 +196,7 @@ def main():
         return 0
     for name, r in (("SINCE OPTION C (%s)" % a.since, rep["since_optc"]), ("ALL TIME (paper since 09-27)", rep["all_time"])):
         print("== %s: %d days, pot $%.2f" % (name, r["days"], r["pot"]))
-        for k, lab in (("C", "Option C (live)"), ("A", "old setup, 9 coins"), ("C+", "C + 95c rung")):
+        for k, lab in (("C", "Option C"), ("A", "old setup, 9 coins"), ("C+", "C + 95c rung (live)"), ("fit", "fit: pot/10, 98+95")):
             o = r[k]
             print("  %-20s size %3d: %4d filled markets, %d lost, $%.2f (%.2f/day = %.2f%%/day)" % (
                 lab, r["sizes"][k], o["filled_markets"], o["lost_markets"], o["money"], o["per_day"], o["pct_per_day"]))
