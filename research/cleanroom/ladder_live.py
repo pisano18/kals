@@ -87,6 +87,30 @@ CLOSE_CAP_X = 0                                  # --close-cap-x 5: at most 5 bi
 # --market-cap-x 1 (one bid a market). The clean-room paper ladder keeps watching all 9 coins (the shadow).
 COINS = None
 
+# v-ladder-fit (2026-10-23, operator: "Figure out the most profitable safest way to run ladder ... Make sure it grows with
+# bank"): --fit sizes each bid so that EVERY rung of EVERY coin can rest at once inside the money rail:
+#   size = floor(COMMIT_FRAC * pot / (n_coins * sum of the rung prices))      (5 coins, 98c+95c: pot * 0.7 / 9.65)
+# so the 95c bids are never held back (the 25-day replay: $11.90/day vs $11.27 for pot/7.8 at $643, worst market
+# $87 vs $158, same ceiling) and the size follows the bank on every rescale. --big-coins-above POT adds the four big
+# coins (BTC ETH SOL BNB) once the pot reaches POT (the replay crosses over near $2,500) -- the coin set is re-derived
+# at every rescale, with the size, so both grow with the bank.
+FIT = False
+BIG_COINS_ABOVE = 0.0
+COINS_BASE = None                                # the --coins set; COINS is derived from it (and the pot) under --fit
+TOP5 = frozenset(("KXNEAR15M", "KXZEC15M", "KXDOGE15M", "KXHYPE15M", "KXXRP15M"))
+
+
+def coins_for_pot(pot):
+    """The coin set for this pot: the --coins set, or every coin once the pot reaches --big-coins-above."""
+    if BIG_COINS_ABOVE > 0 and pot is not None and float(pot) >= BIG_COINS_ABOVE:
+        return None
+    return COINS_BASE
+
+
+def rung_px_sum():
+    """Dollars a contract across the live rungs (98c + 95c = 1.93), from the engine's LEVELS."""
+    return sum(1.0 - P.LEVELS[l] for l in LIVE_LEVELS)
+
 
 def apply_size(size, pot=None):
     """v-ladder-size (2026-09-30, operator: "increase ladder"): contracts per bid, with every rail scaled by it --
@@ -109,7 +133,12 @@ def apply_size(size, pot=None):
 
 
 def size_for_pot(pot):
-    """pot dollars -> contracts a bid: floor(pot / POT_PER_CONTRACT) (14 unless --pot-per-contract), clamped 1..SIZE_MAX."""
+    """pot dollars -> contracts a bid: floor(pot / POT_PER_CONTRACT) (14 unless --pot-per-contract), clamped 1..SIZE_MAX.
+    Under --fit: floor(COMMIT_FRAC * pot / (n_coins * rung prices)), so every rung of every coin fits at once."""
+    if FIT:
+        cs = coins_for_pot(pot)
+        n = len(cs) if cs is not None else 9
+        return max(1, min(SIZE_MAX, int(math.floor(COMMIT_FRAC * float(pot) / (n * rung_px_sum()) + 1e-9))))
     return max(1, min(SIZE_MAX, int(math.floor(float(pot) / POT_PER_CONTRACT + 1e-9))))
 
 
@@ -177,7 +206,10 @@ class AutoSize:
         self.reads = 0
 
     def _apply(self, n, pot):
+        global COINS
         apply_size(n, pot=pot)
+        if FIT:
+            COINS = coins_for_pot(pot)              # v-ladder-fit: the coin set follows the pot with the size
         if self.on_apply is not None:
             self.on_apply()
 
@@ -212,7 +244,8 @@ class AutoSize:
             DAY_STOP = round(-DAY_STOP_FRAC * float(pot), 2)
             self.day = d
         self.size, self.pot, self.waiting = new, float(pot), False
-        self.log.write("rescale", old=old, new=new, pot=round(float(pot), 4), old_rails=old_rails, rails=self.rails())
+        self.log.write("rescale", old=old, new=new, pot=round(float(pot), 4), old_rails=old_rails, rails=self.rails(),
+                       coins=sorted(COINS) if COINS is not None else None)
         return True
 
     def tick(self):
@@ -805,9 +838,34 @@ def selftest():
            "optc: pot / 7.8 -> 82 at $643.47, 11 at $93.47, 256 at $2,000, 2,564 at $20,000 (no 100 cap)")
         POT_PER_CONTRACT = 14.0
         ck(size_for_pot(643.47) == 45 and size_for_pot(93.47) == 6, "optc NULL: pot / 14 -> 45 and 6 as before")
+        # v-ladder-fit: size = floor(0.7 * pot / (coins * rung prices)); the coin set and the size follow the pot
+        global FIT, BIG_COINS_ABOVE, COINS_BASE, LIVE_LEVELS
+        _svf = (FIT, BIG_COINS_ABOVE, COINS_BASE, LIVE_LEVELS, COINS)
+        try:
+            FIT, BIG_COINS_ABOVE, COINS_BASE, LIVE_LEVELS = True, 0.0, TOP5, (0, 1)
+            ck(size_for_pot(643.47) == 46 and size_for_pot(93.47) == 6 and size_for_pot(2499) == 181,
+               "fit: 5 coins 98c+95c at 70%% -> 46 at $643.47 (46 x 9.65 = $444 of $450), 6 at $93.47, 181 at $2,499 (got %s)"
+               % [size_for_pot(p) for p in (643.47, 93.47, 2499)])
+            LIVE_LEVELS = (0,)
+            ck(size_for_pot(643.47) == 91, "fit: 98c only -> 91 at $643.47 (91 x 4.90 = $446)")
+            LIVE_LEVELS = (0, 1)
+            BIG_COINS_ABOVE = 2500.0
+            ck(coins_for_pot(2499) == TOP5 and coins_for_pot(2500) is None and size_for_pot(2499) == 181 and size_for_pot(3000) == 120,
+               "fit: --big-coins-above 2500 -> 5 coins / 181 at $2,499, every coin / 120 at $3,000 (9 x 1.93 x 120 = $2,084 of $2,100)")
+            applied = []
+            clk = [0.0]
+            azf = AutoSize(log, lambda: None, lambda: clk[0], lambda: True, on_apply=lambda: applied.append((int(SIZE), sorted(COINS) if COINS else "all")))
+            azf.start(643.47)
+            clk[0] += 61.0
+            azf.consider(3000.0, clk[0])
+            ck(applied == [(46, sorted(TOP5)), (120, "all")],
+               "fit: a rescale from $643 to $3,000 switches the size 46 -> 120 AND the coins 5 -> all (got %s)" % applied)
+            ck(COINS is None and MAX_COMMIT == 2100.0, "fit: after the rescale COINS is every coin and the money rail is 70%% of $3,000")
+        finally:
+            FIT, BIG_COINS_ABOVE, COINS_BASE, LIVE_LEVELS, COINS = _svf
+            apply_size(5)
         # v-ladder-cplus: --levels 0,1 mirrors the 98c AND the 95c rung (never the 85c one); default 0 = top only
-        global LIVE_LEVELS
-        _svl = LIVE_LEVELS
+        _svl = LIVE_LEVELS                       # (global LIVE_LEVELS is declared in the fit block above)
         try:
             COINS = None
             for lv, want in (((0,), 1), ((0, 1), 2)):
@@ -1022,6 +1080,12 @@ def main():
                          "the model-5c bid (95c). Pair 0,1 with --market-cap-x 2 (one bid of each a market)")
     ap.add_argument("--pot-per-contract", type=float, default=14.0,
                     help="v-ladder-optc: --auto-size bid = floor(pot / this) (default 14 = unchanged)")
+    ap.add_argument("--fit", action="store_true",
+                    help="v-ladder-fit: size each bid so every rung of every coin fits in the money rail at once "
+                         "(floor(commit_frac x pot / (coins x rung prices))); replaces --pot-per-contract")
+    ap.add_argument("--big-coins-above", type=float, default=0.0,
+                    help="v-ladder-fit: with --fit, bid on every coin (adds BTC ETH SOL BNB) once the pot reaches this many "
+                         "dollars (the replay crosses over near 2500); 0 = never")
     ap.add_argument("--rung1-offset", type=float, default=0.05,
                     help="v-ladder-rung97 (candidate, 10-23 tape study): the second rung's distance under the model price "
                          "(default 0.05 = the paper's 95c rung; 0.03 = a 97c rung). Only the live engine's LEVELS change; "
@@ -1042,12 +1106,22 @@ def main():
         raise SystemExit("--commit-frac %s is outside 0.5..1.0" % a.commit_frac)
     if not (0.021 <= a.rung1_offset <= 0.149):
         raise SystemExit("--rung1-offset %s is outside 0.021..0.149 (must sit between the 98c and 85c rungs)" % a.rung1_offset)
+    if a.big_coins_above and not a.fit:
+        raise SystemExit("--big-coins-above needs --fit")
+    if a.big_coins_above and not (500.0 <= a.big_coins_above <= 1000000.0):
+        raise SystemExit("--big-coins-above %s is outside 500..1000000" % a.big_coins_above)
+    if a.fit and not a.auto_size:
+        raise SystemExit("--fit needs --auto-size")
     if not selftest() or not P.selftest():
         raise SystemExit("self-test failed; refusing to run")
     COINS, POT_PER_CONTRACT = coins, float(a.pot_per_contract)      # set after the self-test (it assumes the defaults)
     COMMIT_FRAC = float(a.commit_frac)                               # v-ladder-fit: likewise (apply_size reads it at each rescale)
     if abs(a.rung1_offset - 0.05) > 1e-9:                            # v-ladder-rung97: the engine reads LEVELS at every decision
         P.LEVELS = (P.LEVELS[0], float(a.rung1_offset), P.LEVELS[2])
+    global FIT, BIG_COINS_ABOVE, COINS_BASE
+    FIT, BIG_COINS_ABOVE, COINS_BASE = bool(a.fit), float(a.big_coins_above), coins
+    if FIT:
+        COINS = coins_for_pot(None)                                  # the start pot is read below; AutoSize.start re-derives
     global LIVE_LEVELS
     lv = tuple(sorted({int(x) for x in a.levels.split(",") if x.strip()}))
     if not lv or not set(lv) <= {0, 1}:
@@ -1057,11 +1131,16 @@ def main():
         n643 = size_for_pot(643.47)
         rung_px = {0: 1.0 - P.LEVELS[0], 1: 1.0 - P.LEVELS[1]}
         need = n643 * (len(COINS) if COINS else 9) * sum(rung_px[l] for l in LIVE_LEVELS)
-        print("argv: coins %s, pot_per_contract %s -> $643.47 bids %d, levels %s (rungs %s), market_cap_x %s, commit_frac %s "
+        print("argv: coins %s, %s -> $643.47 bids %d, levels %s (rungs %s), market_cap_x %s, commit_frac %s "
               "(every rung of every coin at once = $%.0f vs $%.0f allowed: %s)" % (
-                  sorted(COINS) if COINS else "all", POT_PER_CONTRACT, n643, list(LIVE_LEVELS),
-                  " ".join("%dc" % round(100 * rung_px[l]) for l in LIVE_LEVELS), a.market_cap_x,
+                  sorted(COINS) if COINS else "all",
+                  "fit (big coins above $%.0f)" % BIG_COINS_ABOVE if FIT else "pot_per_contract %s" % POT_PER_CONTRACT,
+                  n643, list(LIVE_LEVELS), " ".join("%dc" % round(100 * rung_px[l]) for l in LIVE_LEVELS), a.market_cap_x,
                   COMMIT_FRAC, need, COMMIT_FRAC * 643.47, "all fit" if need <= COMMIT_FRAC * 643.47 else "NOT all fit"))
+        if FIT:
+            for p in (643.47, 1000, 2000, 2499, 2500, 3000, 5000):
+                cs = coins_for_pot(p)
+                print("   fit at $%5.0f: %d coins, %d a bid" % (p, len(cs) if cs else 9, size_for_pot(p)))
     if a.selftest:
         return 0
     if not a.subaccount or a.subaccount < 1:
@@ -1109,6 +1188,7 @@ def main():
                rails={"size": int(SIZE), "max_contracts": MAX_CONTRACTS, "max_commit": MAX_COMMIT, "day_stop": DAY_STOP,
                       "start_cap": MAX_SUB_BALANCE, "max_live_per_close": MAX_LIVE_PER_CLOSE,
                       "live_levels": list(LIVE_LEVELS), "levels_offsets": list(P.LEVELS), "writes_per_s": WRITES_PER_S,
+                      "fit": FIT, "big_coins_above": BIG_COINS_ABOVE,
                       "market_cap_x": MARKET_CAP_X, "close_cap_x": CLOSE_CAP_X,
                       "coins": sorted(COINS) if COINS is not None else None, "pot_per_contract": POT_PER_CONTRACT})
     threading.Thread(target=br.run_writer, daemon=True).start()
