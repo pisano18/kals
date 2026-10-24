@@ -1837,8 +1837,8 @@ def bs_money_lines(m, unit="market", fmt=None):
         L.append("By day:")
         for d in d7:
             L.append("  %s: %s" % (d["label"], "nothing settled" if not d["markets"] else
-                                   "%s, %s (%d won, %d lost)" % (fmt(d["money"]), _nof(d["markets"], unit),
-                                                                 d["won"], d["lost"])))
+                                   "%s%s, %s (%d won, %d lost)" % (fmt(d["money"]), _roi_tail(d),
+                                                                   _nof(d["markets"], unit), d["won"], d["lost"])))
     return L
 
 
