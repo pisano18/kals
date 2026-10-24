@@ -197,7 +197,8 @@
    "what": "The ET day key hard-codes UTC-4; from 2026-11-02 the $200 day cap would roll at 23:00 ET.",
    "how": "fix in pinrun before Nov 1 (RED_TEAM_2026-09-25)",
    "bar": "fixed, self-tested, deployed with a VERSIONS entry",
-   "status": "open"
+   "status": "read",
+   "read_note": "10-24: FIXED and LIVE everywhere -- ladder + forecaster 10-23 07:1xZ, pin bot 10-24 01:45:37Z on C:\\kals-live-0925m (code_sha f36c427f99a5; VERSIONS v-hedgejump6 + v-etclock)."
   },
   {
    "id": "ladder-live-blocked",
@@ -736,7 +737,7 @@
    "what": "v-stp-maker (LIVE 2026-10-10T02:07:23Z, pid 772168, log results/pinrun-live-20261010T020723Z.jsonl; operator: 'Go v-STp-maker'): today's exact live argv on C:\\kals-live-0925e (code_sha 5075b1783acf). The only behaviour change with these flags: insurance (hedge) orders carry self_trade_prevention_type=maker, so a hedge that crosses our own ladder's resting bid (subaccount 1) cancels that bid instead of being cancelled. Startup path in paper with the exact argv PASS (pinrun-paper-20261009T111025Z.jsonl, errors 0). If never deployed by the due date, mark read with that note.",
    "how": "Confirm the live start record code_sha 5075b1783acf, toxic_fresh false, max_edge_c 10.0, early_max_edge 10.0. Then every hedge order since the deploy: body self_trade_prevention_type 'maker' (pintake), status, filled; any cancel whose reason is self-trade (user_orders last_update_reason SelfTradeCancel if logged; else a hedge with filled 0 while the book showed size); share filled vs the previous 14 alarms.",
    "bar": "PRE-REGISTERED 2026-10-09 (FINAL_SYNTHESIS 2a/7): REVERT at once (results/restart_bot.before-seen.ps1 = the 0925d launcher) if any insurance order is refused or cancelled for self-trade, or the insurance path errors. Over the next 10 alarms: every insurance order carries maker, none cancelled for self-trade, share filled not below the previous 14 alarms -> KEEP.",
-   "status": "open",
+   "status": "read",
    "read_log": [
     "10-10 04:3xZ: alarm 1 of 10 -- KXXRP15M-26OCT100030-30, belief 0.134 at tau 36, insurance 1 NO filled at 66c; Kalshi GET /portfolio/orders/01a12412-a4a0-74e4-9a74-04e231ed318a shows self_trade_prevention_type 'maker', status executed, fill 1.00. Market lost (bet -$0.98, insurance about +$0.34). No self-trade cancel.",
     "10-10 13:2xZ: alarm 2 of 10 -- KXETH15M-26OCT100915-15, belief 0.283 at tau 19, insurance 94 NO at 62c filled in full; Kalshi GET shows self_trade_prevention_type 'maker', executed, 94.00. Market lost: bet -$82.52, insurance +$34.17, other leg +$1.23 = about -$47.12. No self-trade cancel.",
@@ -744,7 +745,7 @@
     "10-11 10:43Z: v-stp-maker's insurance change carries over unchanged into v-snowball (0925h is built on 0925e); keep counting alarms toward the 10 in the new logs.",
     "10-17 11:5xZ (reader + checker AGREE): RUN-ON, 7 of the 10 alarms the bar needs (6 markets, 10-10..10-15). No REVERT trigger: 0 insurance orders refused/errored/cancelled for self-trade (0 hedge_refused/not_sent/unknown/no_ask/gave_up/blind; every hedge send writes a record). All 7 insurance orders GET /portfolio/orders: self_trade_prevention_type 'maker', executed, filled = asked (302.66 of 302.66 contracts, 100%) vs the previous 14 alarms 700.52 of 789.52 (88.7%). The case 'maker' protects against (a hedge crossing our own resting ladder bid) has not happened yet: no ladder bid was resting on any alarmed market at the insurance send. Next read at alarm 10."
    ],
-   "read_note": "10-17 11:5xZ (reader + checker AGREE): RUN-ON, 7 of the 10 alarms the bar needs (6 markets, 10-10..10-15). No REVERT trigger: 0 insurance orders refused/errored/cancelled for self-trade (0 hedge_refused/not_sent/unknown/no_ask/gave_up/blind; every hedge send writes a record). All 7 insurance orders GET /portfolio/orders: self_trade_prevention_type 'maker', executed, filled = asked (302.66 of 302.66 contracts, 100%) vs the previous 14 alarms 700.52 of 789.52 (88.7%). The case 'maker' protects against (a hedge crossing our own resting ladder bid) has not happened yet: no ladder bid was resting on any alarmed market at the insurance send. Next read at alarm 10."
+   "read_note": "10-24 05:5xZ: KEEP. 10+ alarms reached: since the 10-17 read (7 alarms) the live logs 10-15..10-24 add 14 insurance orders on 9 markets, all executed, 496.58 of 496.58 contracts filled (100% vs the earlier 14 alarms' 88.7%), 0 hedge_refused/not_sent/unknown/gave_up, 0 self-trade cancels; pintake.py in the live build C:\\kals-live-0925m still sets self_trade_prevention_type 'maker' on every hedge (hard-coded since v-seen)."
   },
   {
    "id": "btc-lead-forward",
@@ -912,7 +913,8 @@
    "what": "PAPER arm-attempts2 (pid 717680 since 2026-10-17 12:00:57Z, results/start_arm_attempts2.ps1, log results/pinrun-paper-20261017T120103Z.jsonl, code C:\\kals-live-0925j d8c3c7dcb888 = the live build): today's exact live argv minus --live, no-brake pair, --minutes 10080, plus --attempts-on-send (an attempt counts only when an order is SENT, so refusals without an order cannot lock a market out). Replaces arm-attempts (died 10-14, 3 extra markets 0 lost +$9.70 in its 2 days -- carried as context, not pooled: different build).",
    "how": "Markets where the arm bought and LIVE did not on the same closes, each with live's lock-out reason (refused gate market_attempts) and the Kalshi outcome; paper $ per market; any market where the flag made the arm hold MORE than one full bet.",
    "bar": "Same bar as arm-attempts, PRE-REGISTERED 2026-10-10, unchanged: after 7 ET days, PROPOSE LIVE if the extra markets number >= 4 with 0 lost and net paper $ > 0; DROP if any extra market lost or there are < 2 extra markets.",
-   "status": "open"
+   "status": "read",
+   "read_note": "10-24 05:5xZ: DROP (pre-registered bar: any extra market lost). 6.7 of 7 days (the loss already decides it). Paper 275 markets net +$123.41; live locked out (market_attempts) 29 markets, live held 21 of them anyway; the arm bought 5 that live did not: BNB 10-19 13:15Z +$0.69, BTC 10-21 05:30Z +$0.26, BTC 10-22 18:00Z +$1.03, XRP 10-18 21:30Z +$0.42, ZEC 10-21 07:45Z -$27.73 (2 legs) = -$25.33 at paper size 20 (~6x at live size). Do not propose --attempts-on-send."
   },
   {
    "id": "fc-maker-paper",
@@ -980,8 +982,8 @@
    "what": "DST ends 2026-11-01 06:00Z: the ET day key hard-codes UTC-4 (pinrun.py 2481/4342 and wherever else the clockbug agent found). Patches prepared in .sweep/q-2026-10-23/clockbug/ (not deployed).",
    "how": "deploy per clockbug.md (pin bot build via restart_bot.ps1 / a new C:\\kals-live-<tag>; ladder/forecaster via stop-file restarts) before 11-01",
    "bar": "every bot's ET day key correct on 11-01 and 11-02",
-   "status": "open",
-   "read_note": "10-23 07:2xZ: ladder (pid 2436716) and forecaster (pid 2437128) live on the patched code; pin bot build 0925m + restart_bot.ps1 staged, goes live at the ~10-24 11:02Z run end -- CONFIRM the new pinrun-live start record shows code_sha f36c427f99a5, then close."
+   "status": "read",
+   "read_note": "10-24 01:45:37Z CLOSED: the pin bot's live start record carries code_sha f36c427f99a5 (0925m, the ET clock from the zone); ladder and forecaster on the patched code since 10-23 07:1xZ."
   },
   {
    "id": "racev2-fund",
@@ -1007,7 +1009,8 @@
    "what": "v-ladder-single98 (one 98c rung on the whole 70% rail, --levels 0, 91 bids a coin at $648): VERIFIED 10-23 10:3xZ by both replay models (+4% over 25 days, +26% over the last 7, wins 14 of the last 15 days; same ceiling, same worst market). Waits for the operator's boot_all one-liner, then the scratchpad restart_ladder_single.ps1. Supersedes the 97c flag.",
    "how": "boot_all.ps1 ladder line carries \"--levels\", \"0\"; newest ladder start record in results/ladder-live-orders.jsonl shows live_levels [0] and size ~91",
    "bar": "deployed = one new start record with levels [0] and ~91 bids; then open ladder-single98-read for 10-30 (live contracts/day and $/day vs the two-rung days 10-22 15:40Z..deploy)",
-   "status": "open"
+   "status": "read",
+   "read_note": "10-24 01:01:50Z DEPLOYED by the operator's one-click file: ladder pid 2660284 runs --levels 0 (VERSIONS v-ladder-single98 LIVE). Read opened as ladder-single98-read (10-30)."
   },
   {
    "id": "hourly-99c-day1",
@@ -1015,6 +1018,14 @@
    "what": "Hourly 99c/98c lock-bid study on a FULL day of the hourly tape (C:\\kals\\kalshi_data_hourly; recorder pid 2445764 since 10-23 08:12:37Z). The 2-close first look (.sweep/q-2026-10-23/hourlyfirst/) gave $303-900/day (x24) at size 5,000 with 3 strike-closes carrying 83-98% and the loss rate of inside-the-last-15-min locks unmeasured.",
    "how": "cd .sweep/q-2026-10-23/hourlyfirst; python -I hourlyfirst.py 2026-10-23THH for every complete close; python -I report.py",
    "bar": "worth a paper arm only if >= 20 closes show >= $5/close at size 1,000 under the STRICT (paper cancel) rule AND 0 wrong inside-window locks AND the minimum post-lock lead stays >= the 21.2-bp floor on >= 90% of them; otherwise drop the hourly 99c idea",
+   "status": "open"
+  },
+  {
+   "id": "ladder-single98-read",
+   "due": "2026-10-30T12:00Z",
+   "what": "v-ladder-single98 (LIVE 2026-10-24 01:01:50Z, pid 2660284, --levels 0: one 98c rung on the whole 70% rail) vs the two-rung days (98c+95c, 10-22 15:40Z .. 10-24 01:01Z).",
+   "how": "results/ladder-live-orders.jsonl + Kalshi settlements (botstats_cache subs/1): live contracts filled a day and $/day since deploy vs the two-rung period; wrong calls; worst market.",
+   "bar": "KEEP if $/day >= the two-rung period's and 0 wrong calls; replay predicted +4% (25 days) / +26% (last 7). REVERT (boot_all --levels 0,1) if $/day is below the two-rung period by > 20% over 6 days with comparable market volume.",
    "status": "open"
   }
  ]
