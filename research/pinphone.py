@@ -1732,14 +1732,26 @@ def bs_window_line(w, label, unit="market", fmt=None, whose="its bank"):
         _nof(w["markets"], unit), _cnt(w["won"]), _cnt(w["lost"]))
 
 
+def _roi_tail(w):
+    """' (+1.9% on bets · +0.24% of bank)' for a botstats window: its return on what the bets cost and, when its
+    pot is known, its share of the pot. Operator 10-24: "put roi percentages everywhere applicable"."""
+    bs = _bs()
+    bits = []
+    if w.get("return_pct") is not None:
+        bits.append("%s on bets" % bs.pct(w["return_pct"]))
+    if w.get("pot_pct") is not None:
+        bits.append("%s of bank" % bs.pot_pct_txt(w["pot_pct"]))
+    return (" (%s)" % " · ".join(bits)) if bits else ""
+
+
 def _short(w, fmt):
-    """'+$2.63 (+0.24%)' -- the money and, when its pot is known, its share of the pot."""
+    """'+$2.63 (+1.9% on bets · +0.24% of bank)' -- the money, its return on what the bets cost and, when its pot
+    is known, its share of the pot."""
     if w is None:
         return "?"
     if not w["markets"]:
         return "nothing yet"
-    p = w.get("pot_pct")
-    return fmt(w["money"]) + ((" (%s)" % _bs().pot_pct_txt(p)) if p is not None else "")
+    return fmt(w["money"]) + _roi_tail(w)
 
 
 def bs_running_lines(r):
@@ -2066,13 +2078,18 @@ def money_legend(base, whose="its bank"):
 def bs_days_table(days, unit="market"):
     """botstats' days_7 rows -> a small table with a text bar a day (light shade = a losing day)."""
     mx = max([abs(d["money"]) for d in days if d.get("markets")] or [0])
-    rows = [("Day", "Money", "Legs" if unit == "leg" else "Mkts", "Lost", "")]
+    bs = _bs()
+    rows = [("Day", "Money", "Return", "of bank", "Legs" if unit == "leg" else "Mkts", "Lost", "")]
     for d in days:
         if not d.get("markets"):
             rows.append((d["label"], "nothing settled"))
             continue
-        rows.append((d["label"], usd(d["money"]), d["markets"], d.get("lost", ""), hbar(d["money"], mx, 5)))
-    return table(rows, "lrrrl")
+        rp = d.get("return_pct")
+        r = bs.pct(rp) if rp is not None else (ret(d["money"], d.get("put_in")) or "-")
+        pp = d.get("pot_pct")
+        rows.append((d["label"], usd(d["money"]), r, bs.pot_pct_txt(pp) if pp is not None else "-",
+                     d["markets"], d.get("lost", ""), hbar(d["money"], mx, 5)))
+    return table(rows, "lrrrrrl")
 
 
 def _money_detail(m, unit):
@@ -2191,8 +2208,7 @@ def _short_html(w):
         return "?"
     if not w["markets"]:
         return "nothing yet"
-    p = w.get("pot_pct")
-    return "<b>%s</b>%s" % (esc(usd(w["money"])), (" (%s)" % esc(_bs().pot_pct_txt(p))) if p is not None else "")
+    return "<b>%s</b>%s" % (esc(usd(w["money"])), esc(_roi_tail(w)))
 
 
 def all_bots_avg_before(a, day, n=7):
@@ -2252,11 +2268,17 @@ def bs_all_html(a):
         got = [(nm, v) for nm, v in t7["by_bot"].items() if t7["by_bot_markets"].get(nm)
                or (nm != "other" and not _bot_parked(a["bots"].get(nm)))]
         mx = max([abs(v) for nm, v in got if t7["by_bot_markets"].get(nm)] or [0])
-        rows = [(nm, usd(v) if t7["by_bot_markets"].get(nm) else "none",
-                 hbar(v, mx, 10) if t7["by_bot_markets"].get(nm) else "") for nm, v in got]
+        pin_, pp_ = t7.get("by_bot_put_in") or {}, t7.get("by_bot_pot_pct") or {}
+        rows = [("Bot", "Money", "Return", "of bank", "")]
+        for nm, v in got:
+            if not t7["by_bot_markets"].get(nm):
+                rows.append((nm, "none"))
+                continue
+            rows.append((nm, usd(v), ret(v, pin_.get(nm)) or "-",
+                         bs.pot_pct_txt(pp_[nm]) if pp_.get(nm) is not None else "-", hbar(v, mx, 10)))
         L.append("")
         L.append("📊 <b>Last 7 days, by bot</b>")
-        L.append(pre(table(rows, "lrl")))
+        L.append(pre(table(rows, "lrrrl")))
     L.append("")
     parked = []
     for name in bs.BOTS:
@@ -2306,13 +2328,14 @@ def bs_all_html(a):
     days = [d for d in a["total_days_7"] if not (firsts and d["day"] < min(firsts))]
     if anything and days:
         mx = max([abs(d["money"]) for d in days if d["markets"]] or [0])
-        rows = [("Day", "Money", "Mkts", "")]
+        rows = [("Day", "Money", "Return", "Mkts", "")]
         for d in days:
             rows.append((d["label"], "nothing settled") if not d["markets"] else
-                        (d["label"], usd(d["money"]), d["markets"], hbar(d["money"], mx, 8)))
+                        (d["label"], usd(d["money"]), ret(d["money"], d.get("put_in")) or "-", d["markets"],
+                         hbar(d["money"], mx, 8)))
         L.append("")
         L.append("📅 <b>By day</b> (all pots)")
-        L.append(pre(table(rows, "lrrl")))
+        L.append(pre(table(rows, "lrrrl")))
     elif not anything and not miss:
         L.append("Nothing settled yet in any pot.")
     warn = bs_errors_line(a["errors"]) + list(bs.pot_check_lines(a.get("pot_check")))
@@ -2955,9 +2978,18 @@ def _funds_page(f, sizes, now, hist, show):
                 rows.append((nm, tt, sh))
                 continue
             wk = a["wk"]
-            rows.append((nm, tt, sh, "?" if wk is None else ("none" if not wk[1] and wk[2] else
-                                                             usd(wk[0]).replace("$", "") + ("" if wk[2] else "~"))))
+            if wk is None:
+                w7 = "?"
+            elif not wk[1] and wk[2]:
+                w7 = "none"
+            else:
+                w7 = usd(wk[0]).replace("$", "") + ("" if wk[2] else "~")
+                if a["whole"] and a["total"] >= 1.0:          # its share of what the account holds now
+                    w7 += " (%s)" % _bs().pot_pct_txt(100.0 * wk[0] / a["total"])
+            rows.append((nm, tt, sh, w7))
         L.append(pre(table(rows)))
+        if hist is not None:
+            L.append(i_("7 days = that account's money over the past 7 ET days and its share of what it holds now"))
         idle = [a for a in accts if funds_idle(a["n"]) and a["whole"] and a["total"] > 0.004]
         if idle:
             it = sum(a["total"] for a in idle)
@@ -5511,7 +5543,8 @@ def selftest():
         ck("Kalshi's own app shows the MAIN account only. The $39.10 sitting in the forecaster, ladder and weather pots" in b_,
            "/bots says why Kalshi's app reads lower than all pots: the bot pots' cash (24.00 + 15.10) is outside it")
         ck("🟢 PIN BOT · main account · /pin\nrunning since Sep 16 7:59 AM ET · v-reopen98 + v-floor90\ntoday -$10.40 "
-           "(-0.96%) · 7 days -$9.86 (-0.93%) · all time -$9.86 (-0.93%) · open: 1 ($29.10 at risk)" in b_,
+           "(-10.4% on bets · -0.96% of bank) · 7 days -$9.86 (-7.6% on bets · -0.93% of bank) · all time -$9.86 "
+           "(-7.6% on bets · -0.93% of bank) · open: 1 ($29.10 at risk)" in b_,
            "a card a bot: running since (ET), version, money with its share of the pot, open bets, its command")
         ck("⏸ LADDER · subaccount 1 · /ladder\nSTOPPED by its stop file" in b_
            and "FORECASTER · subaccount 2 · /fc\nrunning since Sep 16 8:34 AM ET · v-forecaster-race1" in b_
@@ -5674,7 +5707,7 @@ def selftest():
            and "% of its bank: not shown -- transfers read failed (HTTP 404)." in n_
            and "Today: -$12.53 on $123.81 put in (-10.1%); 5 markets, 3 won, 2 lost\n"
                "  pin -$10.40 | race +$0.37 | forecaster -$2.54 | ladder +$0.04 | weather none\n" in nb_
-           and "today -$10.40 · 7 days -$9.86 · all time -$9.86 ·" in nb_
+           and "today -$10.40 (-10.4% on bets) · 7 days -$9.86 (-7.6% on bets) · all time -$9.86 (-7.6% on bets) ·" in nb_
            and "% of the pots: not shown -- main account: transfers read failed (HTTP 404)." in nb_,
            "NULL: the deposit/transfer listings unreadable -> every dollar figure still shown, NO percentage of "
            "any pot anywhere (never a guessed base), and the reason said once")
@@ -6325,8 +6358,8 @@ def selftest():
            and "Liquidity rewards are paid outside these records and are not counted." in t_,
            "/funds past days: the main account's days newest first (money, lost of settled), its 7-day total and "
            "its % of what it holds now, the main bot / race / other split, and each day split behind a tap")
-        ck(any(x.split() == ["0", "main+race", "530.60", "81.4%", "-17.82"] for x in t_.split("\n")),
-           "/funds: the summary table carries each account's 7 days too")
+        ck(any(x.split() == ["0", "main+race", "530.60", "81.4%", "-17.82", "(-3.4%)"] for x in t_.split("\n")),
+           "/funds: the summary table carries each account's 7 days too, with its share of what it holds now")
         _s1, _s3 = t_[t_.index("SUBACCOUNT 1"):t_.index("SUBACCOUNT 3")], t_[t_.index("SUBACCOUNT 3"):]
         ck(["Wed", "16*", "+$0.05", "0/1"] in [x.split() for x in _s1.split("\n")]
            and ["Sun", "13-Tue", "15", "nothing", "settled"] in [x.split() for x in _s1.split("\n")]
