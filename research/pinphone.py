@@ -575,6 +575,42 @@ def photo_body(chat_id, png, caption, boundary):
     return b"".join(out)
 
 
+SUPPLY_STALE_D = 3.0        # /market: an opportunity trend measured longer ago than this is left out (2026-10-23)
+
+HALT_WORDS = [   # 2026-10-23: a stop in a bot's own log, in plain words (the raw text stays in the log)
+    (r"outcome UNKNOWN", "stopped itself -- Kalshi did not confirm an order (the connection dropped), so it would "
+                         "not guess; the watchdog starts it again"),
+    (r"^stop_file\b", "its stop file was set: it cancelled what was resting and stopped"),
+    (r"^exit\b.*stop file", "it exited (stop file)"),
+    (r"loss COUNT brake|loss abort|DRAWDOWN brake|DAY loss cap|day stop", "a loss brake stopped it"),
+]
+
+
+def halt_words(what, why):
+    """One logged stop ('halt pintake halted: order pin-... outcome UNKNOWN (status -1, ...)') in plain words; an
+    unknown kind keeps its own text, cut to a line."""
+    raw = ("%s %s" % (what or "", why or "")).strip()
+    for pat, words in HALT_WORDS:
+        if re.search(pat, raw):
+            return words
+    return raw[:140]
+
+
+RESEND_FOR_S = 15 * 60      # 2026-10-23: a send the connection dropped is tried again for this long ...
+RESEND_GAP_S = 30           # ... this far apart
+RESEND_KEEP = 20            # at most this many wait (the newest)
+PHOTO_TRIES = (5, 20)       # a chart the connection dropped: sent again after these many seconds
+
+
+def net_error(e):
+    """True when a send failed on the CONNECTION (no answer, reset, TLS timeout, Telegram 5xx or 429) -- worth
+    sending again. False when Telegram refused the message itself (HTTP 4xx), which a resend would only repeat."""
+    if isinstance(e, urllib.error.HTTPError):
+        return e.code >= 500 or e.code == 429
+    import http.client
+    return isinstance(e, (OSError, http.client.HTTPException))
+
+
 class FakeTelegram:
     """For the self-test: a queue of incoming messages and a list of sent ones."""
     def __init__(self):
@@ -625,7 +661,7 @@ HELP_TEXT = Html("""📱 <b>Commands</b>
 /losses — losing closes
 /hedges — insurance and whether it was needed
 /brief — the daily briefing: money, what changed, what it did, the market, what to watch
-/bars — every running test against its pre-registered bar: numbers so far, days into the window, PASS / KILL / EXTEND / TOO EARLY
+/bars — the September tests against their pre-registered bars (all finished; kept for the record)
 /features — what each bot does and the settings it runs with now (read from boot_all.ps1), and the rules they run under
 
 🎛 <b>Controls</b>
@@ -1147,7 +1183,8 @@ def live_version(path):
     would otherwise sit on top and date every 'since the version' figure
     wrong."""
     for v in versions(path):
-        if v[0].lower().startswith("v-race") or _NOT_PIN_RE.search(v[0] + " " + v[3]):
+        if v[0].lower().startswith("v-race") or _NOT_PIN_RE.search(v[0] + " " + v[3]) \
+                or re.match(r"v-(tg|phone|telegram|wifi|recorder|collector)\b", v[0].lower()):   # = botstats.INFRA_VER
             continue
         return v
     return None
@@ -1850,7 +1887,7 @@ def bs_activity_lines(name, a):
         top = ", ".join("%s %d" % kv for kv in sorted(grouped.items(), key=lambda kv: -kv[1])[:4])
         L.append("  %s %s: %s." % ("Passed" if name == "pin" else "Refused", _nof(a["refused"], "time"), top))
     for h in a["halts"][-3:]:
-        L.append("  %s: %s %s" % (h["t_et"], h["what"], h["why"]))
+        L.append("  %s: %s" % (h["t_et"], halt_words(h["what"], h["why"])))
     return L
 
 
@@ -2060,6 +2097,9 @@ def bs_money_html(m, unit="market", goal=None):
     tbl, base = bs_money_table({k: m[k] for k in BS_WINDOWS})
     L.append(pre(tbl))
     L.append(money_legend(base))
+    asof = _bs().pot_as_of_note([m[k] for k in BS_WINDOWS]) if hasattr(_bs(), "pot_as_of_note") else None
+    if asof:
+        L.append(i_("ℹ️ " + asof))
     avg = bs_avg_day_line(m, goal)
     if avg:
         L.append(avg)
@@ -2171,6 +2211,17 @@ def all_bots_avg_before(a, day, n=7):
     return tot / len(ds), len(ds)
 
 
+def _bot_parked(bt):
+    """True for a bot stopped by its stop file (not just crashed), with no open bet and nothing settled in the
+    last 7 days -- /bots gives it one line instead of a card and a 'none' row (2026-10-23: the weather
+    dip-seller, stopped since 10-10, filled three rows with nothing)."""
+    if not bt:
+        return False
+    r, m, o = bt.get("running") or {}, bt.get("money") or {}, bt.get("open") or {}
+    return (r.get("alive") is False and bool(r.get("stop_flag")) and o.get("ok") is True and not o.get("count")
+            and m.get("ok") is True and not ((m.get("last_7_days") or {}).get("markets")))
+
+
 def bs_all_html(a):
     """/bots: the all-pots headline and table, 7 days by bot as a chart, one card a bot, the cash, the
     last 7 days; every sentence bs_all_text wrote is in the details."""
@@ -2192,9 +2243,14 @@ def bs_all_html(a):
     if miss:
         L.append("⚠️ PARTIAL: these totals leave out %s -- Kalshi could not be read for %s."
                  % (esc(", ".join(miss)), "it" if len(miss) == 1 else "them"))
+    asof = bs.pot_as_of_note([tot[k] for k in BS_WINDOWS]) if hasattr(bs, "pot_as_of_note") else None
+    if asof:
+        L.append(i_("ℹ️ " + asof))
     t7 = tot["last_7_days"]
     if t7["markets"]:
-        got = [(nm, v) for nm, v in t7["by_bot"].items() if nm != "other" or t7["by_bot_markets"].get(nm)]
+        # a stopped bot with nothing in the week is one line further down, not a 'none' row here
+        got = [(nm, v) for nm, v in t7["by_bot"].items() if t7["by_bot_markets"].get(nm)
+               or (nm != "other" and not _bot_parked(a["bots"].get(nm)))]
         mx = max([abs(v) for nm, v in got if t7["by_bot_markets"].get(nm)] or [0])
         rows = [(nm, usd(v) if t7["by_bot_markets"].get(nm) else "none",
                  hbar(v, mx, 10) if t7["by_bot_markets"].get(nm) else "") for nm, v in got]
@@ -2202,9 +2258,16 @@ def bs_all_html(a):
         L.append("📊 <b>Last 7 days, by bot</b>")
         L.append(pre(table(rows, "lrl")))
     L.append("")
+    parked = []
     for name in bs.BOTS:
         bt = a["bots"][name]
         r, m, o = bt["running"], bt["money"], bt["open"]
+        if _bot_parked(bt):                       # stopped by its stop file, nothing open, nothing this week
+            at = (m.get("all_time") or {}) if m.get("ok") else {}
+            parked.append("⏸ %s: stopped %s%s · %s" % (
+                esc(bt["label"].lower()), esc(r["stop_flag_et"] or "?"),
+                (" · all time %s" % esc(usd(at["money"]))) if at.get("markets") else "", BOT_CMD_OF[name]))
+            continue
         if r["alive"] is None:
             run = "running? could not tell"
         elif r["alive"]:
@@ -2230,11 +2293,14 @@ def bs_all_html(a):
         L.append("⚪ NOT ANY BOT'S (main account): all time %s on %s; worst %s %s (%s)." % (
             esc(usd(w["money"])), esc(_nof(w["markets"], "market")), esc(usd(w["worst"]["money"])),
             esc(w["worst"]["what"]), esc(bs.day_label(w["worst"]["day"]))))
+    L += parked
     bal = a["balances"]
     L.append("")
-    L.append("💵 <b>Cash:</b> main account %s (pin + race share it), forecaster %s, ladder %s, weather %s -- all pots "
-             "<b>%s</b>." % tuple(esc(_cash(x)) for x in (bal["main"], bal["forecaster"], bal["ladder"],
-                                                          bal.get("weather"), bal["all"])))
+    wx = bal.get("weather")
+    L.append("💵 <b>Cash:</b> main account %s (pin + race share it), forecaster %s, ladder %s%s -- all pots "
+             "<b>%s</b>." % (esc(_cash(bal["main"])), esc(_cash(bal["forecaster"])), esc(_cash(bal["ladder"])),
+                             "" if (wx is not None and abs(wx) < 0.005 and _bot_parked(a["bots"].get("weather")))
+                             else ", weather %s" % esc(_cash(wx)), esc(_cash(bal["all"]))))
     firsts = [mm.get("first_day") for mm in [a["bots"][x]["money"] for x in bs.BOTS] + [a["other"]]
               if mm.get("first_day")]
     days = [d for d in a["total_days_7"] if not (firsts and d["day"] < min(firsts))]
@@ -3011,21 +3077,31 @@ def boot_launches(text):
         vars_ = {k: re.sub(r"\$(\w+)", lambda v: vars_.get(v.group(1), v.group(0)), s) for k, s in vars_.items()}
     found = []
     for m in _PS_ENTRY.finditer(text):
-        found.append((m.start(), m.group("n"), _ps_strings(m.group("a"), vars_), []))
+        st = re.search(r'\bstop = "([^"]*)"', m.group("rest"))       # boot_all leaves it off while this file exists
+        stop = re.sub(r"\$(\w+)", lambda v: vars_.get(v.group(1), v.group(0)), st.group(1)) if st else None
+        found.append((m.start(), m.group("n"), _ps_strings(m.group("a"), vars_), [], stop))
     for m in _PS_INLINE.finditer(text):
         guard = text.rfind("if (", 0, m.start())                 # the nearest `if (` above: `$false -and` = OFF
         if guard >= 0 and "$false" in text[guard:text.find("\n", guard)]:
             continue
-        found.append((m.start(), None, _ps_strings(m.group(1), vars_), []))
+        found.append((m.start(), None, _ps_strings(m.group(1), vars_), [], None))
     m = _PS_LIVE.search(text)
     if m:
-        found.append((m.start(), None, _ps_strings(m.group(1), vars_), _PS_ARM.findall(text)))
+        found.append((m.start(), None, _ps_strings(m.group(1), vars_), _PS_ARM.findall(text), None))
     out = []
-    for _pos, label, argv, arms in sorted(found, key=lambda f: f[0]):
+    for _pos, label, argv, arms, stop in sorted(found, key=lambda f: f[0]):
         script = next((re.split(r"[\\/]", a)[-1] for a in argv if a.lower().endswith(".py")), "")
         if script:
-            out.append({"label": label, "script": script, "argv": argv, "arms": arms})
+            out.append({"label": label, "script": script, "argv": argv, "arms": arms, "stop": stop})
     return out
+
+
+def _stopped_since(x):
+    """The epoch its stop file was written when boot_all's entry `x` is stood down by it, else None."""
+    try:
+        return os.path.getmtime(x["stop"]) if x.get("stop") and os.path.exists(x["stop"]) else None
+    except OSError:
+        return None
 
 
 def _is_flag(t):
@@ -3116,6 +3192,14 @@ def features_html(boot_path=None, ladder_path=None):
         mine = [k for k, x in enumerate(launches) if x["script"] == script
                 and (must is None or must in x["argv"]) and (must_not is None or must_not not in x["argv"])]
         used.update(mine)
+        # 2026-10-23: a bot boot_all keeps off with its stop file says so, without its settings (it read LIVE)
+        off = [_stopped_since(launches[k]) for k in mine]
+        if mine and all(t is not None for t in off):
+            L.append("")
+            L.append("⏸ <b>%s</b>" % esc(label.replace("LIVE, ", "STOPPED, ").replace("(LIVE)", "(STOPPED)")))
+            L.append(esc(what))
+            L.append(i_("stopped by its stop file since %s; boot_all leaves it off" % et_str(min(off), "%b %d")))
+            continue
         L.append("")
         L.append("<b>%s</b>" % esc(label))
         L.append(esc(what))
@@ -3139,7 +3223,11 @@ def features_html(boot_path=None, ladder_path=None):
     for k, x in enumerate(launches):
         if k not in used:
             L.append("")
-            L.append("<b>%s</b>" % esc(x["label"] or x["script"]))
+            off = _stopped_since(x)
+            L.append("%s<b>%s</b>" % ("⏸ " if off is not None else "", esc(x["label"] or x["script"])))
+            if off is not None:
+                L.append(i_("stopped by its stop file since %s; boot_all leaves it off" % et_str(off, "%b %d")))
+                continue
             L.append(i_("started by boot_all; not written up here yet"))
             L.extend(argv_lines(x["argv"]))
     L.append("")
@@ -3190,6 +3278,8 @@ class Phone:
         self.chart_stale_s = None               # None = tgcharts.STALE_S
         self._chart_q = None
         self._bars_d = None                     # /bars' gathered numbers, for its picture
+        self._resend = []                       # sends the connection dropped (say -> resend_tick)
+        self._resend_lock = threading.Lock()
 
     # ---- helpers ----
     @property
@@ -3207,7 +3297,10 @@ class Phone:
         """Send, and LOG WHAT WAS SENT. 2026-09-23: the operator got a
         RECORDER SILENT alert and the log held no trace of it -- only
         failures were logged -- so there was no way to audit whether an
-        alert had fired, which is the whole point of having alerts."""
+        alert had fired, which is the whole point of having alerts.
+        2026-10-23: a send the CONNECTION dropped is kept and tried again
+        (resend_tick) -- that night the 'DOWN -> TRADING' alert was lost
+        and the operator believed the bots were still down."""
         cid = chat_id or self.chat_id
         flat = " | ".join((html_to_plain(text) if getattr(text, "is_html", False) else str(text)).splitlines())
         if cid is None:
@@ -3217,7 +3310,44 @@ class Phone:
             self.tg.send(cid, text)
             log("SENT: %s" % flat[:300])
         except Exception as e:                            # noqa: BLE001
-            log("send failed: %s -- text was: %s" % (e, flat[:200]))
+            again = net_error(e)
+            log("send failed: %s -- %stext was: %s" % (e, "will try again; " if again else "", flat[:200]))
+            if again:
+                with self._resend_lock:
+                    self._resend.append({"chat": cid, "text": text, "t": self.now(), "next": time.monotonic() + RESEND_GAP_S,
+                                         "flat": flat})
+                    del self._resend[:-RESEND_KEEP]
+
+    def resend_tick(self):
+        """Try the sends the connection dropped again, oldest first, each RESEND_GAP_S apart, for RESEND_FOR_S.
+        A late one says so first ('sent late, from 9:53 PM ET'), since its numbers are from then. Never raises."""
+        now_m = time.monotonic()
+        with self._resend_lock:
+            due = [x for x in self._resend if x["next"] <= now_m]
+        for x in due:
+            if self.now() - x["t"] > RESEND_FOR_S:
+                with self._resend_lock:
+                    if x in self._resend:
+                        self._resend.remove(x)
+                log("gave up resending (over %d min old): %s" % (RESEND_FOR_S // 60, x["flat"][:150]))
+                continue
+            late = "⏱ Sent late -- from %s ET; the connection dropped it then." % et_str(x["t"])
+            t = x["text"]
+            body = Html("<i>%s</i>\n%s" % (esc(late), t)) if getattr(t, "is_html", False) else "%s\n%s" % (late, t)
+            try:
+                self.tg.send(x["chat"], body)
+                log("SENT (late, from %s): %s" % (et_str(x["t"]), x["flat"][:250]))
+                with self._resend_lock:
+                    if x in self._resend:
+                        self._resend.remove(x)
+            except Exception as e:                        # noqa: BLE001
+                x["next"] = time.monotonic() + RESEND_GAP_S
+                if not net_error(e):
+                    with self._resend_lock:
+                        if x in self._resend:
+                            self._resend.remove(x)
+                log("resend failed: %s" % e)
+                break                                     # the connection is still down: the rest wait too
 
     def summary_line(self, rows, day=None, label=""):
         s = Ledger.summary(rows)
@@ -3368,6 +3498,10 @@ class Phone:
             parts = [(b, v) for b, v in w["by_bot"].items() if w["by_bot_markets"].get(b)]
             if parts:
                 L.append(esc(" · ".join("%s %s" % (b, usd(v)) for b, v in parts)))
+        if key == "today" and not w["partial"]:
+            pace = self._pace_line(w["money"], day)
+            if pace:
+                L.append(pace)
         if w["partial"] and w["markets"]:
             L.append("⚠️ PARTIAL: leaves out %s (Kalshi could not be read)" % esc(", ".join(w["missing"])))
         avg, n = all_bots_avg_before(a, day)
@@ -3379,8 +3513,31 @@ class Phone:
                         "the %d days before averaged %s a day" % (n, usd(avg)))
         if more:
             L.append(esc(" · ".join(more)))
-        L.append(i_("every pot, Kalshi's books; a market counts on the ET day it closed · each bot: /bots"))
+        L.append(i_("every pot, Kalshi's books; a market counts on the ET day it closed · each bot: /bots · the "
+                    "week: /days"))
         return L
+
+    def _pace_line(self, so_far, day):
+        """'📈 Ahead of pace: +$76.44 so far vs +$20.10 by 10:45 PM on an average day (last 7)' -- every bot,
+        today against the same ET clock on the days before (operator: judge 'on track' from midnight ET, and say
+        'behind' plainly). None when it cannot be worked out (it never costs the rest of /today)."""
+        try:
+            T = _tgc()
+            now = self.now()
+            b_, _p, rows, miss = T.all_day_markets({"now": now, "pp": sys.modules[__name__],
+                                                    "bs_getter": self.bs_getter, "bs_procs": self.bs_procs})
+            if miss:
+                return None
+            _sf, avg, n = T.by_now(rows, b_, day, now)
+            if avg is None:
+                return None
+            ahead = so_far >= avg
+            return "%s <b>%s</b>: %s so far vs %s by %s on an average day (last %d)" % (
+                "📈" if ahead else "📉", "Ahead of pace" if ahead else "Behind pace", esc(usd(so_far)), esc(usd(avg)),
+                esc(et_str(b_.day_start(day) + (max(0.0, now - b_.day_start(day)) // 900) * 900)), n)
+        except Exception:                                       # noqa: BLE001
+            log(traceback.format_exc())
+            return None
 
     def text_day(self, day, label):
         top = self._all_bots_day(day, label)
@@ -3525,11 +3682,15 @@ class Phone:
         try:
             h = self.health_fn()
             sl = h.get("supply_lines") or []
-            if sl:
+            age = h.get("supply_age_d")
+            if sl and age is not None and age > SUPPLY_STALE_D:
+                # 2026-10-23: the measurement stopped in September; a month-old trend is not shown as news
+                out.append("")
+                out.append(i_("The opportunity trend was last measured %.0f days ago, so it is left out." % age))
+            elif sl:
                 out.append("")
                 out.append("📉 <b>IS THE OPPORTUNITY GOING AWAY?</b>")
                 out += elines(sl)
-                age = h.get("supply_age_d")
                 if age is not None:
                     out.append(i_("(measured up to %.1f days ago)" % age))
         except Exception:                                   # noqa: BLE001
@@ -3912,6 +4073,7 @@ class Phone:
         n_stopped = n_arms = n_scored = 0
         starred, star_ties = [], []
         z3res, z3_span = None, None
+        last_ran = None
         for name in RACE_ARMS:
             p = os.path.join(res, "pinracearm-%s.jsonl" % name)
             if not os.path.exists(p):
@@ -3922,6 +4084,8 @@ class Phone:
             span = log_span(p) or {}
             if name == "z3":
                 z3res, z3_span = ar, span
+            if span.get("last") is not None:
+                last_ran = max(last_ran or span["last"], span["last"])
             running = None if fl["unknown"] else (name in fl["race_arms"])
             quiet = span.get("last") is not None and now - span["last"] > 6 * 3600
             ran = "%s to %s" % (et_str(span["first"], "%b %d") if span.get("first") else "?",
@@ -3966,9 +4130,14 @@ class Phone:
                     starred.append(name)
                     if rec["ties_as_wins"]:
                         star_ties.append(name)
+        # 2026-10-23 (operator: nothing out of date in front -- "the stopped September race arms"): when every arm
+        # is stopped, the page says so in one line and the whole arms section goes behind the tap
+        all_stopped = bool(n_arms) and n_stopped == n_arms
+        page = L
+        L = []
         L.append("")
         L.append("🧪 <b>PAPER ARMS</b> -- no real money%s" % (
-            (" · all %d STOPPED" % n_arms) if n_arms and n_stopped == n_arms else ""))
+            (" · all %d STOPPED" % n_arms) if all_stopped else ""))
         L += cards
         L.append("")
         L.append("On the <b>%d</b> races the live bot played since v-race30:" % len(since))
@@ -4016,8 +4185,18 @@ class Phone:
                          z["races"], z["losses"], "" if z["losses"] == 1 else "es", z["first50_losses"],
                          Z3_PASS[0], Z3_PASS[1], Z3_PASS_ALT[0], Z3_PASS_ALT[1], Z3_KILL[0], Z3_KILL[1],
                          ("<b>%s</b>" % esc(verdict)) if verdict else "", esc(stopped)))
+        arms, L = L, page
+        if all_stopped:
+            L.append("")
+            L.append("🧪 <b>Paper arms</b>: none running -- all %d stopped, the last on %s. Their record on the live "
+                     "bot's races is under the tap below." % (n_arms, esc(et_str(last_ran, "%b %d") if last_ran else "?")))
+            extra = [esc(x) for a in arms for x in html_to_plain(a).split("\n") if x.strip()]
+        else:
+            L += arms
+            extra = []
         L.append("")
-        L.append(details(det + run_det, "🔎 Legs, prices and break-even by window; each arm's whole run (tap)"))
+        L.append(details(det + run_det + extra, "🔎 Legs, prices and break-even by window; each arm's whole run"
+                         + (" and the stopped paper arms" if extra else "") + " (tap)"))
         return Html("\n".join(L))
 
     # ---- /funds /bank /accounts ----
@@ -4358,7 +4537,16 @@ class Phone:
         if len(data) > CHART_MAX_BYTES:
             log("chart for %s not sent: %d bytes is over %d" % (job["cmd"], len(data), CHART_MAX_BYTES))
             return
-        self.tg.send_photo(job["chat"], data, caption)
+        for k, wait in enumerate((0,) + PHOTO_TRIES):      # 2026-10-23: the connection dropped charts that night
+            if wait:
+                time.sleep(wait)
+            try:
+                self.tg.send_photo(job["chat"], data, caption)
+                break
+            except Exception as e:                          # noqa: BLE001
+                if k == len(PHOTO_TRIES) or not net_error(e):
+                    raise
+                log("chart for %s: send failed (%s) -- trying again in %d s" % (job["cmd"], e, PHOTO_TRIES[k]))
         log("SENT PHOTO for %s: %d KB, drawn in %.1f s -- %s" % (job["cmd"], len(data) // 1024,
                                                                  time.monotonic() - t0, (caption or "")[:120]))
 
@@ -4408,6 +4596,10 @@ class Phone:
             self.poll_once()
             try:
                 self.alerts_tick()
+            except Exception:                            # noqa: BLE001
+                log(traceback.format_exc())
+            try:
+                self.resend_tick()
             except Exception:                            # noqa: BLE001
                 log(traceback.format_exc())
 
@@ -5374,7 +5566,7 @@ def selftest():
         f_ = P(ph.handle(111, "/forecaster"))
         ck(P(ph.handle(111, "/fc")) == f_, "/fc is /forecaster")
         for _want, _why in (
-                ("FORECASTER -- clean-room forecaster", "the forecaster's own page"),
+                ("FORECASTER -- buys the 15-minute coin side its own forecast calls decided", "the forecaster's own page"),
                 ("Pot: subaccount 2.", "its own pot"),
                 ("Running: YES, pid 4196192, since Sep 16 8:34 AM ET.", "running"),
                 ("Its log last wrote Sep 16 10:59 AM ET (30 s ago).", "how fresh its log is"),
@@ -6265,6 +6457,56 @@ def selftest():
     _bsm._MEMO.update(_bs_saved[1])
     _bsm._BACK.clear()
     _bsm._BACK.update(_bs_saved[2])
+
+    # 2026-10-23: a send the CONNECTION drops is sent again, marked late; a refused one (HTTP 400) is not
+    class _FlakyTG(FakeTelegram):
+        def __init__(self):
+            FakeTelegram.__init__(self)
+            self.fail = []
+
+        def send(self, chat_id, text):
+            if self.fail:
+                raise self.fail.pop(0)
+            FakeTelegram.send(self, chat_id, text)
+    _ftg = _FlakyTG()
+    _rclk = {"t": 1792800000.0}
+    _rph = Phone({"chat_id": 5}, _ftg, ledger=Ledger(results=tempfile.mkdtemp()), now_fn=lambda: _rclk["t"])
+    _ftg.fail = [urllib.error.URLError("_ssl.c:1064: The handshake operation timed out")]
+    _rph.say(Html("🟢 <b>STATE CHANGED</b>: DOWN -> TRADING"))
+    _q1 = len(_rph._resend)
+    _rph.resend_tick()                                      # not due yet: nothing sent
+    _n_early = len(_ftg.sent)
+    for _x in _rph._resend:
+        _x["next"] = 0.0
+    _ftg.fail = [ConnectionResetError(10054, "forcibly closed")]
+    _rph.resend_tick()                                      # still down: kept for later
+    _kept = len(_rph._resend)
+    for _x in _rph._resend:
+        _x["next"] = 0.0
+    _rclk["t"] += 120
+    _rph.resend_tick()
+    _late = P(_ftg.sent[-1][1]) if _ftg.sent else ""
+    ck(_q1 == 1 and _n_early == 0 and _kept == 1 and not _rph._resend and len(_ftg.sent) == 1
+       and _late.startswith("⏱ Sent late -- from ") and "STATE CHANGED: DOWN -> TRADING" in _late,
+       "RESEND: an alert the connection dropped waits, is tried again while the connection is down, and goes "
+       "once it is back, marked late: %r" % _late[:80])
+    _ftg.fail = [urllib.error.HTTPError("u", 400, "Bad Request", None, None)]
+    _rph.say("plain words")
+    _rclk["t"] += 10 * RESEND_FOR_S
+    _ftg.fail = [urllib.error.URLError("timed out")]
+    _rph.say("old news")
+    for _x in _rph._resend:
+        _x["next"] = 0.0
+    _rclk["t"] += RESEND_FOR_S + 1
+    _rph.resend_tick()
+    ck(not _rph._resend and len(_ftg.sent) == 1 and net_error(ConnectionResetError()) and not net_error(
+        urllib.error.HTTPError("u", 400, "x", None, None)) and net_error(urllib.error.HTTPError("u", 502, "x", None, None)),
+       "RESEND: a message Telegram refused (400) is not repeated, and one older than %d min is given up"
+       % (RESEND_FOR_S // 60))
+    ck(halt_words("halt", "pintake halted: order pin-1 outcome UNKNOWN (status -1)").startswith("stopped itself")
+       and halt_words("stop_file", "") .startswith("its stop file") and halt_words("exit", "stop file") == "it exited (stop file)"
+       and halt_words("odd", "x" * 300) == ("odd " + "x" * 300)[:140],
+       "a logged stop reads in plain words; an unknown one keeps its own text, one line")
     print("pinphone selftest: OK")
 
 

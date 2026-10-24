@@ -46,6 +46,7 @@ VERSIONS = os.path.join(RESULTS, "VERSIONS.md")
 # effect is quoted as anything but "too early". Chosen to match the arm bars
 # already written into the PREREG files, not picked here.
 MIN_CLOSES_TO_JUDGE = 40
+SUPPLY_STALE_D = 3.0    # an opportunity trend older than this is left out (2026-10-23)
 
 
 def versions(path=None, text=None):
@@ -67,11 +68,38 @@ def versions(path=None, text=None):
             continue
         m = re.match(r"#\s+(v-\S+)\s+--\s+(\d{4}-\d{2}-\d{2})[^-]*--\s*(.+)$",
                      line)
+        if m:
+            out.append({"name": m.group(1), "day": m.group(2),
+                        "headline": m.group(3).strip()})
+            continue
+        # 2026-10-23: the headings written since mid-October read
+        # `# v-a + v-b -- LIVE <date> <time>Z -- <what>` or
+        # `# v-a -- INSTALLED <date> ...` (not live yet). A LIVE one is a change
+        # with its live date; one that only says INSTALLED / PREPARED / KILLED
+        # first did not go live then and is left out, not counted as unread.
+        m = re.match(r"#\s+(v-\S+(?:\s*\+\s*v-\S+)*)\s+--\s+(.*)$", line)
         if not m:
             bad += 1
             continue
-        out.append({"name": m.group(1), "day": m.group(2),
-                    "headline": m.group(3).strip()})
+        rest = m.group(2).strip()
+        lv = re.match(r"LIVE\s+(\d{4}-\d{2}-\d{2})\S*?(?:[T\s]+~?(\d{2}):(\d[\dx])(?::\d{2})?Z?)?\s*(?:--\s*)?(.*)$",
+                      rest)
+        if lv:
+            what = re.split(r"(?<=[a-z0-9)])\. ", lv.group(4), maxsplit=1)[0]
+            day = lv.group(1)
+            if lv.group(2):                       # a UTC time: the change belongs to its EASTERN day
+                try:
+                    import calendar
+                    import pindesk
+                    day = pindesk.et_day(calendar.timegm(time.strptime("%sT%s:%s" % (
+                        day, lv.group(2), lv.group(3).lower().replace("x", "0")), "%Y-%m-%dT%H:%M")))
+                except (ImportError, ValueError):
+                    pass
+            out.append({"name": re.sub(r"\s*\+\s*", " + ", m.group(1)), "day": day,
+                        "headline": (what[:137] + "...") if len(what) > 140 else what})
+            continue
+        if not re.match(r"[A-Z]", rest):
+            bad += 1
     return out, bad
 
 
@@ -135,7 +163,9 @@ def brief(day=None, ledger=None, results=None, now=None):
         bym = {e.get("match"): e for e in pinlab.EXPERIMENTS}
         for match, info in prog.items():
             e = bym.get(match) or {}
-            if e.get("status") != pinlab.RUNNING or not info.get("settled"):
+            # 2026-10-23: an arm whose log stopped is not 'doing' anything now (the briefing listed September's
+            # amendments, long stopped, as running changes)
+            if e.get("status") != pinlab.RUNNING or not info.get("settled") or not info.get("running"):
                 continue
             row = {"name": e.get("name"), "settled": info["settled"],
                    "won": info.get("won"), "lost": info.get("lost"),
@@ -174,7 +204,11 @@ def brief(day=None, ledger=None, results=None, now=None):
     if h:
         halt = h.get("halt")
         if halt and halt.get("why"):
-            out["watch"].append("A safety brake fired: %s" % halt["why"][:120])
+            if "outcome UNKNOWN" in str(halt["why"]):          # 2026-10-23: in words, not the raw log line
+                out["watch"].append("The pin bot stopped itself once: Kalshi did not confirm an order when "
+                                    "the connection dropped, so it would not guess; the watchdog restarts it.")
+            else:
+                out["watch"].append("A safety brake fired: %s" % halt["why"][:120])
         if (h.get("disk_gb") or 99) < 6:
             out["watch"].append(
                 "Disk is down to %.1f GB. Below 5 the recording stops for good "
@@ -184,7 +218,11 @@ def brief(day=None, ledger=None, results=None, now=None):
         if not h.get("feeds_ok"):
             out["watch"].append("The exchange feeds are NOT writing.")
         a = h.get("supply_age_d")
-        if a is not None and a > 2:
+        if a is not None and a > SUPPLY_STALE_D:
+            # 2026-10-23: a month-old measurement is not 'how the market was'
+            out["market"] = ["The opportunity trend was last measured %.0f days ago, "
+                             "so it is left out." % a]
+        elif a is not None and a > 2:
             out["watch"].append(
                 "The opportunity trend is %.1f days old, so it describes a week "
                 "that has already ended." % a)
@@ -264,11 +302,9 @@ def render(b, say=print):
     else:
         w("    Nothing flagged. The brakes did not fire, the recorders are "
           "writing and there is room on the disk.")
-    if b["ideas"]:
-        w("")
-        w("  ON THE DRAWING BOARD, not started")
-        for i in b["ideas"]:
-            w("    %s" % i["name"])
+    # 2026-10-23: 'ON THE DRAWING BOARD' (pinlab's IDEA list) is no longer
+    # printed -- a static September list (Polymarket, since found dead) read
+    # as current plans. b["ideas"] still carries it.
     if b.get("versions_unparsed"):
         w("")
         w("  (%d headings in VERSIONS.md could not be read and were skipped, "
@@ -363,10 +399,21 @@ some prose
     row = {"settled": 3, "net": 1.0}
     ck(MIN_CLOSES_TO_JUDGE > 3,
        "a handful of quarter-hours is not enough to call a change good or bad")
-    ck(any("too early" in (a.get("verdict") or "") for a in b["arms"])
-       or not b["arms"],
+    # 2026-10-23: b["arms"] comes from the real running arms, so this checks the
+    # rule on whichever are running (it used to need a too-early one to exist)
+    ck(all(("too early" in (a.get("verdict") or "")) == (a["settled"] < MIN_CLOSES_TO_JUDGE)
+           for a in b["arms"]),
        "an arm with too few quarter-hours is reported as TOO EARLY, which is a "
        "real answer -- omitting it would read as 'no effect'")
+    v2, bad2 = versions(text="""# v-hedgejump6 + v-etclock -- LIVE 2026-10-24 01:45:37Z -- the pin bot on the new build. More words.
+# v-tg-x -- INSTALLED 2026-10-23 ~16:2xZ (files), LIVE at the next restart.
+# v-y -- boot_all EDITED 2026-10-23 and so on
+""")
+    ck(len(v2) == 1 and v2[0]["name"] == "v-hedgejump6 + v-etclock" and v2[0]["day"] == "2026-10-23"
+       and v2[0]["headline"] == "the pin bot on the new build" and bad2 == 1,
+       "the newer 'v-a + v-b -- LIVE <date> <time>Z -- what' headings parse (01:45Z on 10-24 is the EASTERN day "
+       "10-23; headline = the first sentence); "
+       "INSTALLED is not a change yet; a heading of neither shape is counted")
     print("pinbrief selftest: OK")
 
 

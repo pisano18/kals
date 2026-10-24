@@ -142,11 +142,11 @@ SPEC = {
              # 2026-10-18: was None ("nothing restarts the live one"), stale since the 09-30 scale-up put the
              # live race in boot_all.ps1's keep-alive list (section 3e, 'coin race (LIVE, main account)').
              "keepalive": "boot_all.ps1 (every 10 min) restarts it unless the stop file is there"},
-    "forecaster": {"label": "Forecaster", "what": "clean-room forecaster, 1/20 of paper size", "sub": "2",
+    "forecaster": {"label": "Forecaster", "what": "buys the 15-minute coin side its own forecast calls decided, sized from its bank", "sub": "2",
                    "script": "forecaster_live.py", "stop": "forecaster-live.stop",
                    "log": "forecaster-live-orders.jsonl",
                    "keepalive": "boot_all.ps1 (every 10 min) restarts it unless the stop file is there"},
-    "ladder": {"label": "Ladder", "what": "resting 98c and 95c bids on NEAR ZEC DOGE HYPE XRP, sized so every bid fits its bank (goal 1%/day)", "sub": "1",
+    "ladder": {"label": "Ladder", "what": "resting 98c bids on the decided side of NEAR ZEC DOGE HYPE XRP (one rung since 10-23), sized so every bid fits its bank (goal 1%/day)", "sub": "1",
                "script": "ladder_live.py", "stop": "ladder-live.stop", "log": "ladder-live-orders.jsonl",
                "keepalive": "boot_all.ps1 (every 10 min) restarts it unless the stop file is there"},
     "weather": {"label": "Weather dip-seller",
@@ -554,7 +554,25 @@ def refresh(c, now, getter):
         if got is not None:
             led.update(got)
             led["fetched"] = now
+        _remember_good(c, now)
     return did
+
+
+GOOD_MAX_S = 3 * 3600           # a failed read falls back to the last pass where EVERY pot read, if no older than this
+
+
+def _remember_good(c, now):
+    """2026-10-23: after a pass where every pot read, keep each pot's value at that one moment (c['good']). When a
+    later read fails (the 10-23 21:4x connection trouble blanked every '% of its bank' and the pace chart),
+    pot_context uses these instead of showing nothing, and says from when."""
+    pots = {}
+    for sub in SUBS:
+        v, _why = _pot_now(c, sub)
+        if v is None:
+            return False
+        pots[sub] = round(v, 4)
+    c["good"] = {"t": now, "pots": pots}
+    return True
 
 
 # ---- the process table -------------------------------------------------------
@@ -920,6 +938,8 @@ _VER = re.compile(r"^#\s+(v-[\w.-]+(?:\s*\+\s*v-[\w.-]+)*)\s+--\s+(.*)$")
 # the weather dip-seller's VERSIONS.md entries (v-dipsell-live ...); pinphone._NOT_PIN_RE carries the same words
 WX_VER = r"dipsell|dip.?sell"
 _VER_T = re.compile(r"(\d{4}-\d{2}-\d{2})(?:\s+~?(\d{2}):(\d[\dx])(?::(\d{2}))?Z?)?", re.I)
+# VERSIONS.md entries that change the phone, the PC or the recorders -- never a trading bot's version (2026-10-23)
+INFRA_VER = r"v-(tg|phone|telegram|wifi|recorder|collector)\b"
 
 
 def version_of(name):
@@ -938,6 +958,10 @@ def version_of(name):
         # '-- PREPARED <date>') is not the running version. The phone's /stats parser (pinphone._VER_RE) never took
         # one; this one did, so /pin named v-nopause live while v-ladderboost ran (and pinphone's DRIFT check failed).
         if re.match(r"(INSTALLED|PREPARED)\b", rest.strip()):
+            continue
+        # 2026-10-23: a heading for something that was STOPPED for good is no bot's running version (the coin race
+        # showed 'v-racev2-live-test', the killed reward test); nor is a phone / PC / recorder change (INFRA_VER)
+        if re.match(r"(KILLED|STOPPED|REVERTED|DEAD)\b", rest.strip()) or re.match(INFRA_VER, vname):
             continue
         low = (vname + " " + rest).lower()
         # 2026-10-01: a heading that ships several bots at once ("v-race40 + v-forecaster-scale + v-ladder-size
@@ -1364,13 +1388,24 @@ def pot_context(c, today):
     """What every pot percentage in one report needs, worked out once: per pot its value now (or why
     not) and its settled money by ET close day -- EVERY market in the pot, whichever bot's -- plus the
     account's books."""
-    ctx = {"today": today, "led": c.get("ledgers") or {}, "subs": {}}
+    ctx = {"today": today, "led": c.get("ledgers") or {}, "subs": {}, "as_of": None, "stale_why": None}
+    cur = {sub: _pot_now(c, sub) for sub in SUBS}
+    # A failed read: every pot from the last pass where ALL of them read (one moment, so the pots still add up),
+    # with only the markets settled by then -- each window's start is worked back from that moment.
+    g = c.get("good") or {}
+    last = max([float(((c.get("subs") or {}).get(s) or {}).get("tried") or 0.0) for s in SUBS])
+    if any(v is None for v, _w in cur.values()) and isinstance(g.get("pots"), dict) \
+            and all(s in g["pots"] for s in SUBS) and g.get("t") and 0.0 <= last - float(g["t"]) <= GOOD_MAX_S:
+        ctx["as_of"] = float(g["t"])
+        ctx["stale_why"] = next(("%s: %s" % (SUB_NAME[s], cur[s][1]) for s in SUBS if cur[s][0] is None), None)
     for sub in SUBS:
         x = (c.get("subs") or {}).get(sub) or {}
-        now_v, why = _pot_now(c, sub)
+        now_v, why = (float(g["pots"][sub]), None) if ctx["as_of"] is not None else cur[sub]
         days = {}
         for s in (x.get("rows") or {}).values():
             m = market(s)
+            if ctx["as_of"] is not None and m["t"] is not None and m["t"] > ctx["as_of"]:
+                continue
             days[m["day"]] = days.get(m["day"], 0.0) + m["money"]
         ctx["subs"][sub] = {"now": now_v, "why": why, "days": days, "complete": bool(x.get("complete"))}
     return ctx
@@ -1402,7 +1437,10 @@ def pot_for(ctx, sub, key):
         now_v += p["now"]
         settled += sum(v for d, v in p["days"].items() if d and d >= first)
     t0 = day_start(first)
-    start = now_v - settled - flows(led, sub, t0)
+    cut = ctx.get("as_of")
+    if cut is not None and t0 > cut:
+        return None, kind, "Kalshi has not answered a full read since before this window began (%s)" % ctx.get("stale_why")
+    start = now_v - settled - flows(led, sub, t0, cut)
     if start < -MIN_POT:
         return None, kind, "it works back to %s at the start, so a read was out of step" % usd(start)
     pot = max(0.0, start) + max(0.0, flows(led, sub, t0, day_start(end) if end else None))
@@ -1422,6 +1460,7 @@ def attach_pots(block, ctx, sub):
         w["pot_kind"], w["pot_why"] = kind, why
         w["pot_of"] = "all pots" if sub is None else SUB_NAME[sub]
         w["pot_pct"] = round(100.0 * w["money"] / pot, 2) if (pot is not None and w["markets"]) else None
+        w["pot_as_of"] = ctx.get("as_of") if pot is not None and kind == "start" else None
     # 2026-10-22: each of the 7 days as a % of what the pot held THAT day (+ money moved in that day), so an
     # average day is not divided by a later deposit (the ladder's $550 on 10-22 made its week read 0.14%/day)
     for d in block.get("days_7") or []:
@@ -1444,7 +1483,10 @@ def day_pot(ctx, sub, day):
         now_v += p["now"]
         settled += sum(v for d, v in p["days"].items() if d and d >= day)
     t0, t1 = day_start(day), day_start(shift_day(day, 1))
-    start = now_v - settled - flows(led, sub, t0)
+    cut = ctx.get("as_of")
+    if cut is not None and t0 > cut:
+        return None
+    start = now_v - settled - flows(led, sub, t0, cut)
     if start < -MIN_POT:
         return None
     pot = max(0.0, start) + max(0.0, flows(led, sub, t0, t1))
@@ -1460,7 +1502,8 @@ def pot_check(ctx):
     for sub in SUBS + (None,):
         subs = SUBS if sub is None else (sub,)
         k = "all" if sub is None else sub
-        if any(ctx["subs"][s]["now"] is None for s in subs) or led.get("err") or not led.get("fetched"):
+        if any(ctx["subs"][s]["now"] is None for s in subs) or led.get("err") or not led.get("fetched") \
+                or ctx.get("as_of") is not None:            # an older moment's pots are no check of today's books
             out[k] = None
             continue
         now_v = sum(ctx["subs"][s]["now"] for s in subs)
@@ -1615,7 +1658,8 @@ def all_bots(now=None, getter=None, procs=None):
     errors = [("%s: %s" % (b, e)) for b in BOTS for e in bots[b]["errors"]]
     return {"as_of_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)), "as_of_et": et_clock(now),
             "today_et": today, "bots": bots, "other": other, "total": total, "total_days_7": days_7,
-            "balances": bal, "note": note, "errors": sorted(set(errors)), "pot_check": pot_check(ctx)}
+            "balances": bal, "note": note, "errors": sorted(set(errors)), "pot_check": pot_check(ctx),
+            "pots_as_of": ctx.get("as_of")}
 
 
 # ---- words for a phone screen -------------------------------------------------
@@ -1674,6 +1718,14 @@ def _pot_note(m):
                         SPEC[b]["label"].lower() for b in shared) if shared else ""))
     why = next((w.get("pot_why") for w in ws if w.get("pot_why")), None)
     return ("%% of its bank: not shown -- %s." % why) if why else None
+
+
+def pot_as_of_note(windows):
+    """'% from the balances Kalshi gave at 9:43 PM ET -- its latest read failed.' when any of these windows'
+    percentages rest on the last good read (pot_context's fallback), else None."""
+    t = next((w.get("pot_as_of") for w in windows if w and w.get("pot_as_of")), None)
+    return ("%% from the balances Kalshi gave at %s -- its latest read failed (connection), so they are that "
+            "old." % et_clock(t)) if t else None
 
 
 def _bot_text(b):
@@ -2238,9 +2290,26 @@ def selftest():
         ck(len(cj["ledgers"]["transfers"]) == 4 and len(cj["ledgers"]["deposits"]) == 3,
            "and the account's books, the transfer history walked across both its pages")
 
-        # 2b. NULL -- the pot unknown means NO percentage, never a guess
+        # 2b. FALLBACK (2026-10-23) -- a failed read uses the pots of the last pass where every pot read, and says so
         fail["ledgers"] = True
-        n1 = all_bots(now=NOW + 300, getter=fake, procs=PROCS)
+        f1 = all_bots(now=NOW + 300, getter=fake, procs=PROCS)
+        g1 = load_cache().get("good") or {}
+        fw = [f1["bots"][b]["money"][k] for b in ("pin", "forecaster", "ladder") for k in ("today", "yesterday", "last_7_days")] \
+            + [f1["total"][k] for k in ("today", "yesterday", "last_7_days")]
+        aw = [a4["bots"][b]["money"][k] for b in ("pin", "forecaster", "ladder") for k in ("today", "yesterday", "last_7_days")] \
+            + [a4["total"][k] for k in ("today", "yesterday", "last_7_days")]
+        ck(g1.get("t") == NOW + 200 and f1["pots_as_of"] == NOW + 200
+           and all(w["pot_pct"] is not None and w["pot_as_of"] == NOW + 200 for w in fw)
+           and [w["pot"] for w in fw] == [w["pot"] for w in aw] and [w["pot_pct"] for w in fw] == [w["pot_pct"] for w in aw]
+           and all(v is None for v in f1["pot_check"].values())
+           and "latest read failed" in (pot_as_of_note(fw) or ""),
+           "FALLBACK: the books unreadable -> every %% from the last pass where every pot read (the same bases as "
+           "that pass, to the cent), the page says from when, and no pot check is made on an older moment")
+        # 2c. NULL -- no good pass to fall back on: the pot unknown means NO percentage, never a guess
+        cg = load_cache()
+        cg.pop("good", None)
+        save_cache(cg)
+        n1 = all_bots(now=NOW + 301, getter=fake, procs=PROCS)
         ws = [n1["bots"][b]["money"][k] for b in BOTS for k in WINDOW_KEYS] + [n1["total"][k] for k in WINDOW_KEYS]
         _nt = _bot_text(n1["bots"]["pin"])
         ck(all(w["pot_pct"] is None and w["pot"] is None for w in ws)
@@ -2267,6 +2336,15 @@ def selftest():
         ck(ctx2["subs"]["0"]["now"] is None and "open-bets" in ctx2["subs"]["0"]["why"]
            and ctx2["subs"]["1"]["now"] is not None,
            "NULL: figures from two different reads are never mixed -- a stale open-bets read voids that pot")
+        _tr = float(cj2["subs"]["0"]["tried"])
+        cj2["good"] = {"t": _tr - 30, "pots": {"0": 1000.0, "1": 16.0, "2": 20.0, "3": 0.0}}
+        ctx3 = pot_context(cj2, et_day(NOW + 400))
+        cj2["good"]["t"] = _tr - GOOD_MAX_S - 1
+        ctx4 = pot_context(cj2, et_day(NOW + 400))
+        ck(ctx3["as_of"] == _tr - 30 and [ctx3["subs"][s]["now"] for s in SUBS] == [1000.0, 16.0, 20.0, 0.0]
+           and "open-bets" in ctx3["stale_why"] and ctx4["as_of"] is None and ctx4["subs"]["0"]["now"] is None,
+           "FALLBACK: one pot unreadable -> EVERY pot from the last good pass (one moment, so they add up); a good "
+           "pass older than %d h is not used" % (GOOD_MAX_S // 3600))
 
         # 3. a first walk cut short is RESUMED, and flagged partial until it is
         os.remove(cache_path())

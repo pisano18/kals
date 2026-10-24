@@ -365,6 +365,28 @@ def all_day_markets(ctx):
     return bs, pctx_, rows, missing
 
 
+def by_now(rows, bs, day, now, n=AVG_DAYS):
+    """(money so far on `day`, the average of the n days before it at the same ET clock -- rounded down to the
+    quarter-hour, as /today's orange line is drawn -- and how many days were averaged) from all_day_markets' rows.
+    The average is None when there is no earlier day. Days before the first market are left out."""
+    d0 = bs.day_start(day)
+    g = (max(0.0, now - d0) // 900) * 900
+    so_far = sum(v for dd, _t, v, _b in rows if dd == day)
+    first = min((r[0] for r in rows), default=None)
+    ds, d = [], day
+    for _ in range(n):
+        d = bs.shift_day(d, -1)
+        if first is not None and d >= first:
+            ds.append(d)
+    if not ds:
+        return so_far, None, 0
+    tot = 0.0
+    for d in ds:
+        t0 = bs.day_start(d)
+        tot += sum(v for dd, t, v, _b in rows if dd == d and min(max(t, t0), t0 + 86400) - t0 <= g)
+    return so_far, tot / len(ds), len(ds)
+
+
 def chart_day(ctx, which):
     """/today /yesterday: EVERY bot's money that ET day (operator 10-23: "/today doesn't show the right total it
     says 11.22 right now it's really 24.85" -- the old picture was the main account only). Falls back to the main
@@ -714,7 +736,7 @@ def chart_funds(ctx):
         ax.set_ylim(bottom=min(0.0, lo))
         money_axis(ax, signed=False)
         ax.set_title("%s · %s: %s%s" % (ACCOUNT_NAME.get(sub, sub), " + ".join(bs.SPEC[b]["label"].lower() for b in live),
-                                        usd(nowv, False), " now" if v is not None else " (from the books; %s)" % str(why)[:44]),
+                                        usd(nowv, False), " now" if v is not None else " (from the books)"),
                      color=INK, fontsize=11)
     date_axis(axs[-1])
     headline(fig, "Every running account: %s%s" % ("" if whole else "about ", usd(total, False)))
@@ -755,25 +777,22 @@ PACE_DAYS = 7
 
 def day_base(bs, pctx_, sub, day):
     """What pot `sub` held at midnight ET starting `day`, + money moved in during that day -- botstats.pot_for's
-    rule for one day (so a mid-day top-up only ever makes that day's % smaller). None when it cannot be known."""
-    p = (pctx_.get("subs") or {}).get(sub) or {}
-    if p.get("now") is None or not p.get("complete", True):
+    rule for one day (so a mid-day top-up only ever makes that day's % smaller). None when it cannot be known.
+    It IS botstats.day_pot, which also falls back to the last good read when the latest one failed."""
+    if (pctx_.get("subs") or {}).get(sub) is None:
         return None
-    t0, t1 = bs.day_start(day), bs.day_start(bs.shift_day(day, 1))
-    settled = sum(v for d, v in (p.get("days") or {}).items() if d and d >= day)
-    start = p["now"] - settled - bs.flows(pctx_["led"], sub, t0)
-    if start < -bs.MIN_POT:
-        return None
-    pot = max(0.0, start) + max(0.0, bs.flows(pctx_["led"], sub, t0, t1))
-    return pot if pot >= bs.MIN_POT else None
+    return bs.day_pot(pctx_, sub, day)
 
 
 def pace_curves(bs, pctx_, sub, ms, today, now):
     """{'today': [(hour, cum %)], 'yesterday': [...], 'avg7': [...] (the mean of the PACE_DAYS days before today,
-    on a 15-minute grid; days before the bot's first market are left out), 'n7': days averaged}. A day whose base
-    is unknown is left out."""
+    on a 15-minute grid; days before the bot's first market are left out), 'n7': days averaged, 'unit': '%'}. A day
+    whose base is unknown is left out. When TODAY's base is unknown (no good balance read at all), every curve is
+    in dollars instead ('unit': '$') -- the panel is never left blank (operator 10-23: 'the top most one was blank')."""
+    dollars = day_base(bs, pctx_, sub, today) is None
+
     def curve(day):
-        base = day_base(bs, pctx_, sub, day)
+        base = 100.0 if dollars else day_base(bs, pctx_, sub, day)       # 100 * cum / 100 = the dollars themselves
         if base is None:
             return None
         t0 = bs.day_start(day)
@@ -792,7 +811,8 @@ def pace_curves(bs, pctx_, sub, ms, today, now):
             v = y
         return v
     first = min((m["t"] for m in ms), default=None)
-    out = {"today": curve(today), "yesterday": curve(bs.shift_day(today, -1)), "avg7": None, "n7": 0}
+    out = {"today": curve(today), "yesterday": curve(bs.shift_day(today, -1)), "avg7": None, "n7": 0,
+           "unit": "$" if dollars else "%"}
     if out["today"] is not None:
         out["today"].append((min(24.0, (now - bs.day_start(today)) / 3600.0), out["today"][-1][1]))
     if out["yesterday"] is not None:
@@ -808,19 +828,25 @@ def pace_curves(bs, pctx_, sub, ms, today, now):
 
 
 def draw_pace(ax, pc, now_h, goal=None):
-    """Today (blue, to now) over yesterday (grey) and the 7-day average day (orange dashes), as % of the bank."""
+    """Today (blue, to now) over yesterday (grey) and the 7-day average day (orange dashes), as % of the bank --
+    or in dollars when the bank could not be read (pc['unit'] == '$')."""
     T = mpl()["ticker"]
+    dollars = pc.get("unit") == "$"
+
+    def f(v):
+        return usd(v) if dollars else pctx(v / 100.0, 2)
     if pc["avg7"]:
         ax.plot([h for h, _ in pc["avg7"]], [v for _, v in pc["avg7"]], color=ORANGE, lw=1.8, ls="--", zorder=2,
-                label="average of the last %d days (%s by now)" % (pc["n7"], pctx(_at_h(pc["avg7"], now_h) / 100.0, 2)))
+                label="average of the last %d days (%s by now)" % (pc["n7"], f(_at_h(pc["avg7"], now_h))))
     if pc["yesterday"]:
         ax.step([h for h, _ in pc["yesterday"]], [v for _, v in pc["yesterday"]], where="post", color=GREY, lw=1.6,
-                zorder=2, label="yesterday %s (%s by now)" % (pctx(pc["yesterday"][-1][1] / 100.0, 2),
-                                                             pctx(_at_h(pc["yesterday"], now_h) / 100.0, 2)))
+                zorder=2, label="yesterday %s (%s by now)" % (f(pc["yesterday"][-1][1]), f(_at_h(pc["yesterday"], now_h))))
     if pc["today"]:
         ax.step([h for h, _ in pc["today"]], [v for _, v in pc["today"]], where="post", color=BLUE, lw=2.4, zorder=3,
-                label="today %s" % pctx(pc["today"][-1][1] / 100.0, 2))
-        note(ax, pc["today"][-1][0], pc["today"][-1][1], pctx(pc["today"][-1][1] / 100.0, 2), dx=-4, ha="right")
+                label="today %s" % f(pc["today"][-1][1]))
+        note(ax, pc["today"][-1][0], pc["today"][-1][1], f(pc["today"][-1][1]), dx=-4, ha="right")
+    if dollars:
+        goal = None                                       # the goal is a % of the bank: nothing to draw it against
     if goal is not None:
         ax.plot([0, 24], [0, goal], color=MUTED, lw=1.0, ls=":", zorder=1, label="goal %s a day, spread evenly" % pctx(goal / 100.0, 1, False))
     ax.axvline(now_h, color=AXIS, lw=1.0, ls=":", zorder=1)
@@ -828,8 +854,12 @@ def draw_pace(ax, pc, now_h, goal=None):
     ax.set_xlim(0, 24)
     ax.xaxis.set_major_locator(T.FixedLocator(list(range(0, 25, 3))))
     ax.xaxis.set_major_formatter(T.FuncFormatter(lambda v, _p: "%d %s" % ((int(v) % 12) or 12, "AM" if int(v) % 24 < 12 else "PM")))
-    ax.yaxis.set_major_formatter(T.FuncFormatter(lambda v, _p: "%+.2f%%" % v if abs(v) >= 0.005 else "0%"))
-    ax.set_title("Today's pace, % of its bank, by ET clock (dotted line = now)")
+    if dollars:
+        money_axis(ax)
+        ax.set_title("Today's pace in dollars, by ET clock (its bank could not be read for the %)")
+    else:
+        ax.yaxis.set_major_formatter(T.FuncFormatter(lambda v, _p: "%+.2f%%" % v if abs(v) >= 0.005 else "0%"))
+        ax.set_title("Today's pace, % of its bank, by ET clock (dotted line = now)")
     legend(ax)
 
 
