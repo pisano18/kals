@@ -26,7 +26,7 @@ COMMANDS
   /losses     losing closes        /hedges    insurance and whether it was needed
   /stats      the whole record by window: money, win rate vs break-even, losses, timing
   /bots       every bot and its pot (subaccount): running, money by window, cash, the all-bots total
-  /pin  /forecaster (/fc)  /ladder  /weather (/wx)   one bot in full: running or not and why, version,
+  /pin  /forecaster (/fc)  /ladder  /weather (/wx)  /fx   one bot in full: running or not and why, version,
               settings, money today / yesterday / 7 days / month / all time, worst and best,
               open bets, cash, last markets, what its log did today (research/botstats.py)
   /race       the live coin race now (real money, main account; since v-race-snowball its bets grow
@@ -115,7 +115,7 @@ FUNDS_WHAT = {
 }
 FUNDS_POOL_NAME = {0: "weather pool", 2: "crypto pool"}     # Kalshi's exchange_index; others say "pool N"
 # whose bet size /funds shows under each account (read from that bot's own log, see funds_sizes)
-FUNDS_SIZE_BOTS = {0: ("pin", "race"), 1: ("ladder",), 2: ("forecaster",), 5: ("fx",)}
+FUNDS_SIZE_BOTS = {0: ("pin", "race"), 1: ("ladder",), 2: ("forecaster",), 4: ("fx",), 5: ("fx",)}
 
 
 def _tgc():
@@ -653,6 +653,7 @@ HELP_TEXT = Html("""📱 <b>Commands</b>
 /forecaster (or /fc) — the forecaster (subaccount 2), the same detail as /pin
 /ladder — the penny ladder (subaccount 1), the same detail as /pin
 /weather (or /wx) — the weather dip-seller (subaccount 3, weather cash pool), the same detail as /pin
+/fx — the FX taker: the 5 currency pairs (subaccount 4) and the 8 commodities (subaccount 5), the same detail as /pin
 
 🔎 <b>Right now</b>
 /status — is it trading, with the evidence
@@ -1680,9 +1681,9 @@ def disk_alert(level, disk_gb):
 # HIS QUESTION, answered on /bots every time: the main page (/today /days
 # /stats and the desktop) reads kalshi_ledger.json, the MAIN account only --
 # pin + coin race. The forecaster (subaccount 2), the ladder (subaccount
-# 1) and the weather dip-seller (subaccount 3, 2026-10-04; its cash sits in
-# Kalshi's weather pool, exchange_index 0) are separate pots and are added
-# up only in /bots.
+# 1), the weather dip-seller (subaccount 3, 2026-10-04; its cash sits in
+# Kalshi's weather pool, exchange_index 0) and the FX taker (subaccounts 5 +
+# 4, 2026-10-25) are separate pots and are added up only in /bots.
 # ===========================================================================
 BOT_CMDS = {"/pin": "pin", "/forecaster": "forecaster", "/fc": "forecaster", "/ladder": "ladder",
             "/weather": "weather", "/wx": "weather", "/fx": "fx"}
@@ -1696,6 +1697,15 @@ def _bs():
     """botstats, imported late: a broken edit there costs these commands, never the phone."""
     import botstats
     return botstats
+
+
+def _pot_words(b):
+    """A botstats bot's pot in words: 'subaccount 1', or 'subaccount 5 + subaccount 4' for the FX taker's two."""
+    bs = _bs()
+    subs = tuple(str(x) for x in (b.get("subaccounts") or [b["subaccount"]]))
+    if not all(x in bs.SUB_NAME for x in subs):
+        return "subaccount %s" % b["subaccount"]
+    return bs.sub_name(subs if len(subs) > 1 else subs[0])
 
 
 def _nof(k, word):
@@ -1860,7 +1870,10 @@ def bs_open_lines(o, unit="bet"):
 def bs_cash_line(bal):
     if not bal["ok"]:
         return "Cash: COULD NOT READ (%s)." % (bal.get("error") or "?")
-    return "Cash: %s -- %s." % (_cash(bal["dollars"]), bal["note"])
+    each = ""
+    if bal.get("by_sub"):
+        each = " (%s)" % ", ".join("%s %s" % (_bs().SUB_NAME.get(str(k), k), _cash(v)) for k, v in bal["by_sub"].items())
+    return "Cash: %s%s -- %s." % (_cash(bal["dollars"]), each, bal["note"])
 
 
 def bs_last_lines(last, fmt=None):
@@ -1908,7 +1921,7 @@ def bs_bot_text(b, now_et):
     """One bot, everything botstats knows, for /pin /forecaster /ladder."""
     unit = "leg" if b["name"] == "race" else "market"
     L = ["%s -- %s. %s" % (b["label"].upper(), b["what"], now_et)]
-    pot = _bs().SUB_NAME.get(str(b["subaccount"]), "subaccount %s" % b["subaccount"])
+    pot = _pot_words(b)
     if b["shares_subaccount_with"]:
         pot += ", shared with the " + " and ".join(_bs().SPEC[x]["label"].lower() for x in b["shares_subaccount_with"])
     L.append("Pot: %s." % pot)
@@ -1974,18 +1987,18 @@ def bs_all_text(a):
     elif not miss:
         L.append("Nothing settled yet in any pot.")
     bal = a["balances"]
-    L.append("Cash: main account %s (pin + race share it), forecaster %s, ladder %s, weather %s -- all pots %s."
-             % (_cash(bal["main"]), _cash(bal["forecaster"]), _cash(bal["ladder"]), _cash(bal.get("weather")),
-                _cash(bal["all"])))
+    L.append("Cash: main account %s (pin + race share it), forecaster %s, ladder %s, weather %s, FX taker %s -- "
+             "all pots %s." % (_cash(bal["main"]), _cash(bal["forecaster"]), _cash(bal["ladder"]),
+                               _cash(bal.get("weather")), _cash(bal.get("fx")), _cash(bal["all"])))
     L.append("The main page (/today /days /stats, the desktop) counts pin + race only. The forecaster, "
-             "the ladder and the weather dip-seller are separate pots, added up only here.")
+             "the ladder, the weather dip-seller and the FX taker are separate pots, added up only here.")
     # 2026-10-01: the operator saw about -$119 in Kalshi's app while every bot was up. Kalshi's apps do not
     # support subaccounts (API-only, docs.kalshi.com/getting_started/subaccounts), so the cash moved from the
     # main account into the two bot pots shows there as money gone.
-    if all(bal.get(k) is not None for k in ("forecaster", "ladder", "weather")):
-        L.append("Kalshi's own app shows the MAIN account only. The %s sitting in the forecaster, ladder and "
-                 "weather pots was moved out of it, so Kalshi's screens read that much lower than all pots -- "
-                 "not a loss." % _cash(bal["forecaster"] + bal["ladder"] + bal["weather"]))
+    if all(bal.get(k) is not None for k in ("forecaster", "ladder", "weather", "fx")):
+        L.append("Kalshi's own app shows the MAIN account only. The %s sitting in the forecaster, ladder, "
+                 "weather and FX pots was moved out of it, so Kalshi's screens read that much lower than all pots -- "
+                 "not a loss." % _cash(bal["forecaster"] + bal["ladder"] + bal["weather"] + bal["fx"]))
     L.append("")
     for name in bs.BOTS:
         b = a["bots"][name]
@@ -2006,7 +2019,7 @@ def bs_all_text(a):
         op = ("open: ?" if not o["ok"] else "open: none" if not o["count"] else
               "open: %d (%s at risk)" % (o["count"], _cash(o["at_risk"])))
         L.append("%s (%s): %s. %s. %s; %s. %s" % (
-            b["label"].upper(), bs.SUB_NAME.get(str(b["subaccount"]), "?"), run,
+            b["label"].upper(), _pot_words(b), run,
             r["version"] or "no version entry", mon, op, BOT_CMD_OF[name]))
     ot = a["other"]
     if ot.get("ok") and ot.get("all_time") and ot["all_time"]["markets"]:
@@ -2178,7 +2191,7 @@ def bs_bot_html(b, now_et):
     bs = _bs()
     unit = "leg" if b["name"] == "race" else "market"
     r, m = b["running"], b["money"]
-    pot = bs.SUB_NAME.get(str(b["subaccount"]), "subaccount %s" % b["subaccount"])
+    pot = _pot_words(b)
     if b["shares_subaccount_with"]:
         pot += ", shared with the " + " and ".join(bs.SPEC[x]["label"].lower() for x in b["shares_subaccount_with"])
     L = [bs_headline(m["today"] if m["ok"] else None, who=b["label"],
@@ -2307,7 +2320,7 @@ def bs_all_html(a):
         op = ("open: ?" if not o["ok"] else "open: none" if not o["count"] else
               "open: %d (%s at risk)" % (o["count"], esc(_cash(o["at_risk"]))))
         L.append("%s <b>%s</b> · %s · %s" % (run_dot(r), esc(bt["label"].upper()),
-                                            esc(bs.SUB_NAME.get(str(bt["subaccount"]), "?")), BOT_CMD_OF[name]))
+                                            esc(_pot_words(bt)), BOT_CMD_OF[name]))
         L.append("%s · %s" % (esc(run), esc(r["version"] or "no version entry")))
         L.append("%s · %s" % (mon, op))
     ot = a["other"]
@@ -2320,10 +2333,11 @@ def bs_all_html(a):
     bal = a["balances"]
     L.append("")
     wx = bal.get("weather")
-    L.append("💵 <b>Cash:</b> main account %s (pin + race share it), forecaster %s, ladder %s%s -- all pots "
-             "<b>%s</b>." % (esc(_cash(bal["main"])), esc(_cash(bal["forecaster"])), esc(_cash(bal["ladder"])),
-                             "" if (wx is not None and abs(wx) < 0.005 and _bot_parked(a["bots"].get("weather")))
-                             else ", weather %s" % esc(_cash(wx)), esc(_cash(bal["all"]))))
+    L.append("💵 <b>Cash:</b> main account %s (pin + race share it), forecaster %s, ladder %s%s, FX taker %s -- "
+             "all pots <b>%s</b>." % (esc(_cash(bal["main"])), esc(_cash(bal["forecaster"])), esc(_cash(bal["ladder"])),
+                                      "" if (wx is not None and abs(wx) < 0.005 and _bot_parked(a["bots"].get("weather")))
+                                      else ", weather %s" % esc(_cash(wx)), esc(_cash(bal.get("fx"))),
+                                      esc(_cash(bal["all"]))))
     firsts = [mm.get("first_day") for mm in [a["bots"][x]["money"] for x in bs.BOTS] + [a["other"]]
               if mm.get("first_day")]
     days = [d for d in a["total_days_7"] if not (firsts and d["day"] < min(firsts))]
@@ -2352,13 +2366,13 @@ def bs_all_html(a):
     keep, skip = [], True
     for x in full[1:]:
         if x.startswith(("PIN BOT", "COIN RACE", "FORECASTER", "PENNY LADDER", "LADDER", "WEATHER DIP-SELLER",
-                         "NOT ANY BOT'S", "! ", "PARTIAL:", "% of the pots", "Cash: ")):
+                         "FX TAKER", "NOT ANY BOT'S", "! ", "PARTIAL:", "% of the pots", "Cash: ")):
             continue
         keep.append(x)
     while keep and not keep[-1].strip():
         keep.pop()
     L.append(details(elines(keep), "🔎 Details: each window by bot, each day by bot, what the % mean"))
-    L.append("<i>One bot in full: /pin /race /fc /ladder /weather · every account's cash: /funds</i>")
+    L.append("<i>One bot in full: /pin /race /fc /ladder /weather /fx · every account's cash: /funds</i>")
     return L
 
 
@@ -2580,20 +2594,27 @@ def funds_sizes(results=RESULTS):
             round(100.0 * sc, 2), (", up to %s contracts a side" % rails["per_side"]) if rails.get("per_side") else "",
             when(r), (" on a %s pot" % _usd2(pot)) if pot else "")
 
-    def fx():
+    def fx(n=None):
         r = bs.last_record(os.path.join(results, "fxtake-live-orders.jsonl"), ("start",))
         size = _fnum((r or {}).get("size"))
         if size is None:
             return None
-        return "FX taker %g contracts a market (set at its start %s%s)" % (
-            size, when(r), (" on a %s pot" % _usd2(r["sub_balance"])) if _fnum(r.get("sub_balance")) is not None else "")
+        # since v-fx-twopots its start names a pot per cash pool ({"0": 4, "2": 5}) and each pool's cash: account n's
+        # own pot is the pool it holds; an older start had one pot (sub_balance)
+        pot, what = r.get("sub_balance"), ""
+        for pool, sb in (r.get("subs") or {}).items():
+            if n is not None and _fnum(sb) == n:
+                pot = (r.get("pool_cash") or {}).get(pool)
+                what = " (%s)" % ("the currency pairs" if str(pool) == "0" else "the commodities")
+        return "FX taker%s %g contracts a market (set at its start %s%s)" % (
+            what, size, when(r), (" on a %s pot" % _usd2(pot)) if _fnum(pot) is not None else "")
 
     readers = {"pin": pin, "race": race, "ladder": ladder, "forecaster": forecaster, "fx": fx}
     out = {}
     for n, bots in FUNDS_SIZE_BOTS.items():
         for b in bots:
             try:
-                w = readers[b]()
+                w = readers[b](n) if b == "fx" else readers[b]()     # the FX taker: one start, a pot per account
             except Exception as e:                              # noqa: BLE001
                 w = "%s: its log could not be read (%s)" % (b, str(e)[:60])
             if w:
@@ -3062,6 +3083,9 @@ FEATURES = (
      "last cents when they fill."),
     ("dipsell_live.py", None, None, "Weather dip-seller (LIVE, subaccount 3)",
      "Sells daily high-temperature markets (KXHIGH) into dips, in Kalshi's weather cash pool."),
+    ("fxtake_live.py", "--live", None, "FX taker (LIVE, subaccounts 5 + 4)",
+     "In the last 30 to 15 seconds of each 15-minute currency and commodity market, buys the side already bid 98c "
+     "or more at 99c or less, 10 contracts: the 5 currency pairs from subaccount 4, the 8 commodities from subaccount 5."),
     ("pinracearm.py", None, "--live", "Coin race paper arms",
      "Watch the same coin races on paper with other entry rules; no orders."),
     ("pinrun.py", None, "--live", "Pin bot paper arms",
@@ -4050,7 +4074,7 @@ class Phone:
                     "main account's numbers." % (cmd, str(e)[:200]))
         more = {"pin": "More on pin: /stats (win rate vs break-even), /fills (today's orders), /open, /losses, /hedges.",
                 "forecaster": "Every bot: /bots.", "ladder": "Every bot: /bots.",
-                "weather": "Every bot: /bots."}.get(name)
+                "weather": "Every bot: /bots.", "fx": "Every bot: /bots · both FX pots' cash: /funds."}.get(name)
         return Html("\n".join(out) + ("\n\n" + i_(more) if more else ""))
 
     def text_racestats(self):
@@ -5548,10 +5572,11 @@ def selftest():
            and "  Sep 15: -$3.42, 3 markets (pin +$0.54, forecaster +$0.55, other -$4.51)" in b_
            and "Sep 14" not in b_,
            "by day, with each bot's part; no line for the days before anything settled")
-        ck("Cash: main account $1,000.00 (pin + race share it), forecaster $24.00, ladder $15.10, weather $0.00 -- all pots "
-           "$1,039.10." in b_ and "counts pin + race only" in b_,
+        ck("Cash: main account $1,000.00 (pin + race share it), forecaster $24.00, ladder $15.10, weather $0.00, FX taker "
+           "$0.00 -- all pots $1,039.10." in b_ and "counts pin + race only" in b_
+           and "the weather dip-seller and the FX taker are separate pots" in b_,
            "the cash of every pot, and HIS QUESTION answered: the main page counts pin + race only")
-        ck("Kalshi's own app shows the MAIN account only. The $39.10 sitting in the forecaster, ladder and weather pots" in b_,
+        ck("Kalshi's own app shows the MAIN account only. The $39.10 sitting in the forecaster, ladder, weather and FX pots" in b_,
            "/bots says why Kalshi's app reads lower than all pots: the bot pots' cash (24.00 + 15.10) is outside it")
         ck("🟢 PIN BOT · main account · /pin\nrunning since Sep 16 7:59 AM ET · v-reopen98 + v-floor90\ntoday -$10.40 "
            "(-10.4% on bets · -0.96% of bank) · 7 days -$9.86 (-7.6% on bets · -0.93% of bank) · all time -$9.86 "
@@ -5699,9 +5724,9 @@ def selftest():
         wb_ = P(ph.handle(111, "/bots"))
         ck("WEATHER DIP-SELLER · subaccount 3 · /weather\nrunning since Sep 15 3:56 AM ET · v-dipsell-live" in wb_
            and "/weather" in wb_ and "| weather none" in wb_ and "weather +$0.80 (+1.6%)" in wb_
-           and "ladder $15.10, weather $49.70 -- all pots $1,088.80." in wb_
-           and "The $88.80 sitting in the forecaster, ladder and weather pots" in wb_
-           and "the ladder and the weather dip-seller are separate pots" in wb_,
+           and "ladder $15.10, weather $49.70, FX taker $0.00 -- all pots $1,088.80." in wb_
+           and "The $88.80 sitting in the forecaster, ladder, weather and FX pots" in wb_
+           and "the ladder, the weather dip-seller and the FX taker are separate pots" in wb_,
            "/bots: the weather bot's line, its share of yesterday, its cash in the all-pots cash (1000 + 24 + "
            "15.10 + 49.70, each pot once -- the empty pool-0 rows of subaccounts 1 and 2 add $0), and that "
            "Kalshi's app does not show it")
@@ -5768,8 +5793,21 @@ def selftest():
         finally:
             _bsm.bot, _bsm.all_bots = _sv_b, _sv_a
             globals()["LOG"] = _sv_log
-        ck(all(c in HELP_TEXT for c in ("/bots", "/pin", "/forecaster", "/fc", "/ladder", "/weather", "/wx")),
-           "/bots /pin /forecaster /fc /ladder /weather /wx are in /help")
+        ck(all(c in HELP_TEXT for c in ("/bots", "/pin", "/forecaster", "/fc", "/ladder", "/weather", "/wx", "/fx")),
+           "/bots /pin /forecaster /fc /ladder /weather /wx /fx are in /help")
+        # the FX taker everywhere a bot is named (operator 10-26: "there's nothing for fx in the commands list ... Make
+        # sure it's fully implemented"): its two pots by name, each pot's cash, /bots' pointer, /features' roster
+        _fxb = {"subaccount": 5, "subaccounts": [5, 4]}
+        _fxc = bs_cash_line({"ok": True, "dollars": 184.27, "by_sub": {"5": 123.30, "4": 60.97},
+                             "note": "its own pots (subaccount 5 + subaccount 4)"})
+        ck(_pot_words(_fxb) == "subaccount 5 + subaccount 4" and _pot_words({"subaccount": 1, "subaccounts": [1]}) == "subaccount 1"
+           and _fxc == "Cash: $184.27 (subaccount 5 $123.30, subaccount 4 $60.97) -- its own pots (subaccount 5 + subaccount 4)."
+           and "/fx" in BOT_CMDS and BOT_CMD_OF["fx"] == "/fx"
+           and "One bot in full: /pin /race /fc /ladder /weather /fx" in "\n".join(bs_all_html(ph._bs_get("all")))
+           and any(r[0] == "fxtake_live.py" and "subaccounts 5 + 4" in r[3] for r in FEATURES)
+           and FUNDS_SIZE_BOTS.get(4) == ("fx",) and FUNDS_SIZE_BOTS.get(5) == ("fx",),
+           "the FX taker: both pots named (5 + 4), each pot's cash on its card, /fx on /bots' pointer line, a /features "
+           "row, a bet size under both accounts in /funds: %r" % _fxc)
         # ---- /features (2026-10-22): the settings come from boot_all.ps1's text, the rails from ladder_live.py's
         _ps = ('$repo = "C:\\kals-repo"\n$res = "$repo\\results"\n'
                '$live = @("-u", "$repo\\research\\pinrun.py", "--size", "20", "--minutes", "4320",\n'
@@ -6577,7 +6615,8 @@ def main():
         for name, fn in (("/stats", ph.text_stats), ("/race", ph.text_race), ("/racestats", ph.text_racestats),
                          ("/bots", ph.text_bots), ("/pin", lambda: ph.text_bot("pin")),
                          ("/forecaster", lambda: ph.text_bot("forecaster")), ("/ladder", lambda: ph.text_bot("ladder")),
-                         ("/weather", lambda: ph.text_bot("weather")), ("/funds", ph.text_funds)):
+                         ("/weather", lambda: ph.text_bot("weather")), ("/fx", lambda: ph.text_bot("fx")),
+                         ("/funds", ph.text_funds)):
             t0 = time.time()
             out = fn()
             parts = split_html(out) if getattr(out, "is_html", False) else split_text(out)

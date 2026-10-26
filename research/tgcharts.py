@@ -67,12 +67,21 @@ CMD_KIND = {"/status": "status", "/s": "status", "/today": "today", "/yesterday"
             "/days": "days", "/brief": "days", "/summary": "days", "/stats": "stats",
             "/bots": "funds", "/funds": "funds", "/bank": "funds", "/accounts": "funds",
             "/pin": "bot:pin", "/forecaster": "bot:forecaster", "/fc": "bot:forecaster",
-            "/ladder": "bot:ladder", "/weather": "bot:weather", "/wx": "bot:weather",
+            "/ladder": "bot:ladder", "/weather": "bot:weather", "/wx": "bot:weather", "/fx": "bot:fx",
             "/race": "bot:race", "/racestats": "bot:race",
             "/losses": "losses", "/hedges": "hedges", "/fills": "fills", "/bets": "fills",
             "/market": "market", "/bars": "bars"}
 LEDGER_KINDS = frozenset(["status", "today", "yesterday", "days", "stats", "losses", "hedges", "fills", "market"])
-ACCOUNT_NAME = {"0": "Main account", "1": "Subaccount 1", "2": "Subaccount 2", "3": "Subaccount 3"}
+ACCOUNT_NAME = {"0": "Main account", "1": "Subaccount 1", "2": "Subaccount 2", "3": "Subaccount 3", "4": "Subaccount 4",
+                "5": "Subaccount 5"}
+POT_WHAT = {"4": "currencies", "5": "commodities"}       # a bot with two pots names each one's part (the FX taker)
+
+
+def account_name(key):
+    """'Main account' / 'Subaccount 1' for one pot, 'Subaccounts 5 + 4' for a bot's pots (a tuple)."""
+    if len(key) == 1:
+        return ACCOUNT_NAME.get(key[0], "Subaccount %s" % key[0])
+    return "Subaccounts " + " + ".join(key)
 
 
 def kind_of(cmd):
@@ -667,11 +676,14 @@ def chart_days(ctx, src):
 
 
 def _account_series(bs, c, sub, now):
-    """[(epoch, dollars)] for pot `sub`: money moved in (botstats.flows) + every settlement (botstats.market),
-    hour by hour, worked forward from Kalshi's books; plus the pot now (botstats._pot_now) or why not."""
-    x = (c.get("subs") or {}).get(sub) or {}
+    """[(epoch, dollars)] for pot `sub`, or a tuple of pots added up (the FX taker's 5 + 4): money moved in
+    (botstats.flows) + every settlement (botstats.market), hour by hour, worked forward from Kalshi's books; plus the
+    pot now (botstats._pot_now) or why not, and each pot's part now (None for one pot). A pool-only pot
+    (botstats.POT_POOL_ONLY: subaccount 4 = its pool 0) counts its own pool's money, cash and markets only."""
+    subs = sub if isinstance(sub, tuple) else (sub,)
     led = c.get("ledgers") or {}
-    sett = sorted((m["t"], m["money"]) for m in (bs.market(s) for s in (x.get("rows") or {}).values())
+    sett = sorted((m["t"], m["money"]) for s in subs
+                  for m in (bs.market(r) for r in bs.pot_rows((c.get("subs") or {}).get(s) or {}, s))
                   if m["t"] is not None)
     times = [t for t, _m in sett]
     cum, run = [], 0.0
@@ -679,40 +691,46 @@ def _account_series(bs, c, sub, now):
         run += v
         cum.append(run)
     flow_t = []
-    if sub == "0":
+    if "0" in subs:
         for k in ("deposits", "withdrawals"):
             for r in led.get(k) or []:
                 if bs.pinxfer.is_done(r) and bs.pinxfer.when(r) is not None:
                     flow_t.append(bs.pinxfer.when(r))
     for r in led.get("transfers") or []:
         t = bs._int(r.get("created_ts"))
-        if t is not None and sub in (str(r.get("to_subaccount")), str(r.get("from_subaccount"))):
+        if t is not None and any(s in (str(r.get("to_subaccount")), str(r.get("from_subaccount"))) and bs.xfer_in_pot(r, s)
+                                 for s in subs):
             flow_t.append(t)
     first = min(times[:1] + flow_t) if (times or flow_t) else None
     if first is None:
-        return [], None, "nothing on Kalshi's books yet"
+        return [], None, "nothing on Kalshi's books yet", None
     grid = list(range(max(int(first) - 1800, int(now - WINDOW_DAYS * 86400)), int(now), 3600)) + [now]
     pts = []
     for g in grid:
         k = bisect.bisect_right(times, g)
         pts.append((g, bs.flows(led, sub, None, g + 1e-6) + (cum[k - 1] if k else 0.0)))
-    v, why = bs._pot_now(c, sub)
-    return pts, v, why
+    nows = [bs._pot_now(c, s, own=True) for s in subs]
+    why = next((w for v, w in nows if v is None), None)
+    v = None if why is not None else sum(v for v, _w in nows)
+    return pts, v, why, ([v_ for v_, _w in nows] if len(subs) > 1 else None)
 
 
 def chart_funds(ctx):
     bs, c, prows, ok = bs_load(ctx)
     now = ctx["now"]
     drawn, stopped = [], []
-    for sub in bs.SUBS:
-        bots = [b for b in bs.BOTS if bs.SPEC[b]["sub"] == sub]
+    groups = {}
+    for b in bs.BOTS:
+        groups.setdefault(bs.bot_subs(b), []).append(b)
+    for key in sorted(groups, key=lambda k: bs.SUBS.index(k[0]) if k[0] in bs.SUBS else len(bs.SUBS)):
+        bots = groups[key]
         live = [b for b in bots if not bot_stopped(bs, b, prows, ok)]
         if not live:
-            stopped.append("%s (%s)" % (ACCOUNT_NAME.get(sub, sub).lower(), ", ".join(bs.SPEC[b]["label"].lower() for b in bots)))
+            stopped.append("%s (%s)" % (account_name(key).lower(), ", ".join(bs.SPEC[b]["label"].lower() for b in bots)))
             continue
-        pts, v, why = _account_series(bs, c, sub, now)
+        pts, v, why, each = _account_series(bs, c, key if len(key) > 1 else key[0], now)
         if pts:
-            drawn.append((sub, live, pts, v, why))
+            drawn.append((key, live, pts, v, why, each))
     for k, w in sorted((ctx.get("funds_what") or {}).items()):
         if str(k) not in bs.SUBS:
             ws = " ".join(w.values()) if isinstance(w, dict) else str(w)
@@ -722,7 +740,7 @@ def chart_funds(ctx):
         return None
     fig, axs = fig_new(len(drawn), 2.7 * len(drawn) + 1.0, sharex=True)
     total, whole = 0.0, True
-    for ax, (sub, live, pts, v, why) in zip(axs, drawn):
+    for ax, (key, live, pts, v, why, each) in zip(axs, drawn):
         X = [etdt(t) for t, _y in pts]
         Y = [y for _t, y in pts]
         ax.plot(X, Y, color=BLUE, lw=2.0, zorder=3)
@@ -735,7 +753,12 @@ def chart_funds(ctx):
         lo = min(Y + [nowv])
         ax.set_ylim(bottom=min(0.0, lo))
         money_axis(ax, signed=False)
-        ax.set_title("%s · %s: %s%s" % (ACCOUNT_NAME.get(sub, sub), " + ".join(bs.SPEC[b]["label"].lower() for b in live),
+        if each:                                        # each pot's part, inside the panel (the title has no room)
+            ax.text(0.01, 0.95, " + ".join("%s (%s) %s" % (POT_WHAT.get(k, "subaccount " + k), k, usd(x, False))
+                                           for k, x in zip(key, each)),
+                    transform=ax.transAxes, va="top", ha="left", fontsize=9.5, color=INK2, zorder=6,
+                    bbox=dict(facecolor=SURF, edgecolor=GRID, boxstyle="round,pad=0.3"))
+        ax.set_title("%s · %s: %s%s" % (account_name(key), " + ".join(bs.SPEC[b]["label"].lower() for b in live),
                                         usd(nowv, False), " now" if v is not None else " (from the books)"),
                      color=INK, fontsize=11)
     date_axis(axs[-1])
@@ -779,7 +802,7 @@ def day_base(bs, pctx_, sub, day):
     """What pot `sub` held at midnight ET starting `day`, + money moved in during that day -- botstats.pot_for's
     rule for one day (so a mid-day top-up only ever makes that day's % smaller). None when it cannot be known.
     It IS botstats.day_pot, which also falls back to the last good read when the latest one failed."""
-    if (pctx_.get("subs") or {}).get(sub) is None:
+    if any((pctx_.get("subs") or {}).get(s) is None for s in (sub if isinstance(sub, tuple) else (sub,))):
         return None
     return bs.day_pot(pctx_, sub, day)
 
@@ -883,7 +906,8 @@ def chart_bot(ctx, name):
     if not blk.get("ok") or not blk.get("markets"):
         return None
     ms = sorted((m for m in blk["markets"] if m["t"] is not None), key=lambda m: m["t"])
-    sub = bs.SPEC[name]["sub"]
+    subs = bs.bot_subs(name)                            # the FX taker: 5 + 4, one picture
+    sub = subs if len(subs) > 1 else subs[0]
     label = bs.SPEC[name]["label"]
     fig, axs3 = fig_new(3, 11.0, ratios=[1.15, 1.25, 1])
     try:
@@ -913,8 +937,9 @@ def chart_bot(ctx, name):
     money_axis(ax)
     note(ax, X[-1], run[-1], usd(run[-1]), dx=-4, ha="right")
     base, _k, _why = bs.pot_for(pctx_, sub, "all_time")
-    pct_of_axis(ax, base, ("%% of the %s's %s put in" % (bs.SUB_NAME[sub], usd(base, False))) if base else "")
-    ax.set_title("Running total, market by market (Kalshi's books, %s)" % bs.SUB_NAME[sub])
+    pct_of_axis(ax, base, (("%% of the %s's %s put in" % (bs.SUB_NAME[sub], usd(base, False))) if len(subs) == 1 else
+                           ("%% of the %s put into %s" % (usd(base, False), bs.sub_name(sub)))) if base else "")
+    ax.set_title("Running total, market by market (Kalshi's books, %s)" % bs.sub_name(sub))
     ax = axs[1]
     # a rolling rate is drawn only where its window is full (n markets / races behind it)
     if name == "race":
@@ -953,7 +978,7 @@ def chart_bot(ctx, name):
         usd(td.get("money") or 0.0)))
     cap = ("%s: every settled %s from Kalshi's books (botstats, %s), its running total and its win rate over "
            "time (the last %d days drawn; the total counts all). Right axis: the same dollars as %% of the money put into that account." % (
-               label, "leg" if name == "race" else "market", bs.SUB_NAME[sub], WINDOW_DAYS))
+               label, "leg" if name == "race" else "market", bs.sub_name(sub), WINDOW_DAYS))
     return png(fig), cap
 
 
@@ -1370,11 +1395,15 @@ def selftest():
             BS.RESULTS = td
             open(os.path.join(td, BS.SPEC["weather"]["stop"]), "w").close()          # weather: stopped
             subs = {}
-            for sub, n in (("0", 300), ("1", 40), ("2", 60), ("3", 20)):
+            for sub, n in (("0", 300), ("1", 40), ("2", 60), ("3", 20), ("4", 12), ("5", 30)):
                 r = {}
                 for k in range(n):
                     t = now - k * 4000
                     tk = ("KXBTC15M-26OCT%02d%02d%02d-%02d" % (18, k % 24, 0, k % 60)) if sub == "0" else "KXX-%s-%d" % (sub, k)
+                    if sub == "4":                       # the currency pairs; its first row is the old reward test's
+                        tk = "KXUSDJPY15M-26OCT18%04d-30" % k if k else "KXBTC15M-26OCT180000-00"
+                    if sub == "5":
+                        tk = "KXGOLD15M-26OCT18%04d-45" % k
                     if sub == "0" and k % 3 == 0:
                         tk = "KXCRYPTOLEAD15M-26OCT18%04d-%s" % (k, ("BTC", "ETH")[k % 2])
                     win = k % 19 != 4
@@ -1389,16 +1418,33 @@ def selftest():
                                                          "created_ts": int(now - 20 * 86400), "finalized_ts": int(now - 20 * 86400)}],
                                            "withdrawals": [],
                                            "transfers": [{"amount_cents": 10000, "from_subaccount": 0, "to_subaccount": s,
-                                                          "created_ts": int(now - 15 * 86400)} for s in (1, 2, 3)],
+                                                          "exchange_index": BS.SUB_POOL[str(s)],
+                                                          "created_ts": int(now - 15 * 86400)} for s in (1, 2, 3, 4, 5)]
+                                           + [{"amount_cents": 5500, "from_subaccount": 0, "to_subaccount": 4, "exchange_index": 2,
+                                               "created_ts": int(now - 18 * 86400)}],
                                            "subaccount_balances": [{"subaccount_number": int(s), "exchange_index": BS.SUB_POOL[s],
                                                                     "balance": 100.0} for s in BS.SUBS]}}
             procs = [(1, "x", "python research/pinrun.py --live"), (2, "x", "python research/pinracearm.py --live"),
                      (3, "x", "python research/forecaster_live.py --live"), (4, "x", "python research/ladder_live.py --live")]
             BS._load = lambda now_, getter, procs_: (c, BS._norm_procs(procs), True)
-            ctx3 = {"now": now, "pp": PP, "funds_what": {4: "coin-race reward test (stopped)"}}
+            ctx3 = {"now": now, "pp": PP, "funds_what": {4: {0: "FX taker: the 5 currency pairs", 2: "coin-race reward test (stopped)"}}}
             got = build("funds", ctx3)
-            ck(is_png(got) and "subaccount 3 (weather dip-seller)" in got[1] and "subaccount 4 (coin-race reward test)" in got[1],
-               "/funds: a PNG of the running accounts; the stopped weather account and subaccount 4 are named, not drawn")
+            ck(is_png(got) and "subaccount 3 (weather dip-seller)" in got[1] and "subaccounts 5 + 4 (fx taker)" in got[1]
+               and "4 ()" not in got[1],
+               "/funds: a PNG of the running accounts; the stopped weather account and the stopped FX taker's two pots are "
+               "named, not drawn: %s" % (got[1] if got else None))
+            ck(build("bot:fx", ctx3) is None, "/fx: not in the process table -> no picture")
+            procs.append((5, "x", "python research/cleanroom/fxtake_live.py --subaccount 5 --fx-subaccount 4 --live"))
+            got = build("funds", ctx3)
+            _pts, _v, _why, _each = _account_series(BS, c, ("5", "4"), now)
+            _won = sum(BS.market(r_)["money"] for s_ in ("4", "5") for r_ in c["subs"][s_]["rows"].values()
+                       if not r_["ticker"].startswith("KXBTC"))
+            ck(is_png(got) and "fx taker" not in got[1] and _why is None and _each == [100.0, 100.0] and _v == 200.0
+               and abs(_pts[-1][1] - (200.0 + _won)) < 1e-6,
+               "/funds with the FX taker running: ONE panel for its two pots, $200 now = $100 + $100; its line = the $200 "
+               "moved into 5 and 4's pool 0 + its own markets (the $55 moved into 4's pool 2 and the reward-test leg "
+               "left out): %r" % (((_pts[-1][1] if _pts else None), _v, _each, _why),))
+            ck(kind_of("/fx") == "bot:fx" and is_png(build("bot:fx", ctx3)), "/fx: a PNG of the FX taker over both pots")
             for b in ("pin", "race", "forecaster", "ladder"):
                 got = build("bot:" + b, ctx3)
                 ck(is_png(got), "/%s: a PNG (%d KB)" % (b, len(got[0]) // 1024 if got else 0))

@@ -14,6 +14,8 @@ Five bots trade real money from one Kalshi key, in four separate pots:
     ladder      1                  everything subaccount 1 settled
     weather     3 (cash POOL 0)    everything subaccount 3 settled -- the weather dip-seller (sweep/dipsell_live.py,
                                    2026-10-04), daily-high temperature brackets
+    fx          5 (pool 2) + 4     the FX taker (research/cleanroom/fxtake_live.py, 2026-10-25): the 8 commodity
+                (pool 0)           15-minute series from 5, the 5 currency pairs from 4 (POT_POOL_ONLY)
 
 **CASH POOLS (2026-10-04).** Kalshi keeps each pot's cash in separate pools (`exchange_index`): crypto
 and commodities in pool 2, where pots 0-2 trade; weather in pool 0, where pot 3 trades. A
@@ -111,6 +113,10 @@ SUB_POOL = {"0": POOL, "1": POOL, "2": POOL, "3": 0, "4": 0, "5": POOL}   # 5: t
 # 4: the FX taker's currency pairs (pool 0, created 2026-10-25 ~21:0xZ). The NUMBER 4 also names the old coin-race reward
 # test's pot in pool 2 (stopped 10-23, ~1c left), never counted here: in subaccount 4 only an FX pair is the FX taker's.
 FX_PAIRS = frozenset(["KXEURUSD15M", "KXGBPUSD15M", "KXUSDJPY15M", "KXAUDUSD15M", "KXUSDCAD15M"])
+# 2026-10-26: for a BOT's pot (its % of bank, its chart, the per-pot check) subaccount 4 is its POOL 0 only -- the money
+# moved in pool 0, its pool-0 cash, the FX pairs it settled. The pool-2 side (the old reward test: $100 in, $70.11 back,
+# lost in its races) made the FX taker's "put in" read $209.89 instead of $180. All pots together keep the whole number 4.
+POT_POOL_ONLY = {"4": 0}
 # the only things this file ever asks Kalshi for -- every one a GET, through `getter`
 POT_PATHS = ("/portfolio/settlements", "/portfolio/positions", "/portfolio/balance")    # each names its pot
 # account-wide LISTINGS (2026-10-02, for the pot): (path, the list's key, paged?)
@@ -158,10 +164,10 @@ SPEC = {
                 "log": "dipsell-live-orders.jsonl",
                 "keepalive": "boot_all.ps1 (every 10 min) restarts it unless the stop file is there"},
     # 2026-10-25: the FX / commodity 15-minute TAKER, a live penny test (research/cleanroom/fxtake_live.py, ledger LS10)
-    "fx": {"label": "FX taker", "what": "buys the side already bid 98c+ at 99c or less in the last 30 s of the 13 FX and commodity 15-minute markets, 10 contracts a market",
+    "fx": {"label": "FX taker", "what": "buys the side already bid 98c+ at 99c or less in the last 30 s of the 15-minute markets: the 5 currency pairs (subaccount 4) and the 8 commodities (subaccount 5), 10 contracts a market",
            "sub": "5", "also": ("4",),            # 5 = commodities (pool 2), 4 = the 5 currency pairs (pool 0), since 10-25
            "script": "fxtake_live.py", "stop": "fxtake-live.stop", "log": "fxtake-live-orders.jsonl",
-           "keepalive": "nothing restarts it (started by hand; not in boot_all)"},
+           "keepalive": "boot_all.ps1 (every 10 min) restarts it unless the stop file is there"},     # since 10-26 (add_fx_keepalive.ps1)
 }
 SUB_NAME = {"0": "main account", "1": "subaccount 1", "2": "subaccount 2", "3": "subaccount 3", "4": "subaccount 4",
             "5": "subaccount 5"}
@@ -600,6 +606,10 @@ def _remember_good(c, now):
         if v is None:
             return False
         pots[sub] = round(v, 4)
+    for sub in POT_POOL_ONLY:
+        v, _why = _pot_now(c, sub, own=True)
+        if v is not None:
+            pots[sub + ":own"] = round(v, 4)
     c["good"] = {"t": now, "pots": pots}
     return True
 
@@ -962,8 +972,10 @@ def activity(name, since):
                     g = str(r.get("why") or k)
                     why[g] = why.get(g, 0) + 1
             if k in HALT_KINDS[name] or k in ("stop_file", "exit"):
-                out["halts"].append({"t_et": et_clock(_t_of(r)), "what": k,
-                                     "why": str(r.get("why") or r.get("day_pnl") or r.get("run_pnl") or "")[:120]})
+                w = r.get("why") or r.get("day_pnl") or r.get("run_pnl") or ""
+                if k == "exit" and r.get("stopped") is True and not r.get("why"):
+                    w = "stop file, its run %s" % usd(_num(r.get("run_pnl")) or 0.0)
+                out["halts"].append({"t_et": et_clock(_t_of(r)), "what": k, "why": str(w)[:120]})
     out["refused_why"] = dict(sorted(why.items(), key=lambda kv: -kv[1]))
     out["contracts_filled"] = round(out["contracts_filled"], 2)
     if name == "ladder":
@@ -1042,6 +1054,8 @@ def version_of(name):
         lad = "ladder_live" in low or "penny ladder" in low
         wx = bool(re.search(WX_VER, low))
         fx = "fxtake" in low or vname.startswith("v-fx")
+        if vname.startswith("v-fx"):                     # its own name wins over words about the pots it shares
+            race = fc = lad = wx = False
         clean = bool(re.search(r"cleanroom|clean-room|bettor|forecaster|ladder_live|penny", low))
         mine = {"race": race and not fc and not lad and not wx and not fx, "forecaster": fc and not lad and not race and not wx and not fx,
                 "ladder": lad and not fc and not race and not wx and not fx, "weather": wx and not (race or fc or lad or fx),
@@ -1390,7 +1404,7 @@ def flows(led, sub, t0=None, t1=None):
                 net -= abs(pinxfer.net_cents(r)) / 100.0
     if sub is not None:
         for r in led.get("transfers") or []:
-            if not inside(_int(r.get("created_ts"))):
+            if not inside(_int(r.get("created_ts"))) or not xfer_in_pot(r, sub):
                 continue
             a = (_num(r.get("amount_cents")) or 0.0) / 100.0      # cents, by the field's name
             if str(r.get("to_subaccount")) == sub:
@@ -1400,7 +1414,21 @@ def flows(led, sub, t0=None, t1=None):
     return net
 
 
-def _cash_all_pools(led, sub, bal_dollars):
+def xfer_in_pot(r, sub):
+    """True when subaccount transfer `r` is pot `sub`'s: any pool, except a POT_POOL_ONLY pot's own pool only."""
+    return sub not in POT_POOL_ONLY or _int(r.get("exchange_index")) == POT_POOL_ONLY[sub]
+
+
+def pot_rows(x, sub, own=True):
+    """Pot `sub`'s settled rows (x = c['subs'][sub]): all of them, except that a POT_POOL_ONLY pot's own view keeps
+    only its bot's (subaccount 4: the FX pairs, not the old reward test's coin legs)."""
+    rows = list((x.get("rows") or {}).values())
+    if own and sub in POT_POOL_ONLY:
+        rows = [r for r in rows if owner(r.get("ticker"), sub) != "other"]
+    return rows
+
+
+def _cash_all_pools(led, sub, bal_dollars, own=False):
     """(dollars, why): pot `sub`'s cash summed over EVERY pool -- a new deposit can sit in pool 0, where
     the pool-2 balance never sees it (v-onepool). The listing's field is `balance`, a name that does not
     say its unit (hard rule 5), so it is trusted only when its figure for the pot's own trading pool
@@ -1416,6 +1444,8 @@ def _cash_all_pools(led, sub, bal_dollars):
         v, ix = _num(r.get("balance")), _int(r.get("exchange_index"))
         if v is None or ix is None:
             return None, "the %s's cash listing is unreadable" % SUB_NAME[sub]
+        if own and sub in POT_POOL_ONLY and ix != POT_POOL_ONLY[sub]:
+            continue                                     # the other pool's side of the number is not this pot's
         vals[ix] = vals.get(ix, 0.0) + v
     if pool not in vals:
         return None, "Kalshi listed no pool-%d cash for the %s" % (pool, SUB_NAME[sub])
@@ -1428,10 +1458,11 @@ def _cash_all_pools(led, sub, bal_dollars):
     return sum(vals.values()), None
 
 
-def _pot_now(c, sub):
+def _pot_now(c, sub, own=False):
     """(dollars, why): pot `sub` NOW = its cash in every pool + what its open bets cost (fees paid on
     them included), every figure from the SAME refresh. (`balance_dollars` is gross of resting orders --
-    measured 2026-09-06 -- so a resting bid does not move it.)"""
+    measured 2026-09-06 -- so a resting bid does not move it.) own=True: a POT_POOL_ONLY pot's own pool and
+    its own bot's bets only."""
     x = (c.get("subs") or {}).get(sub) or {}
     led = c.get("ledgers") or {}
     t = x.get("tried")
@@ -1447,10 +1478,11 @@ def _pot_now(c, sub):
         return None, "the last cash read failed"
     if led.get("err") or led.get("fetched") != t:
         return None, led.get("err") or "the deposit and transfer books were not read with the rest"
-    cash, why = _cash_all_pools(led, sub, x["balance"])
+    cash, why = _cash_all_pools(led, sub, x["balance"], own)
     if cash is None:
         return None, why
-    return cash + sum(float(p.get("at_risk") or 0.0) + float(p.get("fees") or 0.0) for p in x["positions"]), None
+    ps = [p for p in x["positions"] if not (own and sub in POT_POOL_ONLY and owner(p.get("ticker"), sub) == "other")]
+    return cash + sum(float(p.get("at_risk") or 0.0) + float(p.get("fees") or 0.0) for p in ps), None
 
 
 def pot_context(c, today):
@@ -1470,14 +1502,35 @@ def pot_context(c, today):
     for sub in SUBS:
         x = (c.get("subs") or {}).get(sub) or {}
         now_v, why = (float(g["pots"][sub]), None) if ctx["as_of"] is not None else cur[sub]
-        days = {}
-        for s in (x.get("rows") or {}).values():
-            m = market(s)
-            if ctx["as_of"] is not None and m["t"] is not None and m["t"] > ctx["as_of"]:
-                continue
-            days[m["day"]] = days.get(m["day"], 0.0) + m["money"]
-        ctx["subs"][sub] = {"now": now_v, "why": why, "days": days, "complete": bool(x.get("complete"))}
+        ctx["subs"][sub] = {"now": now_v, "why": why, "days": _days_of(pot_rows(x, sub, own=False), ctx["as_of"]),
+                            "complete": bool(x.get("complete"))}
+        if sub in POT_POOL_ONLY:                     # the bot's own pot: its pool only (POT_POOL_ONLY)
+            if ctx["as_of"] is None:
+                ov, ow = _pot_now(c, sub, own=True)
+            elif (sub + ":own") in g["pots"]:
+                ov, ow = float(g["pots"][sub + ":own"]), None
+            else:
+                ov, ow = None, "the last good read did not keep its pool-%d side" % POT_POOL_ONLY[sub]
+            ctx["subs"][sub]["own"] = {"now": ov, "why": ow, "days": _days_of(pot_rows(x, sub), ctx["as_of"]),
+                                       "complete": bool(x.get("complete"))}
     return ctx
+
+
+def _days_of(rows, as_of):
+    """{ET close day: settled $} over `rows`, leaving out what settled after `as_of` (when set)."""
+    days = {}
+    for s in rows:
+        m = market(s)
+        if as_of is not None and m["t"] is not None and m["t"] > as_of:
+            continue
+        days[m["day"]] = days.get(m["day"], 0.0) + m["money"]
+    return days
+
+
+def _pv(ctx, s, sub):
+    """Pot s's numbers for a report on `sub`: all pots (None) read the whole subaccount, a bot's pot its own view."""
+    p = ctx["subs"][s]
+    return p if sub is None else (p.get("own") or p)
 
 
 def pot_for(ctx, sub, key):
@@ -1500,7 +1553,7 @@ def pot_for(ctx, sub, key):
     first, end = window_span(key, ctx["today"])
     now_v = settled = 0.0
     for s in subs:
-        p = ctx["subs"][s]
+        p = _pv(ctx, s, sub)
         if p["now"] is None:
             return None, kind, (("%s: %s" % (SUB_NAME[s], p["why"])) if sub is None else p["why"])
         now_v += p["now"]
@@ -1546,7 +1599,7 @@ def day_pot(ctx, sub, day):
     subs = SUBS if sub is None else (sub if isinstance(sub, tuple) else (sub,))
     now_v = settled = 0.0
     for s in subs:
-        p = ctx["subs"][s]
+        p = _pv(ctx, s, sub)
         if p["now"] is None or not p["complete"]:
             return None
         now_v += p["now"]
@@ -1571,12 +1624,12 @@ def pot_check(ctx):
     for sub in SUBS + (None,):
         subs = SUBS if sub is None else (sub,)
         k = "all" if sub is None else sub
-        if any(ctx["subs"][s]["now"] is None for s in subs) or led.get("err") or not led.get("fetched") \
+        if any(_pv(ctx, s, sub)["now"] is None for s in subs) or led.get("err") or not led.get("fetched") \
                 or ctx.get("as_of") is not None:            # an older moment's pots are no check of today's books
             out[k] = None
             continue
-        now_v = sum(ctx["subs"][s]["now"] for s in subs)
-        settled = sum(sum(ctx["subs"][s]["days"].values()) for s in subs)
+        now_v = sum(_pv(ctx, s, sub)["now"] for s in subs)
+        settled = sum(sum(_pv(ctx, s, sub)["days"].values()) for s in subs)
         money_in = flows(led, sub)
         gap = now_v - money_in - settled
         out[k] = {"now": round(now_v, 2), "money_in": round(money_in, 2), "settled": round(settled, 2),
@@ -1643,6 +1696,7 @@ def _balance_block(c, name):
     vals = [y.get("balance") for _, y in xs]
     dollars = round(sum(vals), 4) if all(v is not None for v in vals) else None
     return {"ok": dollars is not None, "dollars": dollars, "subaccount": int(sub), "subaccounts": [int(s) for s in subs],
+            "by_sub": {s: v for (s, _y), v in zip(xs, vals)} if len(xs) > 1 else None,
             "shared_with": shared, "note": note, "as_of_et": et_clock(x.get("bal_t")),
             "error": next((y.get("bal_err") for _, y in xs if y.get("bal_err")), None)}
 
@@ -1726,12 +1780,14 @@ def all_bots(now=None, getter=None, procs=None):
                        "put_in": round(sum(x["put_in"] for x in by.values()), 4),
                        "by_bot": {b: x["money"] for b, x in by.items()}})
     bal = {"main": bots["pin"]["balance"]["dollars"], "forecaster": bots["forecaster"]["balance"]["dollars"],
-           "ladder": bots["ladder"]["balance"]["dollars"], "weather": bots["weather"]["balance"]["dollars"]}
+           "ladder": bots["ladder"]["balance"]["dollars"], "weather": bots["weather"]["balance"]["dollars"],
+           "fx": bots["fx"]["balance"]["dollars"]}
     bal["all"] = round(sum(bal.values()), 4) if all(v is not None for v in bal.values()) else None
     bal["main_holds"] = ["pin", "race"]
     note = ("The main account's cash%s holds the pin bot and the coin race together; the forecaster "
-            "(subaccount 2), the ladder (subaccount 1) and the weather dip-seller (subaccount 3, weather cash "
-            "pool) are separate pots and are NOT in the main account's cash or its money totals."
+            "(subaccount 2), the ladder (subaccount 1), the weather dip-seller (subaccount 3, weather cash "
+            "pool) and the FX taker (subaccounts 5 + 4) are separate pots and are NOT in the main account's cash or "
+            "its money totals."
             % (" (%s)" % usd(bal["main"]).lstrip("+") if bal["main"] is not None else ""))
     errors = [("%s: %s" % (b, e)) for b in BOTS for e in bots[b]["errors"]]
     return {"as_of_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)), "as_of_et": et_clock(now),
@@ -1758,7 +1814,10 @@ PLAIN = [(r"^no_offer$", "nothing for sale"), (r"^edge_floor$", "edge too thin")
          # the weather dip-seller's rails (dipsell_live.rails_refusal)
          (r"^one_per_market$", "already ordered in that market"), (r"^max_open$", "5 already open"),
          (r"^no_cash$", "not enough cash"), (r"^day_stop$", "day stop hit"), (r"^killed$", "stopped for good"),
-         (r"^done$", "test finished"), (r"^stopped$", "stop file"), (r"^pool \S+ is not", "wrong cash pool")]
+         (r"^done$", "test finished"), (r"^stopped$", "stop file"), (r"^pool \S+ is not", "wrong cash pool"),
+         # the FX taker's (fxtake_live.decide)
+         (r"^unfunded_pool$", "no cash in that market's pool"), (r"^per_close$", "6 already this quarter-hour"),
+         (r"^held$", "$70 already in play")]
 
 
 def plain(why):
@@ -1928,9 +1987,10 @@ def text_summary(name="all", now=None, getter=None, procs=None):
 
     def cash(x):
         return "?" if x is None else usd(x).lstrip("+")
-    L.append("Cash: main %s (pin + race), forecaster %s, ladder %s, weather %s, all %s" % (
-        cash(bal["main"]), cash(bal["forecaster"]), cash(bal["ladder"]), cash(bal["weather"]), cash(bal["all"])))
-    L.append("Main-page totals include pin + race only; forecaster, ladder and weather are separate pots.")
+    L.append("Cash: main %s (pin + race), forecaster %s, ladder %s, weather %s, fx %s, all %s" % (
+        cash(bal["main"]), cash(bal["forecaster"]), cash(bal["ladder"]), cash(bal["weather"]), cash(bal.get("fx")),
+        cash(bal["all"])))
+    L.append("Main-page totals include pin + race only; forecaster, ladder, weather and fx are separate pots.")
     run = []
     for b in BOTS:
         r = a["bots"][b]["running"]
@@ -2194,6 +2254,26 @@ def selftest():
            and owner("KXGOLD15M-26OCT251945-45", "5") == "fx" and SUB_POOL["4"] == 0,
            "the FX taker owns two pots: commodities in subaccount 5 (pool 2), the currency pairs in subaccount 4 (pool 0); "
            "the old coin-race reward rows that share the number 4 are not its")
+        # POT_POOL_ONLY (2026-10-26): the live books' shape -- $55 in / $42.54 back / $45 in / $27.57 back on 4's pool-2
+        # side (the old reward test), then $60 into 4's pool 0. The FX taker's pot 4 = pool 0 only: $60 put in, the
+        # pool-0 cash, the FX pairs; flows for the main account still count both pools' transfers.
+        _led4 = {"transfers": [{"amount_cents": 5500, "created_ts": 1, "from_subaccount": 0, "to_subaccount": 4, "exchange_index": 2},
+                               {"amount_cents": 4254, "created_ts": 2, "from_subaccount": 4, "to_subaccount": 0, "exchange_index": 2},
+                               {"amount_cents": 4500, "created_ts": 3, "from_subaccount": 0, "to_subaccount": 4, "exchange_index": 2},
+                               {"amount_cents": 2757, "created_ts": 4, "from_subaccount": 4, "to_subaccount": 0, "exchange_index": 2},
+                               {"amount_cents": 6000, "created_ts": 5, "from_subaccount": 0, "to_subaccount": 4, "exchange_index": 0},
+                               {"amount_cents": 12000, "created_ts": 6, "from_subaccount": 0, "to_subaccount": 5, "exchange_index": 2}],
+                 "subaccount_balances": [{"subaccount_number": 4, "exchange_index": 0, "balance": "60.9681"},
+                                         {"subaccount_number": 4, "exchange_index": 2, "balance": "0.0068"}]}
+        _x4 = {"rows": {"a": {"ticker": "KXUSDJPY15M-26OCT252145-30"}, "b": {"ticker": "KXBTC15M-26OCT230815-15"}}}
+        ck(abs(flows(_led4, "4") - 60.0) < 1e-9 and abs(flows(_led4, ("5", "4")) - 180.0) < 1e-9
+           and abs(flows(_led4, "0") - (-55.0 + 42.54 - 45.0 + 27.57 - 60.0 - 120.0)) < 1e-9
+           and abs(_cash_all_pools(_led4, "4", 60.9681, own=True)[0] - 60.9681) < 1e-9
+           and abs(_cash_all_pools(_led4, "4", 60.9681)[0] - 60.9749) < 1e-9
+           and [r["ticker"] for r in pot_rows(_x4, "4")] == ["KXUSDJPY15M-26OCT252145-30"] and len(pot_rows(_x4, "4", own=False)) == 2
+           and len(pot_rows(_x4, "5")) == 2,
+           "POT_POOL_ONLY: the FX taker's pot 4 is its pool 0 -- $60 put in (not $89.89 with the old reward test's pool-2 "
+           "transfers), its pool-0 cash, its FX pairs; the whole subaccount and the main account keep both pools")
         pm = pin["money"]
         ck(pm["today"]["markets"] == 3 and abs(pm["today"]["money"] - (-10.12)) < 1e-6
            and pm["today"]["won"] == 2 and pm["today"]["lost"] == 1 and pm["today"]["hedged"] == 1,
