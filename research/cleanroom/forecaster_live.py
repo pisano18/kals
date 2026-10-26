@@ -81,6 +81,7 @@ v-resend-dropped (2026-10-18, --resend-dropped, DEFAULT OFF). When the paper wan
     python research/cleanroom/forecaster_live.py --subaccount 2 --live --auto-scale --variant race1_98 --crash-gap 0.10
 """
 import argparse
+import json
 import math
 import os
 import queue
@@ -736,6 +737,35 @@ class Broker:
                 self.halted = "run_stop %.2f" % self.run_pnl
                 self.log.write("run_stop", run_pnl=round(self.run_pnl, 4))
 
+    def restore_day(self, path, now):
+        """v-fc-dayrestore (2026-10-26): the ET day's realized result survives a restart. day_pnl started at $0 in
+        every new process, so a restart (a deploy, a crash, a reboot) forgot the day's losses and handed the bot a
+        second day stop (10-26: -$19.83 by 03:15 ET would have been forgotten). It is rebuilt from today's
+        live_settle rows in the order log, and the day stop re-armed if they already reach it. Returns (rows, $)."""
+        d = et_day(now)
+        tot, n = 0.0, 0
+        try:
+            fh = open(path, encoding="utf-8")
+        except OSError:
+            return 0, 0.0
+        with fh:
+            for line in fh:
+                if '"live_settle"' not in line:
+                    continue
+                try:
+                    r = json.loads(line)
+                    t = datetime.strptime(r["t"][:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc).timestamp()
+                except (ValueError, KeyError, TypeError):
+                    continue
+                if r.get("ev") == "live_settle" and et_day(t) == d:
+                    tot += float(r.get("pnl") or 0.0)
+                    n += 1
+        with self.lock:
+            self.day, self.day_pnl = d, tot
+            if tot <= DAY_STOP + 1e-9:
+                self.halt_day = d
+        return n, tot
+
     def forget_closed(self, close_s):
         """Drop what a finished close cannot need (nothing held, nothing in flight)."""
         with self.lock:
@@ -1259,6 +1289,33 @@ def selftest():
     br7.on_result("Y2", "no")
     now[0] += 86400
     ck(br7.halted and br7.want("Z", now[0] + 30, "yes", 0.8, 100) == 0, "-$20 since start halts until restart")
+    # v-fc-dayrestore (10-26): a restart rebuilds the ET day's realized result from the order log's live_settle rows
+    with tempfile.TemporaryDirectory() as _td:
+        _p = os.path.join(_td, "orders.jsonl")
+        _t0 = _u(2026, 10, 26, 7, 15, 16)                         # 03:15 ET Mon Oct 26
+        with open(_p, "w", encoding="utf-8") as _fh:
+            for _t, _ev, _v in ((_t0 - 86400, "live_settle", -50.0), (_t0 - 3600, "live_settle", 2.5),
+                                (_t0, "live_settle", -9.0), (_t0 + 60, "live_fill", -99.0)):
+                _fh.write(json.dumps({"t": datetime.fromtimestamp(_t, timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+                                      "ev": _ev, "pnl": _v}) + "\n")
+            _fh.write("not json\n")
+        b10 = Broker(log, 2, False, fake_send, lambda: _t0 + 120)
+        ck(b10.restore_day(_p, _t0 + 120) == (2, -6.5) and b10.day == "2026-10-26" and b10.day_pnl == -6.5
+           and b10.halt_day is None,
+           "restart: today's two settles (+2.50, -9.00) rebuilt, yesterday's -$50 and a fill row left out: day -$6.50")
+        b10.on_result("nothing-held", "yes")
+        ck(b10.day_pnl == -6.5, "a result for nothing held changes nothing")
+        _ds = DAY_STOP
+        try:
+            globals()["DAY_STOP"] = -5.0
+            b11 = Broker(log, 2, False, fake_send, lambda: _t0 + 120)
+            b11.restore_day(_p, _t0 + 120)
+            ck(b11.halt_day == "2026-10-26" and b11.want("Q", _t0 + 150, "yes", 0.8, 100) == 0,
+               "restart past the day stop: halted for the rest of the ET day, no buy")
+        finally:
+            globals()["DAY_STOP"] = _ds
+        ck(Broker(log, 2, False, fake_send, lambda: _t0).restore_day(os.path.join(_td, "none.jsonl"), _t0) == (0, 0.0),
+           "restart with no order log: day $0 (as before)")
     # resting IOC / garbled / 4xx
     for m_, halts, dels in (("rest", True, 1), ("garbled", True, 0), ("reject", False, 0)):
         mode["v"] = m_
@@ -1835,7 +1892,11 @@ def main():
         br.sizer.start(pot)                        # sets SCALE and every rail from the pot; refuses under $10
         auto = {"pot_divisor": POT_DIVISOR, "scale_min": SCALE_MIN, "scale_max": SCALE_MAX, "reread_s": POT_REREAD_S,
                 "day_stop_frac": DAY_STOP_FRAC, "run_stop_frac": RUN_STOP_FRAC, "commit_frac": COMMIT_FRAC}
+    day_n, day_pnl = br.restore_day(ORDER_LOG, time.time())      # v-fc-dayrestore: after the day stop is set
+    if br.halt_day is not None:
+        olog.write("day_stop", day=br.halt_day, day_pnl=round(day_pnl, 4), restored=True)
     olog.write("start", pid=os.getpid(), subaccount=a.subaccount, live=a.live, sub_balance=sub_bal,
+               day_restored={"settles": day_n, "day_pnl": round(day_pnl, 4)},
                variant=a.variant, variant_params=FV.VARIANTS[a.variant], crash_gap=CRASH_GAP,
                auto_scale=bool(a.auto_scale), pot=pot, auto=auto,
                rails={"scale": str(SCALE), "per_side": MAX_PER_SIDE, "per_close": MAX_PER_CLOSE, "per_order": MAX_ORDER,

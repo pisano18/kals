@@ -14,7 +14,8 @@ Gates (each off by default):
   min_edge     p_side - q - fee (paper 0.02)
   min_p        p_side floor
   one_side     never buy the second side of a market (the paper's only 09-28 loss bought both)
-  survive_s    seconds the offer must still be displayed at the same price (paper 1.0)
+  sig_floor    the model's sigma never under the coin's local one (max of the blend and local; 10-26, LS13)
+  survive_s   seconds the offer must still be displayed at the same price (paper 1.0)
   max_age      skip an offer that has been the best ask for more than this many seconds (stale offers)
   min_age      skip an offer that became the best ask less than this many seconds ago (fresh offers)
   stable_k/stable_p   p_side >= stable_p on each of the last stable_k decisions (no recent flip)
@@ -39,7 +40,8 @@ import bettor_paper as B                        # noqa: E402
 DEFAULTS = {"r_max": B.F_R_MAX, "min_price": B.F_MIN_PRICE, "max_price": B.F_MAX_PRICE, "min_edge": B.F_MIN_EDGE,
             "min_p": 0.0, "one_side": False, "survive_s": B.SURVIVE_S, "max_age": None, "min_age": None,
             "stable_k": 0, "stable_p": 0.9, "no_toward": 0, "flow_against": False,
-            "quiet_s": None, "race_x": None, "race_p": 0.96, "hedge_p": None, "quiet_mult": None, "crash_gap": None}
+            "quiet_s": None, "race_x": None, "race_p": 0.96, "hedge_p": None, "quiet_mult": None, "crash_gap": None,
+            "sig_floor": False}
 
 VARIANTS = {
     "base": {},
@@ -90,7 +92,14 @@ VARIANTS = {
     # 2026-10-23 (live record 09-28..10-22, Kalshi settlements): 7 of the forecaster's 20 losses were markets where it bought
     # BOTH sides (the index crossed the strike, the second side 10-15 s later at max size): -$102.49 of -$157.84; the other
     # 139 markets 126-13 +$114.54. race1_98_r28 + one_side = the live rule, never the second side of a market.
-    "race1_98_r28_oneside": {"race_x": 1.0, "race_p": 0.98, "r_max": 28, "one_side": True},
+    # 2026-10-26 (operator after the ETH 03:15 ET -$19.90: "see if the forecaster loss gives you any information on an
+    # improvement for it"; IDEA_LEDGER LS13): the live rule + sig_floor -- the model's sigma is never under the coin's
+    # own recent one. On the live record (164 markets 09-29..10-26, +$94.43) it skips 19 buys (5 of the 21 losses)
+    # worth -$43.90 -> +$138.33, both halves better (+$1.12, +$42.79); on every paper log's 'real' fills the buys it
+    # skips returned -15..-43% on cost against -5..+2% for the rest. It only ever lowers p_side, so it can only remove
+    # buys. The 10-23..10-26 live rule without it stays as race1_98_r28_oneside_v1023 (paper comparisons).
+    "race1_98_r28_oneside": {"race_x": 1.0, "race_p": 0.98, "r_max": 28, "one_side": True, "sig_floor": True},
+    "race1_98_r28_oneside_v1023": {"race_x": 1.0, "race_p": 0.98, "r_max": 28, "one_side": True},
     "race1_98_crash10_r28": {"race_x": 1.0, "race_p": 0.98, "crash_gap": 0.10, "r_max": 28},
     "race1_98_crash10_r25": {"race_x": 1.0, "race_p": 0.98, "crash_gap": 0.10, "r_max": 25},
 }
@@ -235,15 +244,28 @@ class VEngine(B.Engine):
         if r > P["r_max"]:
             return {"why": "r"}
         t = rel
+        k = 1.0
         if exact_yes is not None:
             p = 1.0 if exact_yes else 0.0
         else:
-            s = self.tb.f_sig(m.coin, r, self.f_local_sigma(m.index_id, m.close_s + t))
+            loc = self.f_local_sigma(m.index_id, m.close_s + t)
+            s = self.tb.f_sig(m.coin, r, loc)
             if s is None:
                 return {"why": "no_sigma"}
+            if P["sig_floor"] and loc is not None:
+                # sigma never under the coin's own: f_sig blends sqrt(0.5 g^2 + 0.5 local^2), so a coin moving faster
+                # than its trained g was priced on LESS than it was showing (IDEA_LEDGER LS13)
+                g = self.tb.f_sigma.get(m.coin)
+                k = max(1.0, loc / math.sqrt(0.5 * g * g + 0.5 * loc * loc))
             sd = v * s * math.sqrt(B.s_coef(t)) / 60.0
             p = (1.0 if proj >= m.thr_f else 0.0) if sd <= 0 else 1.0 - B.phi((m.thr_f - proj) / sd)
         p = self.tb.f_calibrate(p, r)
+        if k > 1.0 and sd > 0:
+            # the calibration map is not monotone near 1 (a wider sigma can map HIGHER there), so the wider sigma's p
+            # is used only when it is LESS sure than the blend's: sig_floor can only ever remove a buy, never add one
+            p2 = self.tb.f_calibrate(1.0 - B.phi((m.thr_f - proj) / (sd * k)), r)
+            if abs(p2 - 0.5) < abs(p - 0.5):
+                p = p2
         h = self.phist.setdefault(m.ticker, deque(maxlen=16))
         h.append(p)
         out = {"p": round(p, 6), "r": r, "n": 0}
@@ -458,6 +480,29 @@ def selftest():
     fst, sst = world(v_({"crash_gap": 0.10}), book, dl)
     ck(fst == fv and not any(r.get("why") == "crash" for r in sst), "crash10 on a steady book: same fills as base")
     ck(all(set(v) <= set(DEFAULTS) for v in VARIANTS.values()), "every variant names only known params")
+    # sig_floor (10-26, LS13). The index swings +-0.005 around 100.010 each second: local sigma 1.75x BTC's trained
+    # one. The blend says p 0.951 at rel -31 and buys the 91.5c ask; sig_floor (p 0.928: under the 2c edge) skips it
+    # and buys only once the projection is firmer. In the calibration map's non-monotone top (a +-0.003 swing around
+    # 100.020, p 0.995, where the wider sigma maps HIGHER) every fill and every p stays exactly the blend's.
+    swing = lambda c, a: (lambda s: str(Decimal(c) + (Decimal(a) if s % 2 else -Decimal(a))))
+    bk915 = {"no_dollars_fp": [["0.0850", "50.00"], ["0.0100", "500.00"]], "yes_dollars_fp": [["0.0100", "40.00"]]}
+    _, ssb = world(base, bk915, (), vals=swing("100.010", "0.005"))
+    _, ssf = world(v_({"sig_floor": True}), bk915, (), vals=swing("100.010", "0.005"))
+    fb_ = [r for r in ssb if r["ev"] == "fill" and r["strat"] == "forecaster"]
+    ff_ = [r for r in ssf if r["ev"] == "fill" and r["strat"] == "forecaster"]
+    ck(fb_ and fb_[0]["rel"] == -31 and (fb_[0].get("feat_sig_ratio") or 0) > 1.5 and ff_
+       and min(r["rel"] for r in ff_) > -31,
+       "sig_floor: a coin moving 1.75x its trained sigma -> the blend's rel -31 buy at 91.5c is skipped, a later one "
+       "kept (%s vs %s)" % ([(r["rel"], r["p_side"]) for r in fb_][:2], [(r["rel"], r["p_side"]) for r in ff_][:2]))
+    fhb, shb = world(base, book, (), vals=swing("100.020", "0.003"))
+    fhf, shf = world(v_({"sig_floor": True}), book, (), vals=swing("100.020", "0.003"))
+    ck(fhb and fhb == fhf and [r["p_side"] for r in shb if r["ev"] == "fill"] == [r["p_side"] for r in shf if r["ev"] == "fill"],
+       "sig_floor never ADDS confidence: where the calibration map would put the wider sigma higher, p and every fill "
+       "stay the blend's")
+    fcf, _ = world(v_({"sig_floor": True}), book, dl)
+    ck(fcf == fv, "sig_floor with the index a full dollar over the strike (p ~1 under either sigma): the same fills as base")
+    ck(VARIANTS["race1_98_r28_oneside"] == dict(VARIANTS["race1_98_r28_oneside_v1023"], sig_floor=True),
+       "the live rule = the 10-23 rule + sig_floor (10-26)")
     # the crash guard never blocks a hedge: hedge world, and at the hedge's 1-s check (rel -19) a NO ask appears at
     # 50c, 48.5c under the 98.5c hedge price -- the hedge still fills, equal to the YES held
     hcr = [(-19, {"side": "yes", "price_dollars": "0.5000", "delta_fp": "5.00"})]
