@@ -80,6 +80,9 @@ HOLD_S = 5.0                 # v-fx-hold5 (2026-10-26): a side is bought only af
                              # by tick on every recorded market (.sweep/q-2026-10-26-fxloss/fx_replay2.py, 10-23 + 10-25/26):
                              # the old rule 264 buys, 3 lost, -$5.00 at 10 contracts; the buys whose 98c had held >= 5 s:
                              # 69, 0 lost, +$5.97. A stop-loss exit was worse (-$34 to -$54: the bid dips and comes back).
+FAST_S95 = None              # the fast lane, OFF: with X, a side held >= 98c under HOLD_S is still bought when its bid has
+                             # stayed >= 95c for X s (not a rocket). Set only on fx_replay4.py's evidence.
+FAST_FLOOR = 0.95
 MAX_PER_CLOSE = 6           # per POOL (pot) and close: 10-25 the FX pairs got their own pot (subaccount 4, pool 0) so they
 MAX_HELD = 70.0             # never crowd out a commodity buy; both caps count each pot on its own
 DAY_STOP = -25.0
@@ -140,6 +143,7 @@ class Book:
         self.last_msg = None
         self.last_trade = None
         self.since = {"yes": None, "no": None}      # when each side's best bid last rose to >= FAV (HOLD_S)
+        self.since95 = {"yes": None, "no": None}    # ... to >= FAST_FLOOR (FAST_S95)
 
     def _track(self, t):
         for side in ("yes", "no"):
@@ -149,6 +153,15 @@ class Book:
                     self.since[side] = t
             else:
                 self.since[side] = None
+            if bb is not None and bb >= FAST_FLOOR - 1e-9:
+                if self.since95[side] is None:
+                    self.since95[side] = t
+            else:
+                self.since95[side] = None
+
+    def held95(self, side, now):
+        s0 = self.since95.get(side)
+        return None if s0 is None else now - s0
 
     def held(self, side, now):
         """Seconds the side's best bid has stayed >= FAV, or None while it is under."""
@@ -202,7 +215,9 @@ def pick(book, now):
             continue
         held = book.held(side, now)
         if HOLD_S > 0 and (held is None or held < HOLD_S - 1e-9):
-            return None                                               # v-fx-hold5: 98c only just reached -- still moving
+            h95 = book.held95(side, now)
+            if not (FAST_S95 is not None and h95 is not None and h95 >= FAST_S95 - 1e-9):
+                return None                                           # v-fx-hold5: 98c only just reached -- still moving
         asks = [(p, q) for p, q in book.asks(side) if p <= CAP + 1e-9]
         if not asks:
             return None
@@ -802,6 +817,17 @@ def selftest():
     trh = Trader(log, 4, False, lambda *a: (201, {}), now=lambda: T[0])
     trh.markets["H-1"] = {"close_s": t0 + 90, "series": "H"}; trh.books["H-1"] = hb
     ck(trh.decide(t0 + 66) == [] and "H-1" not in trh.ordered, "decide: a market not held long enough is not decided -- it is looked at again")
+    global FAST_S95
+    fast_real = FAST_S95
+    fb = Book(); fb.snapshot({"yes_dollars_fp": [["0.9600", "100.00"]], "no_dollars_fp": [["0.0100", "50.00"]]}, t0)
+    fb.delta({"side": "yes", "price_dollars": "0.9800", "delta_fp": "100.00"}, t0 + 40)
+    FAST_S95 = None
+    ck(pick(fb, t0 + 41) is None, "fast lane OFF: 98c held 1 s -> not bought, however long 95c+ held")
+    FAST_S95 = 30.0
+    pf = pick(fb, t0 + 41)
+    ck(pf and pf["side"] == "yes", "fast lane 30 s: 95c+ held 41 s, 98c held 1 s -> bought: %s" % pf)
+    ck(pick(hb, t0 + 66) is None, "fast lane 30 s: the rocket (95c+ for only a few seconds) is still not bought")
+    FAST_S95 = fast_real
     print("SELFTEST", "FAILED: %s" % fails if fails else "PASSED")
     return not fails
 
@@ -852,7 +878,7 @@ def main():
     if a.live:
         tr.pool_cash = cash
     log.write("start", pid=os.getpid(), subaccount=a.subaccount, subs={str(p): s for p, s in sorted(subs.items())}, live=a.live, dry=a.dry_run,
-              sub_balance=sub_bal, pool_cash=cash, size=SIZE, fav=FAV, cap=CAP, hold_s=HOLD_S,
+              sub_balance=sub_bal, pool_cash=cash, size=SIZE, fav=FAV, cap=CAP, hold_s=HOLD_S, fast_s95=FAST_S95,
               entry_from=ENTRY_FROM, entry_to=ENTRY_TO, max_per_close=MAX_PER_CLOSE, max_held=MAX_HELD, day_stop=DAY_STOP,
               minutes=a.minutes, series=list(SERIES), argv=sys.argv)
     print("fxtake %s: subaccount %d (%s), size %d, window T-%g..T-%g s, %g minutes; log %s" % (
