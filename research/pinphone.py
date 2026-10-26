@@ -101,6 +101,7 @@ import pinflat                                                       # noqa: E40
 CONFIG = r"C:\kals\telegram.json"
 RESULTS = pindesk.RESULTS
 HEARTBEAT = os.path.join(RESULTS, "pinphone.heartbeat")
+UPDATE_FLAG = os.path.join(RESULTS, "pinphone.update")    # its presence = /update (update_flag_tick, 10-26)
 LOG = os.path.join(RESULTS, "pinphone.log")
 MAX_LEN = 3900
 LOSSES_SHOWN = 30               # /losses lists this many (operator 10-26: "a bit more than just the last ten")
@@ -4725,6 +4726,22 @@ class Phone:
         threading.Thread(target=work, daemon=True).start()
         return Html("🔄 <b>Checking the newest phone code</b> (self-test, a few minutes)…")
 
+    def update_flag_tick(self):
+        """results/pinphone.update (2026-10-26: the new /losses waited for the operator's /update while they slept;
+        this elevated process can be restarted by nothing else). The file's presence runs /update exactly as the
+        command does -- the two self-tests first, the old code kept on a failure, every step said in Telegram. The
+        file is removed before anything runs, so it fires once. The reply said, or None when there is no flag."""
+        if self.chat_id is None or not os.path.exists(UPDATE_FLAG):
+            return None
+        try:
+            os.remove(UPDATE_FLAG)
+        except OSError:
+            return None
+        log("update flag %s found: running /update" % UPDATE_FLAG)
+        r = Html(str(self.text_update()) + "\n" + i_("asked for by the update flag file, not a message"))
+        self.say(r)
+        return r
+
     # ---- alerts ----
     def alerts_tick(self):
         """Called every poll cycle. Sends only on CHANGE."""
@@ -4956,6 +4973,10 @@ class Phone:
             except OSError:
                 pass
             self.poll_once()
+            try:
+                self.update_flag_tick()
+            except Exception:                            # noqa: BLE001
+                log(traceback.format_exc())
             try:
                 self.alerts_tick()
             except Exception:                            # noqa: BLE001
@@ -6223,6 +6244,22 @@ def selftest():
            "/stop without yes only explains; nothing is stopped")
         ck(P(ph.handle(111, "/mute")) == "🔕 Alerts off. /unmute to turn them back on." and ph.muted, "/mute")
         ck(P(ph.handle(111, "/unmute")) == "🔔 Alerts on." and not ph.muted, "/unmute")
+        _sv_flag, _sv_upd, _ups = UPDATE_FLAG, ph.text_update, []
+        try:
+            globals()["UPDATE_FLAG"] = os.path.join(td, "pinphone.update")
+            ph.text_update = lambda: (_ups.append(1), Html("🔄 <b>Checking the newest phone code</b>"))[1]
+            _n0 = len(tg.sent)
+            _r0 = ph.update_flag_tick()
+            open(UPDATE_FLAG, "w").close()
+            _r1 = ph.update_flag_tick()
+            _r2 = ph.update_flag_tick()
+            ck(_r0 is None and _r2 is None and _ups == [1] and not os.path.exists(UPDATE_FLAG)
+               and "Checking the newest phone code" in P(_r1) and "update flag file" in P(_r1)
+               and len(tg.sent) == _n0 + 1,
+               "update flag (10-26): no file -> nothing; the file -> /update runs ONCE (the file removed first) and the "
+               "operator is told it came from the file")
+        finally:
+            globals()["UPDATE_FLAG"], ph.text_update = _sv_flag, _sv_upd
         ck("Commands" in P(ph.handle(111, "/help")) and "I did not understand that." in P(ph.handle(111, "what"))
            and "Commands" in P(ph.handle(111, "what")), "/help, and an unknown message gets the help")
         ck("Commands" in P(ph.handle(111, "/help@PinBotBot")), "a command with the @botname suffix still works")

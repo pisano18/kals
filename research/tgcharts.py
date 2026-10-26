@@ -403,9 +403,14 @@ def all_losses(ctx, week_days=7):
         key = subs if len(subs) > 1 else subs[0]
         ms = blk.get("markets") or []
         lost = [m for m in ms if m["money"] < -0.004]
+        won_days = {}
+        for m in ms:
+            if m["money"] > 0.004 and m["day"]:
+                won_days[m["day"]] = won_days.get(m["day"], 0.0) + m["money"]
         per[name] = {"settled": len(ms), "lost": len(lost), "lost_7d": sum(1 for m in lost if m["day"] in week),
                      "money_lost": round(sum(m["money"] for m in lost), 4),
-                     "worst": min((m["money"] for m in lost), default=None)}
+                     "worst": min((m["money"] for m in lost), default=None),
+                     "won_days": won_days}                  # ET day -> $ its winning markets made (the chart)
         for m in lost:
             if (key, m["day"]) not in pots:
                 pots[(key, m["day"])] = bs.day_pot(pctx_, key, m["day"]) if m["day"] else None
@@ -1052,54 +1057,138 @@ def chart_bot(ctx, name):
     return png(fig), cap
 
 
+LOSS_WEEKS = 8                          # /losses: the weekly bars
+LOSS_LANE_DAYS = 30                     # /losses: the timeline
+
+
+def _week_of(day):
+    """'2026-10-28' -> the Monday that starts its ET week, '2026-10-26'."""
+    d = _dt.date.fromisoformat(day)
+    return (d - _dt.timedelta(days=d.weekday())).isoformat()
+
+
 def chart_losses(ctx):
-    """/losses: EVERY bot's losing markets (all_losses, the words' own source), coloured by bot; top dollars, bottom
-    the same loss as % of that bot's pot that day. Falls back to the main account's losing closes
-    (chart_losses_main) when botstats cannot be read."""
+    """/losses (operator 10-26: "That losses chart is pretty bad it's really hard to notice any trends or anything
+    meaningful and it's also just hard to see what's what. New kind of chart/graph"). Every bot's losses from
+    all_losses (the words' own source), two ways:
+      top     each ET week (Monday-Sunday), the last LOSS_WEEKS: what the winning markets made (green, up) against
+              what the losing ones cost (down, stacked, one colour a bot) and the week's loss total -- is losing
+              growing, which bot does it, and how big it is next to what was won;
+      bottom  every loss of the last LOSS_LANE_DAYS days on its own bot's row, the circle's AREA = the dollars, the
+              biggest named; each row's label carries its count and total -- what happened when, at a glance.
+    The main account's losing closes (chart_losses_main) when botstats cannot be read."""
     try:
         bs, rows, per, missing = all_losses(ctx)
     except Exception:                                   # noqa: BLE001 -- no botstats: the main account's picture
         return chart_losses_main(ctx) if ctx.get("ledger") is not None else None
-    rows = [r for r in rows if r["t"]]
+    rows = [r for r in rows if r["t"] and r["day"]]
     if not rows:
         return None
-    rows.sort(key=lambda r: r["t"])
-    fig, axs = fig_new(2, 7.6, sharex=True)
-    names = [b for b in tuple(bs.BOTS) + ("other",) if any(r["bot"] == b for r in rows)]
-    for ax, key in ((axs[0], "money"), (axs[1], "pct")):
-        for b in names:
-            pts = [(etdt(r["t"]), r[key]) for r in rows if r["bot"] == b and r[key] is not None]
-            if not pts:
-                continue
-            X, Y = [p[0] for p in pts], [p[1] for p in pts]
-            ax.vlines(X, 0, Y, color=BOT_COLOUR.get(b, GREY), lw=1.4, zorder=3)
-            ax.scatter(X, Y, s=26, color=BOT_COLOUR.get(b, GREY), edgecolor=SURF, linewidth=1.0, zorder=4,
-                       label=BOT_SHORT.get(b, b) if key == "money" else None)
-        zero_line(ax)
+    now = ctx["now"]
+    today = bs.et_day(now)
+    order = [b for b in tuple(bs.BOTS) + ("other",) if b in per]
+    first = min([r["day"] for r in rows] + [d for p in per.values() for d in p["won_days"]])
+    weeks = [_week_of(today)]
+    while len(weeks) < LOSS_WEEKS:
+        w = (_dt.date.fromisoformat(weeks[0]) - _dt.timedelta(days=7)).isoformat()
+        if w < _week_of(first):
+            break
+        weeks.insert(0, w)
+    wi = {w: k for k, w in enumerate(weeks)}
+    won = [0.0] * len(weeks)
+    lost = {b: [0.0] * len(weeks) for b in order}
+    nlost = [0] * len(weeks)
+    for b in order:
+        for d, v in per[b]["won_days"].items():
+            k = wi.get(_week_of(d))
+            if k is not None:
+                won[k] += v
+    for r in rows:
+        k = wi.get(_week_of(r["day"]))
+        if k is not None:
+            lost[r["bot"]][k] += r["money"]
+            nlost[k] += 1
+    fig, axs = fig_new(2, 9.4, ratios=[1.15, 1.0])
     ax = axs[0]
-    t0, t1 = rows[0]["t"], rows[-1]["t"]
-    mid = t0 + (t1 - t0) / 2.0
-    for k, r in enumerate(sorted(rows, key=lambda r: r["money"])[:3]):           # the 3 worst, staggered
-        left = r["t"] < mid
-        note(ax, etdt(r["t"]), r["money"], "%s %s %s %s" % (BOT_SHORT.get(r["bot"], r["bot"]), r["what"],
-                                                          et_clock(r["t"], "%m/%d"), usd(r["money"])),
-             dx=6 if left else -6, dy=4 + 15 * k, ha="left" if left else "right", size=8.5, weight="normal")
+    xs = list(range(len(weeks)))
+    ax.bar(xs, won, width=0.62, color=UP, alpha=0.45, zorder=3, label="won")
+    base = [0.0] * len(weeks)
+    for b in order:
+        if not any(lost[b]):
+            continue
+        ax.bar(xs, lost[b], width=0.62, bottom=base, color=BOT_COLOUR.get(b, GREY), zorder=3,
+               label=BOT_SHORT.get(b, b))
+        base = [x + y for x, y in zip(base, lost[b])]
+    zero_line(ax)
+    span = max(max(won or [0]), -min(base or [0]), 1.0)
+    for k in xs:
+        if nlost[k]:
+            ax.annotate("%s\n%d lost" % (usd(base[k]), nlost[k]), (k, base[k]), xytext=(0, -3),
+                        textcoords="offset points", ha="center", va="top", fontsize=8.5, color=DOWN, fontweight="bold")
+        if won[k] > 0.005:
+            ax.annotate(usd(won[k]), (k, won[k]), xytext=(0, 3), textcoords="offset points", ha="center", va="bottom",
+                        fontsize=8.5, color=INK2)
+    ax.set_ylim(min(base or [0]) - 0.32 * span, max(won or [0]) + 0.45 * span)      # headroom: the key, 2 rows
+    ax.set_xticks(xs)
+    ax.set_xticklabels([(lambda d: d.strftime("%b ") + str(d.day))(_dt.date.fromisoformat(w))
+                        + ("\nso far" if k == len(weeks) - 1 else "") for k, w in enumerate(weeks)], fontsize=9.5)
+    ax.grid(False, axis="x")
     money_axis(ax)
-    ax.set_title("Each losing market, dollars")
-    if len(names) > 1:                  # the key under the % panel's newest end, clear of the 3 worst's notes
-        h, lab = ax.get_legend_handles_labels()
-        axs[1].legend(h, lab, loc="lower right", fontsize=8.5, frameon=True, framealpha=0.9, edgecolor=GRID,
-                      ncol=min(3, len(names)))
-    axs[1].set_title("The same loss as % of that bot's pot when its day began")
-    pct_ticks(axs[1])
-    date_axis(axs[-1])
-    lost = sum(p["lost"] for p in per.values())
-    settled = sum(p["settled"] for p in per.values())
-    headline(fig, "%d losing markets of %d, every bot (%.1f%%) · worst %s" % (
-        lost, settled, 100.0 * lost / settled if settled else 0.0, usd(min(r["money"] for r in rows))))
-    cap = ("Every losing market, all time, every bot (Kalshi's books, every pot; colour = the bot). Bottom: the loss "
-           "as %% of that bot's pot when its day began (botstats.day_pot; pin + race share the main account).%s" % (
-               (" Left out (Kalshi could not be read): " + ", ".join(missing) + ".") if missing else ""))
+    ax.set_title("Each week (Mon-Sun ET): won by every bot, up; lost, down, by bot")
+    ax.legend(loc="upper center", fontsize=8.5, ncol=4, frameon=True, facecolor=SURF, edgecolor="none", framealpha=0.92,
+              columnspacing=1.0, handlelength=1.2)
+
+    ax = axs[1]
+    t_lo = now - LOSS_LANE_DAYS * 86400
+    day_lo = bs.et_day(t_lo)
+    lane = [r for r in rows if r["t"] >= t_lo]
+    active = [b for b in order if any(d >= day_lo for d in per[b]["won_days"]) or any(r["bot"] == b for r in lane)]
+    active = active or order
+    yi = {b: k for k, b in enumerate(active)}
+    biggest = max((-r["money"] for r in lane), default=1.0) or 1.0
+    for b in active:
+        rs = [r for r in lane if r["bot"] == b]
+        if rs:
+            ax.scatter([etdt(r["t"]) for r in rs], [yi[b]] * len(rs), s=[24 + 520 * (-r["money"]) / biggest for r in rs],
+                       color=BOT_COLOUR.get(b, GREY), alpha=0.75, edgecolor=SURF, linewidth=0.8, zorder=4)
+    big = sorted(sorted(lane, key=lambda r: r["money"])[:4], key=lambda r: r["t"])     # the 4 biggest, named,
+    for k, r in enumerate(big):                                                      # above / below in turn
+        what = r["what"].split(" ")[0] if r["bot"] != "race" else r["what"].replace("race ", "").split(" ")[0]
+        up = k % 2 == 0
+        ax.annotate("%s %s" % (what, usd(r["money"])), (etdt(r["t"]), yi[r["bot"]]), xytext=(0, 11 if up else -11),
+                    textcoords="offset points", ha="center", va="bottom" if up else "top", fontsize=8.5, color=INK,
+                    zorder=6)
+    labels = []
+    for b in active:
+        rs = [r for r in lane if r["bot"] == b]
+        labels.append("%s\n%s" % (BOT_SHORT.get(b, b), ("%d lost, %s" % (len(rs), usd(sum(r["money"] for r in rs))))
+                                  if rs else "no losses"))
+    ax.set_yticks(range(len(active)))
+    ax.set_yticklabels(labels, fontsize=9)
+    ax.set_ylim(len(active) - 0.4, -0.75)                                    # first bot on top
+    ax.set_xlim(etdt(t_lo), etdt(now + 0.6 * 86400))
+    ax.grid(True, axis="x", color=GRID, lw=0.6)
+    ax.grid(False, axis="y")
+    for k in range(len(active)):
+        ax.axhline(k, color=GRID, lw=0.6, zorder=1)
+    date_axis(ax, LOSS_LANE_DAYS)
+    ax.set_title("Every loss, last %d days (circle size = dollars)" % LOSS_LANE_DAYS)
+
+    d7 = bs.shift_day(today, -6)                       # the last 7 ET days, today in -- the words' '7d' count
+    d35 = bs.shift_day(today, -34)
+    week = [r for r in rows if r["day"] >= d7]
+    before = [r for r in rows if d35 <= r["day"] < d7]
+    nb = min(4, max(0, sum(1 for k in range(7, 35) if bs.shift_day(today, -k) >= first) // 7))
+    head = "Last 7 days: %s lost in %d market%s" % (usd(sum(r["money"] for r in week)), len(week),
+                                                    "" if len(week) == 1 else "s")
+    if nb >= 1:
+        head += " · %s a week before" % usd(sum(r["money"] for r in before) / nb)
+    headline(fig, head)
+    cap = ("Losses, every bot (Kalshi's books, every pot; colour = the bot). Top: each ET week's winning markets (green) "
+           "against its losing ones (down, by bot), the newest week so far. Bottom: each loss of the last %d days on "
+           "its bot's row, circle area = dollars. Last 7 days = today and the 6 ET days before (as /losses counts "
+           "them); 'a week before' = the average of the 4 weeks before those.%s" % (
+               LOSS_LANE_DAYS, (" Left out (Kalshi could not be read): " + ", ".join(missing) + ".") if missing else ""))
     return png(fig), cap
 
 
