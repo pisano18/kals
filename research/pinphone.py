@@ -23,7 +23,7 @@ COMMANDS
   /status     what the desktop banner shows, with its evidence
   /today  /yesterday  /days      money, %% return, closes, fills, hours up
   /open       open bets            /market    how active sellers are
-  /losses     losing closes        /hedges    insurance and whether it was needed
+  /losses     every bot's losses   /hedges    insurance and whether it was needed
   /stats      the whole record by window: money, win rate vs break-even, losses, timing
   /bots       every bot and its pot (subaccount): running, money by window, cash, the all-bots total
   /pin  /forecaster (/fc)  /ladder  /weather (/wx)  /fx   one bot in full: running or not and why, version,
@@ -103,6 +103,7 @@ RESULTS = pindesk.RESULTS
 HEARTBEAT = os.path.join(RESULTS, "pinphone.heartbeat")
 LOG = os.path.join(RESULTS, "pinphone.log")
 MAX_LEN = 3900
+LOSSES_SHOWN = 30               # /losses lists this many (operator 10-26: "a bit more than just the last ten")
 CHART_QUEUE = 2                 # pictures waiting to be drawn; one more is dropped (logged), never waited for
 CHART_MAX_BYTES = 9_500_000     # Telegram takes photos up to 10 MB
 
@@ -667,7 +668,7 @@ HELP_TEXT = Html("""📱 <b>Commands</b>
 /open — open bets in every pot
 /fills — every order today: filled, price paid, seconds out
 /market — how active sellers are
-/losses — losing closes, each as % of the bank
+/losses — every bot's losing markets: which bot, $ and % of its pot
 /hedges — insurance, whether it was needed, % of the bank
 /brief — the daily briefing: money, what changed, what it did, the market, what to watch
 /bars — the September tests against their pre-registered bars (all finished; kept for the record)
@@ -3963,7 +3964,71 @@ class Phone:
         return Html("\n".join(out))
 
     def text_losses(self):
-        rows = self.ledger.losing_closes()[:10]
+        """/losses: EVERY bot's losing markets (operator 10-26: "Make it so /losses outputs losses not just for pin and
+        race and show which bot it lost. Show all the same information and show a bit more than just the last ten")
+        from tgcharts.all_losses (botstats, Kalshi's books, every pot -- the chart's own source): the last
+        LOSSES_SHOWN by ET day, each with its bot, the market, side and contracts, $ and % of that bot's pot, then
+        every bot's count, last 7 days, $ lost and worst. The main account's losing closes (text_losses_main) when
+        botstats cannot be read at all."""
+        try:
+            bs, rows, per, missing = _tgc().all_losses({"now": self.now(), "pp": sys.modules[__name__],
+                                                         "bs_getter": self.bs_getter, "bs_procs": self.bs_procs})
+        except Exception:                                       # noqa: BLE001
+            log(traceback.format_exc())
+            return self.text_losses_main()
+        if not per:
+            return self.text_losses_main()
+        short = _tgc().BOT_SHORT
+        lost = sum(p["lost"] for p in per.values())
+        settled = sum(p["settled"] for p in per.values())
+        if not rows:
+            return Html("No losing markets in any pot (%s settled)." % _cnt(settled)
+                        + (" ⚠️ Leaves out %s (Kalshi could not be read)." % esc(", ".join(missing)) if missing else ""))
+
+        def line(r):
+            what = r["what"][5:] if r["bot"] == "race" and r["what"].startswith("race ") else r["what"]
+            held = ("hedged x%s" % _cnt(r["contracts"])) if r["side"] == "both" else \
+                ("%s x%s" % (r["side"].upper(), _cnt(r["contracts"])) if r["side"] in ("yes", "no") else "")
+            return "<b>%s</b>%s · %s · %s" % (esc(usd(r["money"])),
+                                             (" (%s)" % esc(bs.pot_pct_txt(r["pct"]))) if r["pct"] is not None else "",
+                                             esc(short.get(r["bot"], r["bot"])), esc(" ".join(x for x in (what, held) if x)))
+
+        tbl = [("Bot", "Lost", "7d", "$ lost", "Worst")]
+        for nm in tuple(bs.BOTS) + ("other",):
+            p = per.get(nm)
+            if p and p["settled"]:
+                tbl.append((short.get(nm, nm), "%d/%d" % (p["lost"], p["settled"]), str(p["lost_7d"]),
+                            "%.2f" % p["money_lost"], "%.2f" % p["worst"] if p["worst"] is not None else "-"))
+        worst = min((p["worst"] for p in per.values() if p["worst"] is not None), default=None)
+        tbl.append(("ALL", "%d/%d" % (lost, settled), str(sum(p["lost_7d"] for p in per.values())),
+                    "%.2f" % sum(p["money_lost"] for p in per.values()), "%.2f" % worst if worst is not None else "-"))
+        tail = ["", "📊 <b>By bot, all time</b>", pre(table(tbl, "lrrrr")),
+                i_("Lost = markets lost / settled · 7d = lost in the last 7 days · $ lost = all its losing markets "
+                   "added up · Worst = its worst single market · /losses chart: every loss, coloured by bot")]
+        n = min(LOSSES_SHOWN, len(rows))
+        while True:
+            out = ["🔴 <b>%s losing markets</b> of %s settled, every bot (%.1f%%) · %d in the last 7 days" % (
+                       _cnt(lost), _cnt(settled), 100.0 * lost / settled if settled else 0.0,
+                       sum(p["lost_7d"] for p in per.values())),
+                   i_("the last %d, newest first · %% = of that bot's pot when its day began (pin + race share the "
+                      "main account) · Kalshi's books, every pot" % n)]
+            if missing:
+                out.append("⚠️ PARTIAL: leaves out %s (Kalshi could not be read)" % esc(", ".join(missing)))
+            day = None
+            for r in rows[:n]:
+                if r["day"] != day:
+                    day = r["day"]
+                    out += ["", "<b>%s</b>" % esc(_day_long(day))]
+                out.append(line(r))
+            msg = "\n".join(out + tail)
+            if len(msg) <= MAX_LEN or n <= 5:
+                return Html(msg)
+            n -= 5
+
+    def text_losses_main(self):
+        """The main account's losing closes from its own ledger (pin + race; the /losses of before 10-26), for when
+        botstats cannot be read."""
+        rows = self.ledger.losing_closes()[:LOSSES_SHOWN]
         if not rows:
             return Html("No losing closes.")
         s = Ledger.summary(self.ledger.settled)
@@ -5308,7 +5373,17 @@ def selftest():
         state["h"].pop("supply_lines")
         ck("Sellers:" in P(ph.handle(111, "/market")),
            "NULL: a health reading with no opportunity block still answers")
-        ck(ph.handle(111, "/losses") == "No losing closes.", "/losses with none")
+        _lo = P(ph.handle(111, "/losses"))
+        _lb = _lo.split("By bot")
+        ck(_lo.startswith("🔴 3 losing markets of 8 settled, every bot (37.5%)")
+           and "Wed Sep 16\n-$2.54 (" in _lo and "Forecaster · ETH 10:00 AM YES x5" in _lo
+           and "Pin bot · ETH 9:45 AM hedged x80" in _lo and "Tue Sep 15\n-$4.51" in _lo and "Other · WTI 2:00 PM YES x5" in _lo
+           and _lo.index("Forecaster · ETH") < _lo.index("Pin bot · ETH") < _lo.index("Other · WTI")
+           and len(_lb) == 2 and "Coin race" not in _lb[0] and "Ladder" in _lb[1] and "ALL" in _lb[1] and "3/8" in _lb[1]
+           and fits(ph.handle(111, "/losses")),
+           "/losses (10-26): EVERY bot's losing markets from Kalshi's books -- the forecaster's and the old oil bot's "
+           "too -- each named by bot, newest day first, with side and contracts; the pin's hedged market on its own "
+           "line; a bot-by-bot table: %r" % _lo)
         ck(ph.handle(111, "/hedges") == "No hedges yet.", "/hedges with none")
         _op = P(ph.handle(111, "/open"))
         ck(_op.startswith("📂 Coin race: 1 open · $19.60 at risk") and "race SOL 11:00 AM YES x20 · $19.60" in _op
@@ -6010,6 +6085,8 @@ def selftest():
         ck("Nothing settled yet in any pot." in eb_ and "today nothing yet · 7 days nothing yet · all time nothing yet"
            in eb_ and "+$" not in eb_ and "-$" not in eb_ and "By day:" not in eb_ and "By day (all pots)" not in eb_,
            "EMPTY /bots: says nothing has settled yet, no gain or loss, no empty day list")
+        ck(P(ph.handle(111, "/losses")) == "No losing markets in any pot (0 settled).",
+           "EMPTY /losses: no losing market in any pot, said plainly: %r" % P(ph.handle(111, "/losses")))
         # DOWN: Kalshi refuses and the process list cannot be read -- unknown, never $0 or 'not running'
         _bs_sandbox("botstats-down")
         _bs_mode["m"], ph.bs_procs = "down", (lambda: None)
@@ -6024,6 +6101,9 @@ def selftest():
            and "money: settlements read failed (HTTP 401): forecaster, fx, ladder, pin, race, weather" in db_
            and "nothing settled" not in db_ and "Nothing settled" not in db_,
            "DOWN /bots: every total is 'unknown', the missing pots are named, each error said once")
+        _lo = P(ph.handle(111, "/losses"))
+        ck("every bot" not in _lo and "No losing markets" not in _lo and (_lo == "No losing closes." or "losing closes" in _lo),
+           "DOWN /losses: no pot readable -> the main account's own ledger (never 'no losing markets'): %r" % _lo[:120])
         # BROKEN botstats: those commands say so; /race still answers
         _sv_b, _sv_a = _bsm.bot, _bsm.all_bots
 
