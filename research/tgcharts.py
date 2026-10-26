@@ -131,7 +131,7 @@ def png(fig):
 
 def headline(fig, text):
     """The number that matters, bold, top left; smaller type for a long one so it never runs off a phone."""
-    fig.suptitle(text, x=0.012, ha="left", fontsize=min(14.0, 14.0 * 64 / max(1, len(text))), fontweight="bold",
+    fig.suptitle(text, x=0.012, ha="left", fontsize=min(14.0, 14.0 * 54 / max(1, len(text))), fontweight="bold",
                  color=INK)
 
 
@@ -477,7 +477,7 @@ def chart_day(ctx, which):
     r = (net / b0) if b0 else None
     headline(fig, "%s %s%s · %d of %d markets won" % (label, usd(net), (" (%s of all pots)" % pctx(r, 2)) if r is not None else "",
                                                     won, len(ms)))
-    cap = ("%s: every bot's money market by market (pin, coin race, forecaster, ladder; Kalshi's books, every pot; "
+    cap = ("%s: every bot's money market by market (pin, coin race, forecaster, ladder, FX taker; Kalshi's books, every pot; "
            "a market counts on the ET day it closed). Orange dashes: the average day of the %d days before, on the "
            "same clock. Right axis: the same dollars as %% of all pots at the start of the ET day.%s" % (
                label, AVG_DAYS, (" PARTIAL: leaves out %s (Kalshi could not be read)." % ", ".join(missing)) if missing else ""))
@@ -557,14 +557,43 @@ def chart_days(ctx, src):
     pp = ctx["pp"]
     today = et_day(now)
     winrate = None
+    pct_words = "% of the bank each day (the bank at the start of that ET day)"
+
+    def bank(d):
+        return led.bank_at(et_day_start(d))
     if src == "days":
-        rows = ledger_days(led)
-        if not rows:
-            return None
-        s = Ledger.summary(led.settled)
-        dep = led.deposited()
-        head = "All time %s%s" % (usd(s["net"]), (" (%s on the %s put in)" % (pctx(s["net"] / dep, 2), usd(dep, False))) if dep else "")
-        src_words = "Kalshi's books, main account (pin + coin race), every ET day it traded"
+        # 2026-10-26: /days' words cover EVERY bot (operator: "add the percentage anywhere it applied"), so its
+        # picture does too -- each day's money over all pots, as % of what all the pots held when it began
+        # (botstats.day_pot, the /days table's own rule). The main account alone when botstats cannot be read.
+        try:
+            bs, pctx_, mrows, missing = all_day_markets(ctx)
+        except Exception:                               # noqa: BLE001
+            bs, mrows, missing = None, [], ["all"]
+        if bs is not None and mrows and not missing:
+            per = {}
+            for d_, _t, v_, _b in mrows:
+                per[d_] = per.get(d_, 0.0) + v_
+            rows, d_ = [], min(per)
+            while d_ <= today:
+                rows.append((d_, per.get(d_, 0.0)))
+                d_ = bs.shift_day(d_, 1)
+            dep = bs.pot_for(pctx_, None, "all_time")[0]
+            tot = sum(per.values())
+            head = "Every bot, all time %s%s" % (usd(tot), (" (%s on the %s put in)" % (pctx(tot / dep, 2), usd(dep, False)))
+                                                if dep else "")
+            src_words = "Kalshi's books, every pot (every bot), every ET day"
+            pct_words = "% of all pots each day (what they held when that ET day began)"
+
+            def bank(d):                                # noqa: F811 -- all pots, not the main account
+                return bs.day_pot(pctx_, None, d)
+        else:
+            rows = ledger_days(led)
+            if not rows:
+                return None
+            s = Ledger.summary(led.settled)
+            dep = led.deposited()
+            head = "All time %s%s" % (usd(s["net"]), (" (%s on the %s put in)" % (pctx(s["net"] / dep, 2), usd(dep, False))) if dep else "")
+            src_words = "Kalshi's books, main account (pin + coin race), every ET day it traded"
     else:
         fl = pp.FIRST_LIVE_DAY
         ms = [m for m in markets_of(ctx).values() if m["day"] >= fl]
@@ -601,7 +630,7 @@ def chart_days(ctx, src):
     lo = days[0]                                        # the % average reaches AVG_DAYS-1 days left of the picture
     for _ in range(AVG_DAYS - 1):
         lo = prev_day(lo)
-    b0 = {d: led.bank_at(et_day_start(d)) for d, _v in rows if d >= lo}
+    b0 = {d: bank(d) for d, _v in rows if d >= lo}
     b0s = [b0[d] for d in days]
     pct_by = {d: ((100.0 * v / b0[d]) if b0[d] else 0.0) for d, v in rows if d >= lo}
     avg_net = avg_by_day(dict(rows), days)
@@ -628,7 +657,7 @@ def chart_days(ctx, src):
                     lw=1.8, ls="--", zorder=4, label="%d-day average, to yesterday (%+.2f%% a day)" % (AVG_DAYS, lap))
         legend(axs[1])
     pct_ticks(axs[1])
-    axs[1].set_title("% of the bank each day (the bank at the start of that ET day)")
+    axs[1].set_title(pct_words)
     ax = axs[2]
     ax.plot(xs, run, color=BLUE, lw=2.2, zorder=3, marker="o", ms=3.5)
     ax.fill_between(xs, run, 0, color=BLUE, alpha=0.08, lw=0)
@@ -666,7 +695,7 @@ def chart_days(ctx, src):
     date_axis(axs[-1])
     headline(fig, head)
     cap = ("%s: %s; the last %d days drawn, the running total counts all of them. Top: each day's money; then the "
-           "same day as %% of the bank it began with (orange dashes: the average of that day and the %d before it, "
+           "same day as %% of what it began with (orange dashes: the average of that day and the %d before it, "
            "drawn to yesterday); "
            "then the running total (right axis: %% of the money put in)%s." % (
                "/stats" if src == "stats" else "/days", src_words, len(days), AVG_DAYS - 1,

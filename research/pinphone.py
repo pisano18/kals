@@ -641,7 +641,8 @@ class FakeTelegram:
 HELP_TEXT = Html("""📱 <b>Commands</b>
 
 💰 <b>Money</b>
-/today · /yesterday · /days — money and % return, day by day
+/today · /yesterday — every bot's money that day: % of all pots, and a table with each bot's % of its bank
+/days — the last 7 days, every bot: each day's % of all pots, each bot's week
 /stats — the whole record by window: money, win rate vs break-even, losses, timing
 /funds (or /bank, /accounts) — the money in every account and subaccount: cash, open bets, total, what runs there, bet size now, each account's last 7 days (main bot and coin race apart), and the grand total
 /bots — every bot: running or not, money today / 7 days / all time, each pot's cash, and the total of all of them
@@ -657,11 +658,11 @@ HELP_TEXT = Html("""📱 <b>Commands</b>
 
 🔎 <b>Right now</b>
 /status — is it trading, with the evidence
-/open — open bets
+/open — open bets in every pot
 /fills — every order today: filled, price paid, seconds out
 /market — how active sellers are
-/losses — losing closes
-/hedges — insurance and whether it was needed
+/losses — losing closes, each as % of the bank
+/hedges — insurance, whether it was needed, % of the bank
 /brief — the daily briefing: money, what changed, what it did, the market, what to watch
 /bars — the September tests against their pre-registered bars (all finished; kept for the record)
 /features — what each bot does and the settings it runs with now (read from boot_all.ps1), and the rules they run under
@@ -675,7 +676,7 @@ HELP_TEXT = Html("""📱 <b>Commands</b>
 
 📈 Most commands send a chart right after the words (not /open, /help or the controls).
 
-<i>Alerts come by themselves: state changes, every losing close, low disk (under 8 GB, again under 6 GB), and yesterday's summary at 8 AM ET. Long details sit behind a tap on the quoted block.</i>""")
+<i>Alerts come by themselves: state changes, every losing close (with its % of the bank), low disk (under 8 GB, again under 6 GB), and yesterday's summary for every bot at 8 AM ET. Long details sit behind a tap on the quoted block.</i>""")
 
 # the immediate reply to a control (the work itself runs on a thread, see Phone.control)
 CONTROL_REPLY = {"start": Html("▶️ <b>Starting…</b>"),
@@ -725,12 +726,14 @@ def disk_alert_html(msg, level):
 def alert_loss_text(ledger, close, net, legs):
     """A new losing close: story_loss's facts (pindesk), laid out -- the loss as the headline, one line a
     leg, why it hurts. The desktop's 'double-click a row' hint is left out: there is no row on a phone."""
-    L = ["🔴 <b>LOSS %s</b> · the quarter-hour closing %s ET on %s" % (
-        esc(usd(net)), esc(et_str(close)), esc(et_str(close, "%b %d")))]
+    b0 = ledger.bank_at(close - 1) if close else None
+    L = ["🔴 <b>LOSS %s%s</b> · the quarter-hour closing %s ET on %s" % (
+        esc(usd(net)), (" (%s of the bank)" % esc(pct(net / b0))) if b0 else "", esc(et_str(close)),
+        esc(et_str(close, "%b %d")))]
     for l_ in legs:
         n = ledger.contracts_for(l_["tk"])
         L.append("• <b>%s</b> %s at %.1fc, %g contracts → settled %s: <b>%s</b>" % (
-            esc(coin(l_["tk"])), esc(str(l_["want"]).upper()), 100 * float(l_["cost"] or 0), n,
+            esc(nice_coin(l_["tk"])), esc(str(l_["want"]).upper()), 100 * float(l_["cost"] or 0), n,
             esc(str(l_["result"]).upper()), esc(usd(l_["pnl"]))))
     L.append("")
     L.append("<b>WHY IT HURTS:</b> <i>a win here makes 2c to 4c a contract; a loss costs most of the 96c-98c "
@@ -2166,11 +2169,11 @@ def bs_avg_day_line(m, goal=None):
     return txt
 
 
-def bs_headline(w, whose="of its bank", who="", goal=None):
+def bs_headline(w, whose="of its bank", who="", goal=None, when="today"):
     """'🟢 Pin bot today +$5.31 (+2.6% on $202.56 staked · +0.40% of its bank)' -- bs_window_line's own
-    figures; nothing settled and unread are said."""
+    figures; nothing settled and unread are said. `when` names the window ('yesterday', 'last 7 days')."""
     bs = _bs()
-    lab = ("%s today" % who) if who else "Today"
+    lab = ("%s %s" % (who, when)) if who else when[:1].upper() + when[1:]
     if w is None:
         return "❔ <b>%s: COULD NOT READ KALSHI</b>" % esc(lab)
     if not w["markets"]:
@@ -2183,6 +2186,50 @@ def bs_headline(w, whose="of its bank", who="", goal=None):
     return "%s <b>%s %s</b> (<b>%s</b> on %s staked%s)" % (
         dot(w["money"]), esc(lab), esc(usd(w["money"])), esc(bs.pct(w["return_pct"])), esc(_cash(w.get("put_in"))),
         esc(share))
+
+
+def bots_window_table(a, key, span="day"):
+    """ONE botstats window (today / yesterday / last_7_days) bot by bot and every pot together: the money, its
+    share of that bot's pot when the window began, its return on what the bets cost, and markets lost of those
+    settled. Operator 10-26: "/yesterday doesn't look good or show % of bank return ... add the percentage
+    anywhere it applied". Html lines (the table, its legend); [] when nothing settled in any pot."""
+    bs = _bs()
+    tot = a["total"][key]
+    if not tot["markets"]:
+        return []
+
+    def cells(name, w):
+        return (name, usd(w["money"]), bs.pot_pct_txt(w["pot_pct"]) if w.get("pot_pct") is not None else "-",
+                bs.pct(w["return_pct"]) if w.get("return_pct") is not None else "-", "%d/%d" % (w["lost"], w["markets"]))
+    rows = [("Bot", "Money", "of bank", "Return", "Lost")]
+    for nm in tuple(bs.BOTS) + ("other",):
+        m = a["other"] if nm == "other" else a["bots"][nm]["money"]
+        w = m.get(key) if m.get("ok") else None
+        if w and w["markets"]:
+            rows.append(cells(nm, w))
+    rows.append(cells("ALL", tot))
+    return [pre(table(rows, "lrrrr")),
+            i_("of bank = share of that bot's pot when the %s began (pin + race share the main account; ALL = every "
+               "pot) · Return = on what the bets cost · Lost = markets lost / settled" % span)]
+
+
+def _day_long(day):
+    """'2026-10-25' -> 'Sun Oct 25'."""
+    try:
+        return time.strftime("%a %b %d", time.strptime(day, "%Y-%m-%d")).replace(" 0", " ")
+    except (TypeError, ValueError):
+        return str(day)
+
+
+def nice_coin(tk):
+    """A market's short name for a person: 'ZEC', 'BTC hourly' (KXBTCD-...), 'coin race' (KXCRYPTOLEAD/COMP)."""
+    t = str(tk or "")
+    if re.match(r"^KXCRYPTO(LEAD|COMP)", t):
+        return "coin race"
+    m = re.match(r"^KX([A-Z]+?)D-", t)
+    if m:
+        return "%s hourly" % m.group(1)
+    return coin(t)
 
 
 def bs_bot_html(b, now_et):
@@ -2343,14 +2390,16 @@ def bs_all_html(a):
     days = [d for d in a["total_days_7"] if not (firsts and d["day"] < min(firsts))]
     if anything and days:
         mx = max([abs(d["money"]) for d in days if d["markets"]] or [0])
-        rows = [("Day", "Money", "Return", "Mkts", "")]
+        rows = [("Day", "Money", "of pots", "Return", "Lost", "")]
         for d in days:
             rows.append((d["label"], "nothing settled") if not d["markets"] else
-                        (d["label"], usd(d["money"]), ret(d["money"], d.get("put_in")) or "-", d["markets"],
-                         hbar(d["money"], mx, 8)))
+                        (d["label"], usd(d["money"]),
+                         bs.pot_pct_txt(d["pot_pct"]) if d.get("pot_pct") is not None else "-",
+                         ret(d["money"], d.get("put_in")) or "-", "%d/%d" % (d.get("lost", 0), d["markets"]),
+                         hbar(d["money"], mx, 4)))
         L.append("")
-        L.append("📅 <b>By day</b> (all pots)")
-        L.append(pre(table(rows, "lrrrl")))
+        L.append("📅 <b>By day</b> (all pots; of pots = share of all the pots when that day began)")
+        L.append(pre(table(rows, "lrrrrl")))
     elif not anything and not miss:
         L.append("Nothing settled yet in any pot.")
     warn = bs_errors_line(a["errors"]) + list(bs.pot_check_lines(a.get("pot_check")))
@@ -2726,7 +2775,7 @@ def funds_settled(getter, subs, now, clock=time.monotonic, deadline_s=FUNDS_HIST
     return out
 
 
-def funds_days(res, today, days=FUNDS_DAYS):
+def funds_days(res, today, days=FUNDS_DAYS, sub=None):
     """One account's pull (funds_settled) -> its last `days` ET days, newest first:
     {"days": [{"day", "read", "all", "bot", "race", "other"}], "total": {"all", "bot", "race", "other"},
      "other_series": the series in "other" on the days read}.
@@ -2739,10 +2788,19 @@ def funds_days(res, today, days=FUNDS_DAYS):
         return {k: {"money": 0.0, "n": 0, "lost": 0} for k in keys}
     want = [bs.shift_day(today, -k) for k in range(days)]
     mk = {}                                 # ticker -> [day, book, money]: several rows, one market
+    left = {"money": 0.0, "n": 0, "tk": set()}
     for s in res.get("rows") or []:
         tk = s.get("ticker")
         if not isinstance(tk, str) or not tk:
             continue                        # not a market: a transfer or anything else is never a gain here
+        if sub is not None and str(sub) in getattr(bs, "POT_POOL_ONLY", {}) and bs.owner(tk, str(sub)) == "other":
+            # 2026-10-26: the number 4 also names the old coin-race reward test's pool-2 pot; its legs are not the
+            # FX pairs' (the summary showed 'fx pairs -15.91 (-25.8%)' from that test's 10-19..10-23 losses)
+            d_ = pinday.et_day_of_ticker(tk)
+            if d_ in set(bs.shift_day(today, -k) for k in range(days)):
+                left["money"] += pinledger.pnl(s)
+                left["tk"].add(tk)
+            continue
         if tk not in mk:
             d = pinday.et_day_of_ticker(tk)
             if d is None:
@@ -2770,6 +2828,7 @@ def funds_days(res, today, days=FUNDS_DAYS):
     read_days = set(x["day"] for x in out["days"] if x["read"])
     out["other_series"] = sorted(set(tk.split("-")[0] for tk, (d, book, _v) in mk.items()
                                      if book == "other" and d in read_days))
+    out["left_out"] = {"money": round(left["money"], 4), "n": len(left["tk"])}
     return out
 
 
@@ -2779,7 +2838,7 @@ def _funds_hist_lines(n, res, today, show, held):
     bs = _bs()
     if res is None:
         return ["  past %d ET days: not read" % FUNDS_DAYS]
-    h = funds_days(res, today)
+    h = funds_days(res, today, sub=n)
     unread = [x["day"] for x in h["days"] if not x["read"]]
     if len(unread) == FUNDS_DAYS:
         return ["  past %d ET days: COULD NOT READ (%s)" % (FUNDS_DAYS, res.get("err"))]
@@ -2872,13 +2931,16 @@ def _funds_days_html(n, res, today, show, held):
     bs = _bs()
     if res is None:
         return ["<i>past %d ET days: not read</i>" % FUNDS_DAYS]
-    h = funds_days(res, today)
+    h = funds_days(res, today, sub=n)
     unread = [x["day"] for x in h["days"] if not x["read"]]
     if len(unread) == FUNDS_DAYS:
         return ["past %d ET days: COULD NOT READ (%s)" % (FUNDS_DAYS, esc(res.get("err")))]
     tot = h["total"]
+    lo = h.get("left_out") or {}
+    lo_line = (i_("left out: %s of the old coin-race test in this subaccount's crypto pool (%s) -- not the FX pairs'"
+                  % (_nof(lo["n"], "market"), usd(lo["money"]))) if lo.get("n") else None)
     if not tot["all"]["n"] and not unread:
-        return ["<i>past %d ET days: nothing settled</i>" % FUNDS_DAYS]
+        return ["<i>past %d ET days: nothing settled</i>" % FUNDS_DAYS] + ([lo_line] if lo_line else [])
     head = "Past %d ET days" % FUNDS_DAYS
     rows = [(head, "Money", "Lost")]
     shown, i = h["days"][:max(show, 0)], 0
@@ -2921,6 +2983,8 @@ def _funds_days_html(n, res, today, show, held):
         L.append(details(elines([x.strip() for x in _funds_hist_lines(n, res, today, show, held)[1:]
                                  if not x.strip().startswith(("NOT READ", "7 days:", "the "))]),
                          "Each day, main bot / race / other"))
+    if lo_line:
+        L.append(lo_line)
     if unread:
         L.append("⚠️ NOT READ: %s (%s)" % (esc(", ".join(_funds_day_label(d, "") for d in unread)),
                                            esc(res.get("err"))))
@@ -2968,7 +3032,7 @@ def _funds_page(f, sizes, now, hist, show):
         total = cash + (s["open"] or 0.0)
         wk = None
         if hist is not None and hist.get(n) is not None:
-            hd = funds_days(hist[n], today)
+            hd = funds_days(hist[n], today, sub=n)
             if any(x["read"] for x in hd["days"]):
                 wk = (hd["total"]["all"]["money"], hd["total"]["all"]["n"], all(x["read"] for x in hd["days"]))
         accts.append(dict(n=n, s=s, what=what, name=name, cash=cash, parts=parts, ow=ow, whole=whole,
@@ -3484,8 +3548,8 @@ class Phone:
                 up = hours_up_et_day(day, self.now() if day == et_day(self.now()) else et_day_start(day) + 86400)
             except Exception:                            # noqa: BLE001
                 up = None
-            L.append("%s, %g contracts%s" % (
-                esc(_nof(fs["fills"], "fill")), fs["contracts"],
+            L.append("%s, %s contracts%s" % (
+                esc(_nof(fs["fills"], "fill")), "{:,.0f}".format(fs["contracts"] or 0),
                 (" · %d of %d orders filled nothing (%s)" % (fs["zero"], fs["orders"], pct_of(fs["zero"], fs["orders"])))
                 if fs["orders"] else ""))
             if up:
@@ -3496,7 +3560,7 @@ class Phone:
                 for k in sorted(closes):
                     cum += closes[k]
                     run.append(cum)
-                L.append("Through the day <code>%s</code>" % esc(spark(run)))
+                L.append("Close by close, the running total: <code>%s</code>" % esc(spark(run)))
         if base and r is not None:
             L.append(i_(base))
         return L
@@ -3514,14 +3578,31 @@ class Phone:
         if ev:
             lines.append(i_(ev))
         if b:
+            # 2026-10-26: was 'Bank $1,340.77 (+19.34% on the $1,123.46 put in)' -- the main account's bank against
+            # the money put into EVERY pot (about $1,024 of it now sits in the other bots' pots), so the % read low
             lines.append("")
-            lines.append("🏦 <b>Bank %s</b>%s · size %g contracts" % (
-                esc(dollars(b["bank"])),
-                (" (<b>%s</b> on the %s put in)" % (esc(pct((b["bank"] - dep) / dep)), esc(dollars(dep)))) if dep else "",
-                b.get("size") or 0))
+            lines.append("🏦 <b>Main account %s</b> (pin bot + coin race) · bet size %g contracts" % (
+                esc(dollars(b["bank"])), b.get("size") or 0))
+            try:
+                a = self._bs_get("all")
+                at, allc = a["total"]["all_time"], a["balances"].get("all")
+                if allc is not None:
+                    lines.append("💼 All pots %s%s · /bots" % (esc(dollars(allc)), (
+                        " · all time <b>%s</b> (<b>%s</b> on the %s put in)" % (
+                            esc(usd(at["money"])), esc(_bs().pot_pct_txt(at["pot_pct"])), esc(dollars(at["pot"]))))
+                        if at.get("pot_pct") is not None and at.get("pot") else ""))
+            except Exception:                                   # noqa: BLE001
+                log(traceback.format_exc())
         today = et_day(self.now())
         lines.append("")
-        lines += self.day_html(self.ledger.settled_on(today), today, "Today")
+        lines += self.day_html(self.ledger.settled_on(today), today, "Pin + race today")
+        try:
+            t_ = self._bs_get("all")["total"]["today"]
+            if t_["markets"]:
+                lines.append("🤖 All bots today <b>%s</b>%s · /today" % (esc(usd(t_["money"])), (
+                    " (<b>%s</b> of all pots)" % esc(_bs().pot_pct_txt(t_["pot_pct"]))) if t_.get("pot_pct") is not None else ""))
+        except Exception:                                       # noqa: BLE001
+            log(traceback.format_exc())
         opn = pinflat.positions(self.ledger.newest_rows) if h["alive"] else {}
         if opn:
             lines.append("")
@@ -3535,10 +3616,12 @@ class Phone:
         return Html("\n".join(lines))
 
     def _all_bots_day(self, day, label):
-        """/today and /yesterday's headline: EVERY bot's money that ET day from Kalshi's books (botstats.all_bots,
-        the /bots source). The operator, 2026-10-23: "/today doesn't show the right total it says 11.22 right now
-        it's really 24.85" -- the old headline was the main account only (pin + race), not the forecaster's or the
-        ladder's pots. [] when the day is neither today nor yesterday; one warning line when botstats fails."""
+        """/today and /yesterday's top: EVERY bot's money that ET day from Kalshi's books (botstats.all_bots, the
+        /bots source). The operator, 2026-10-23: "/today doesn't show the right total it says 11.22 right now it's
+        really 24.85" -- the old headline was the main account only. 2026-10-26: "/yesterday doesn't look good or
+        show % of bank return" -- now the headline carries the % of all pots, a bot-by-bot table carries each
+        bot's % of its own bank and its return on the bets, and the averages carry their % too. [] when the day
+        is neither today nor yesterday; one warning line when botstats fails."""
         try:
             a = self._bs_get("all")
         except Exception:                                        # noqa: BLE001
@@ -3550,42 +3633,48 @@ class Phone:
         if key is None:
             return []
         w = a["total"][key]
-        lab = "All bots %s" % label.lower()
         if w["partial"] and not w["markets"]:
-            L = ["❔ <b>%s: unknown -- Kalshi could not be read</b>" % esc(lab)]
-        elif not w["markets"]:
-            L = ["⚪ <b>%s: nothing settled yet</b>" % esc(lab)]
+            L = ["❔ <b>All bots %s: unknown -- Kalshi could not be read</b>" % esc(label.lower())]
         else:
-            L = ["%s <b>%s %s</b>%s · %d of %d markets won" % (
-                dot(w["money"]), esc(lab), esc(usd(w["money"])),
-                (" (<b>%s</b> of all pots)" % esc(bs.pot_pct_txt(w["pot_pct"]))) if w.get("pot_pct") is not None else "",
-                w["won"], w["markets"])]
-            parts = [(b, v) for b, v in w["by_bot"].items() if w["by_bot_markets"].get(b)]
-            if parts:
-                L.append(esc(" · ".join("%s %s" % (b, usd(v)) for b, v in parts)))
+            L = [bs_headline(w, "of all pots", "All bots", when=label.lower())]
+        L.append(i_("%s ET%s · every pot, Kalshi's books" % (
+            _day_long(day), (" · %d of %d markets won" % (w["won"], w["markets"])) if w["markets"] else "")))
         if key == "today" and not w["partial"]:
-            pace = self._pace_line(w["money"], day)
+            pace = self._pace_line(w["money"], day, w.get("pot"))
             if pace:
                 L.append(pace)
         if w["partial"] and w["markets"]:
             L.append("⚠️ PARTIAL: leaves out %s (Kalshi could not be read)" % esc(", ".join(w["missing"])))
+        tbl = bots_window_table(a, key)
+        if tbl:
+            L += ["", "📊 <b>By bot</b>"] + tbl
         avg, n = all_bots_avg_before(a, day)
+        base = w.get("pot")
+
+        def share(x):
+            return (" (%s of all pots)" % bs.pot_pct_txt(100.0 * x / base)) if base else ""
         more = []
         if key == "today" and a["total"]["yesterday"]["markets"]:
-            more.append("yesterday %s" % usd(a["total"]["yesterday"]["money"]))
+            y = a["total"]["yesterday"]
+            more.append("yesterday %s%s" % (usd(y["money"]), (" (%s)" % bs.pot_pct_txt(y["pot_pct"]))
+                                             if y.get("pot_pct") is not None else ""))
         if avg is not None:
-            more.append("%d-day average %s a day" % (n, usd(avg)) if key == "today" else
-                        "the %d days before averaged %s a day" % (n, usd(avg)))
+            if key == "today":
+                more.append("%d-day average %s a day%s" % (n, usd(avg), share(avg)))
+            elif w["markets"]:
+                gap = w["money"] - avg
+                more.append("the %d days before averaged %s a day%s, so this day was %s %s average" % (
+                    n, usd(avg), share(avg), dollars(abs(gap)), "above" if gap >= 0 else "below"))
         if more:
-            L.append(esc(" · ".join(more)))
-        L.append(i_("every pot, Kalshi's books; a market counts on the ET day it closed · each bot: /bots · the "
-                    "week: /days"))
+            L.append("")
+            L.append("📈 " + esc(" · ".join(more)))
         return L
 
-    def _pace_line(self, so_far, day):
-        """'📈 Ahead of pace: +$76.44 so far vs +$20.10 by 10:45 PM on an average day (last 7)' -- every bot,
-        today against the same ET clock on the days before (operator: judge 'on track' from midnight ET, and say
-        'behind' plainly). None when it cannot be worked out (it never costs the rest of /today)."""
+    def _pace_line(self, so_far, day, base=None):
+        """'📈 Ahead of pace: +$76.44 (+3.3%) so far vs +$20.10 (+0.86%) by 10:45 PM on an average day (last 7)' --
+        every bot, today against the same ET clock on the days before (operator: judge 'on track' from midnight
+        ET, and say 'behind' plainly); the % are of all pots at midnight (`base`). None when it cannot be worked
+        out (it never costs the rest of /today)."""
         try:
             T = _tgc()
             now = self.now()
@@ -3597,8 +3686,12 @@ class Phone:
             if avg is None:
                 return None
             ahead = so_far >= avg
-            return "%s <b>%s</b>: %s so far vs %s by %s on an average day (last %d)" % (
-                "📈" if ahead else "📉", "Ahead of pace" if ahead else "Behind pace", esc(usd(so_far)), esc(usd(avg)),
+
+            def sh(x):
+                return (" (%s)" % b_.pot_pct_txt(100.0 * x / base)) if base else ""
+            return "%s <b>%s</b>: %s%s so far vs %s%s by %s on an average day (last %d)" % (
+                "📈" if ahead else "📉", "Ahead of pace" if ahead else "Behind pace", esc(usd(so_far)), esc(sh(so_far)),
+                esc(usd(avg)), esc(sh(avg)),
                 esc(et_str(b_.day_start(day) + (max(0.0, now - b_.day_start(day)) // 900) * 900)), n)
         except Exception:                                       # noqa: BLE001
             log(traceback.format_exc())
@@ -3607,9 +3700,12 @@ class Phone:
     def text_day(self, day, label):
         top = self._all_bots_day(day, label)
         if top:
-            L = self.day_html(self.ledger.settled_on(day), day, "Pin + race")
-            return Html("\n".join(top + ["", "🏦 <b>Main account</b> <i>(pin bot + coin race; the forecaster and the "
-                                             "ladder have their own pots)</i>"] + L))
+            # inside the tap's quote: no <code> (Telegram refuses code inside a blockquote -- tg_html_problems)
+            L = [x.replace("<code>", "").replace("</code>", "")
+                 for x in self.day_html(self.ledger.settled_on(day), day, "Pin + race")]
+            return Html("\n".join(top + ["", details(L, "🏦 Pin bot + coin race (main account): closes, fills, "
+                                                        "hours up -- tap"),
+                                         i_("each bot in full: /bots · the week: /days")]))
         L = self.day_html(self.ledger.settled_on(day), day, label)
         if day == et_day(self.now()):                          # /today: yesterday beside it, for scale
             y = et_day(self.now() - 86400)
@@ -3618,49 +3714,141 @@ class Phone:
             L.append(i_("Yesterday %s (%s) · /days for the week" % (usd(s["net"]), pct((s["net"] / b0) if b0 else None))))
         return Html("\n".join(L))
 
-    def text_days(self):
-        rows, vals = [("Day", "Money", "% bank", "Lost", "")], []
+    def _main_days(self):
+        """The main account's (pin + race) last 7 ET days from the bot's own ledger: [(day, net, % of the bank
+        that began it or None, lost closes, closes)], newest first."""
+        out = []
         for d in list(reversed(self.ledger.days()))[:7]:
-            s = Ledger.summary(self.ledger.settled_on(d))
+            s_ = Ledger.summary(self.ledger.settled_on(d))
             b0 = self.ledger.bank_at(et_day_start(d))
-            vals.append(s["net"])
-            rows.append((d[5:], usd(s["net"]), pct((s["net"] / b0) if b0 else None), "%d/%d" % (s["lost"], s["closes"])))
-        mx = max([abs(v) for v in vals] or [0])
-        rows = [rows[0]] + [r + (hbar(v, mx, 4),) for r, v in zip(rows[1:], vals)]
-        at = self.day_html(self.ledger.settled, None, "All time")
-        out = [at[0]] + at[1:]
-        out.append("")
-        out.append("📅 <b>Last %d days</b> <i>(Kalshi's books, main account; ET days)</i>" % len(vals))
-        out.append(pre(table(rows, "lrrrl")))
-        out.append(i_("% bank = of the bank at the start of that day · Lost 1/25 = 1 losing close of 25"))
-        # 2026-10-01, the operator: "/days doesn't show any recent negative days on this version". A deploy day
-        # mixes two versions (09-30: +$30.45 before v-topup, -$18.77 after, shown as one +$11.68), so the running
-        # version gets its own line -- Kalshi's books, main account, markets closing after its deploy.
+            out.append((d, s_["net"], (s_["net"] / b0) if b0 else None, s_["lost"], s_["closes"]))
+        return out
+
+    def _version_line(self):
+        """'🏷 SINCE v-x (10/23 09:45 PM ET): +$58.11, 97 markets, 5 lost (5.2%)' for the pin bot's running
+        version, or None. 2026-10-01, the operator: "/days doesn't show any recent negative days on this
+        version" -- a deploy day mixes two versions, so the running one gets its own line (Kalshi's books, main
+        account, markets closing after its deploy)."""
         ver = live_version(self.versions_path)
-        if ver:
-            try:
-                vs = [m for m in self._markets().values() if m["close"] is not None and m["close"] >= ver[1]]
-            except Exception:                                    # noqa: BLE001
-                vs = None
-            if vs is not None:
-                lost = sum(1 for m in vs if m["pnl"] < -0.004)
-                out.append("")
-                out.append("🏷 <b>SINCE %s</b> (%s ET): <b>%s</b>, %d markets, %d lost%s" % (
-                    esc(ver[0]), esc(et_str(ver[1], "%m/%d %I:%M %p")), esc(usd(sum(m["pnl"] for m in vs))), len(vs),
-                    lost, (" (%s)" % pct_of(lost, len(vs), 1)) if vs else ""))
+        if not ver:
+            return None
+        try:
+            vs = [m for m in self._markets().values() if m["close"] is not None and m["close"] >= ver[1]]
+        except Exception:                                    # noqa: BLE001
+            return None
+        lost = sum(1 for m in vs if m["pnl"] < -0.004)
+        if not vs:
+            return "🏷 <b>Pin bot since %s</b> (%s ET): nothing settled since" % (
+                esc(ver[0]), esc(et_str(ver[1], "%m/%d %I:%M %p")))
+        return "🏷 <b>Pin bot since %s</b> (%s ET): <b>%s</b>, %d markets, %d lost%s" % (
+            esc(ver[0]), esc(et_str(ver[1], "%m/%d %I:%M %p")), esc(usd(sum(m["pnl"] for m in vs))), len(vs),
+            lost, (" (%s)" % pct_of(lost, len(vs), 1)) if vs else "")
+
+    def text_days(self):
+        """/days: EVERY bot's last 7 ET days (2026-10-26, operator: "add the percentage anywhere it applied") --
+        a day table with each day's % of all pots and its return on the bets, the week bot by bot with each bot's
+        % of its bank, the all-time line; then the main account's own days (pin + race, behind a tap) and the pin
+        bot's running version. Falls back to the main account's table alone when botstats cannot be read."""
+        try:
+            a = self._bs_get("all")
+        except Exception:                                        # noqa: BLE001
+            log(traceback.format_exc())
+            a = None
+        main = self._main_days()
+        out = []
+        if a is not None:
+            bs = _bs()
+            tot = a["total"]
+            out.append(bs_headline(tot["last_7_days"], "of all pots", "All bots", when="last 7 days"))
+            at = tot["all_time"]
+            if at["markets"]:
+                out.append(i_("all time %s%s · %s, %d lost · every pot, Kalshi's books; ET days" % (
+                    usd(at["money"]), (" (%s on the %s put in)" % (bs.pot_pct_txt(at["pot_pct"]), dollars(at["pot"])))
+                    if at.get("pot_pct") is not None and at.get("pot") else "", _nof(at["markets"], "market"), at["lost"])))
+            firsts = [mm.get("first_day") for mm in [a["bots"][x]["money"] for x in bs.BOTS] + [a["other"]]
+                      if mm.get("first_day")]
+            days = [d for d in a["total_days_7"] if not (firsts and d["day"] < min(firsts))]
+            if days:
+                mx = max([abs(d["money"]) for d in days if d["markets"]] or [0])
+                rows = [("Day", "Money", "of pots", "Return", "Lost", "")]
+                for d in days:
+                    if not d["markets"]:
+                        rows.append((d["label"], "nothing settled"))
+                        continue
+                    rows.append((d["label"], usd(d["money"]),
+                                 bs.pot_pct_txt(d["pot_pct"]) if d.get("pot_pct") is not None else "-",
+                                 bs.pct(d["return_pct"]) if d.get("return_pct") is not None else "-",
+                                 "%d/%d" % (d["lost"], d["markets"]), hbar(d["money"], mx, 4)))
+                out += ["", "📅 <b>Last 7 days, every bot</b>", pre(table(rows, "lrrrrl")),
+                        i_("of pots = share of all the pots when that day began · Return = on what the bets cost · "
+                           "Lost = markets lost / settled")]
+            tbl = bots_window_table(a, "last_7_days", "7 days")
+            if tbl:
+                out += ["", "📊 <b>Last 7 days, by bot</b>"] + tbl
+            det = ["%s: <b>%s</b> (%s of the bank) · %d of %d closes lost" % (
+                esc(bs.day_label(d)), esc(usd(v)), esc(pct(r)), lost, closes) for d, v, r, lost, closes in main]
+            if det:
+                out += ["", details(det, "🏦 Pin bot + coin race (main account), day by day -- tap")]
+        else:
+            rows, vals = [("Day", "Money", "% bank", "Lost", "")], []
+            for d, v, r, lost, closes in main:
+                vals.append(v)
+                rows.append((d[5:], usd(v), pct(r), "%d/%d" % (lost, closes)))
+            mx = max([abs(v) for v in vals] or [0])
+            rows = [rows[0]] + [r + (hbar(v, mx, 4),) for r, v in zip(rows[1:], vals)]
+            at_ = self.day_html(self.ledger.settled, None, "All time")
+            out = [at_[0]] + at_[1:] + ["", "📅 <b>Last %d days</b> <i>(Kalshi's books, main account; ET days)</i>"
+                                        % len(vals), pre(table(rows, "lrrrl")),
+                                        i_("% bank = of the bank at the start of that day · Lost 1/25 = 1 losing close of 25")]
+        vl = self._version_line()
+        if vl:
+            out += ["", vl]
         return Html("\n".join(out))
 
     def text_open(self):
+        """Open bets in EVERY pot (2026-10-26 screen pass): the pin bot's own, with the seconds to each close, from
+        its log; every other bot's from Kalshi's positions (botstats), with what is at risk and its share of
+        that bot's cash."""
         h = self.health_fn()
         opn = pinflat.positions(self.ledger.newest_rows) if h["alive"] else {}
-        if not opn:
-            return Html("No open bets.")
-        rows = []
-        for t in opn:
-            c = pinflat.close_epoch(t)
-            rows.append((coin(t), "x%g" % self.ledger.contracts_for(t), "closes %s" % close_et(t),
-                         "(%d s)" % max(0, (c or 0) - self.now())))
-        return Html("📂 <b>Open bets: %d</b>\n%s" % (len(rows), pre(table(rows, "lrll"))))
+        L = []
+        if opn:
+            rows = []
+            for t in opn:
+                c = pinflat.close_epoch(t)
+                rows.append((nice_coin(t), "x%g" % self.ledger.contracts_for(t), "closes %s" % close_et(t),
+                             "(%d s)" % max(0, (c or 0) - self.now())))
+            L += ["📂 <b>Pin bot: %d open</b>" % len(rows), pre(table(rows, "lrll"))]
+        others, unread = [], []
+        try:
+            a = self._bs_get("all")
+            bs = _bs()
+            for nm in bs.BOTS:
+                if nm == "pin":
+                    continue
+                bt = a["bots"][nm]
+                o = bt["open"]
+                if not o["ok"]:
+                    unread.append(bt["label"].lower())
+                    continue
+                if not o["count"]:
+                    continue
+                cash = (bt.get("balance") or {}).get("dollars")
+                others.append("📂 <b>%s: %d open</b> · %s at risk%s" % (
+                    esc(bt["label"]), o["count"], esc(_cash(o["at_risk"])),
+                    (" (%s of its cash)" % esc(pct_of(o["at_risk"], cash + o["at_risk"], 1))) if cash else ""))
+                for p_ in o["positions"][:8]:
+                    others.append("  %s %s x%g · %s" % (esc(p_["what"]), esc(str(p_["side"]).upper()), p_["contracts"],
+                                                       esc(_cash(p_["at_risk"]))))
+        except Exception:                                       # noqa: BLE001
+            log(traceback.format_exc())
+            unread.append("the other bots (Kalshi could not be read)")
+        L += others
+        if not L:
+            L.append("📂 <b>No open bets</b> in any pot.")
+        if unread:
+            L.append(i_("could not read: %s" % ", ".join(unread)))
+        return Html("\n".join(L))
 
     def text_fills(self, day=None):
         """Every order the bot sent today: what filled, what we paid, how late.
@@ -3713,7 +3901,11 @@ class Phone:
         """
         try:
             import pinbrief
-            return brief_html(pinbrief.text(pinbrief.brief(ledger=self.ledger)))
+            body = brief_html(pinbrief.text(pinbrief.brief(ledger=self.ledger)))
+            top = self._all_bots_day(et_day(self.now()), "Today")      # 2026-10-26: every pot first, with its %
+            if not top:
+                return body
+            return Html("\n".join(top + ["", "🏦 <b>Pin bot + coin race (main account)</b>", str(body)]))
         except Exception as e:                                  # noqa: BLE001
             return ("Could not build today's briefing: %s\n"
                     "Everything else still works -- try /today again, or "
@@ -3738,9 +3930,11 @@ class Phone:
         today = et_day(self.now())
         fs = Ledger.fill_stats(self.ledger.fills_on(today))
         out.append("")
-        out.append("<b>Today</b>: %d orders, %d filled, %d filled nothing%s; asked %g got <b>%g</b> (%s)." % (
-            fs["orders"], fs["fills"], fs["zero"], (" (%s)" % pct_of(fs["zero"], fs["orders"])) if fs["orders"] else "",
-            fs["asked"], fs["contracts"], esc(pct(fs["share"], False) if fs["share"] is not None else "-")))
+        out.append("<b>Pin bot today</b>: %d orders · %d filled · %d got nothing%s · wanted %s contracts, got <b>%s</b> "
+                   "(%s)." % (fs["orders"], fs["fills"], fs["zero"],
+                              (" (%s)" % pct_of(fs["zero"], fs["orders"])) if fs["orders"] else "",
+                              "{:,.0f}".format(fs["asked"] or 0), "{:,.0f}".format(fs["contracts"] or 0),
+                              esc(pct(fs["share"], False) if fs["share"] is not None else "-")))
         # IS THE OPPORTUNITY GOING AWAY. Same lines the desktop shows, from
         # the same function, so the phone and the app cannot drift apart.
         # Read from health() rather than recomputed: it is already there.
@@ -3768,10 +3962,14 @@ class Phone:
             return Html("No losing closes.")
         s = Ledger.summary(self.ledger.settled)
         out = ["🔴 <b>%d losing closes</b> of %d all time (%.1f%%)" % (s["lost"], s["closes"], s["loss_rate"]),
-               i_("the last %d, newest first (Kalshi's books, main account)" % len(rows))]
+               i_("the last %d, newest first · %% = of the bank just before it (Kalshi's books, main account: pin + "
+                  "race)" % len(rows))]
         for close, net, legs in rows:
-            out.append("<b>%s</b> · %s · %s" % (esc(usd(net)), esc(et_str(close, "%m/%d %I:%M %p") if close else "?"),
-                                                esc(", ".join(sorted({coin(l["tk"]) for l in legs})))))
+            b0 = self.ledger.bank_at(close - 1) if close else None
+            out.append("<b>%s</b>%s · %s · %s" % (
+                esc(usd(net)), (" (%s)" % esc(pct(net / b0))) if b0 else "",
+                esc(et_str(close, "%a %b %d %I:%M %p").replace(" 0", " ") if close else "?"),
+                esc(", ".join(sorted({nice_coin(l["tk"]) for l in legs})))))
         return Html("\n".join(out))
 
     def text_hedges(self):
@@ -3781,15 +3979,15 @@ class Phone:
         out = ["🛡 <b>Insurance</b> (the last %d hedges, newest first)" % len(ho)]
         for g in ho:
             mark = {"NEEDED": "✅", "WASTED": "➖"}.get(g["verdict"], "⏳")
-            bits = [("bet %s" % usd(g["bet_pnl"])) if g["bet_pnl"] is not None else None,
-                    ("hedge %s" % usd(g["hedge_pnl"])) if g["hedge_pnl"] is not None else None]
-            out.append("%s <b>%s</b> · %s %s · belief %.0f%% · %snet <b>%s</b>" % (
-                mark, esc(g["verdict"] or "pending"), esc(et_str(g["t"], "%m/%d %I:%M %p") if g["t"] else "?"),
-                esc(coin(g["tk"])), 100 * float(g.get("belief") or 0),
-                esc(", ".join(x for x in bits if x) + ", ") if any(bits) else "",
-                esc(usd(g["net"]) if g["net"] is not None else "-")))
-        out.append(i_("NEEDED = the bet lost and the insurance covered part of it; WASTED = the bet held and the "
-                      "insurance expired (its premium)"))
+            b0 = self.ledger.bank_at(g["t"]) if g.get("t") and g.get("net") is not None else None
+            out.append("%s <b>%s</b> · %s %s · belief %.0f%% · net <b>%s</b>%s" % (
+                mark, esc(g["verdict"] or "pending"),
+                esc(et_str(g["t"], "%a %b %d %I:%M %p").replace(" 0", " ") if g["t"] else "?"),
+                esc(nice_coin(g["tk"])), 100 * float(g.get("belief") or 0),
+                esc(usd(g["net"]) if g["net"] is not None else "-"),
+                (" (%s of the bank)" % esc(pct(g["net"] / b0))) if b0 else ""))
+        out.append(i_("belief = the bot's odds its side wins when it bought the insurance · NEEDED = the bet lost and "
+                      "the insurance covered part of it; WASTED = the bet held and the insurance expired (its premium)"))
         return Html("\n".join(out))
 
     # ---- /stats /race /racestats ----
@@ -3850,20 +4048,35 @@ class Phone:
         L = ["%s <b>Lifetime %s</b> (<b>%s</b> on $%s risked) · since %s" % (
                  dot(life["net"]), esc(usd(life["net"])), esc(ret(life["net"], life["risked"], 2)),
                  esc(_usd(life["risked"])), esc(_md(FIRST_LIVE_DAY))),
-             i_("📊 STATS · %s ET · Kalshi's books, main account (pin + coin race; forecaster and ladder: /bots); "
+             i_("📊 STATS · %s ET · Kalshi's books, main account (pin + coin race; every other bot: /bots); "
                 "days are ET." % et_str(now, "%a %m/%d %I:%M %p"))]
-        rows = [("", "Money", "Return", "Won", "Lost")]
+        # % of the bank (2026-10-26): each window's money over the main account's bank when it began (pindesk's
+        # bank_at, the /days figure); Life over the money put into the main account (botstats' pot, as /pin says)
+        life_in = None
+        try:
+            life_in = ((self._bs_get("pin").get("money") or {}).get("all_time") or {}).get("pot")
+        except Exception:                                       # noqa: BLE001
+            log(traceback.format_exc())
+        starts = {"7 days": et_day_start(day_minus(today, 6)), "3 days": et_day_start(day_minus(today, 2)),
+                  "Today": et_day_start(today), "Version": ver[1] if ver else None}
+        rows = [("", "Money", "Return", "of bank", "Won", "Lost")]
         for title, st, nd, lab, sub in sts:
             if not st["markets"]:
                 rows.append((lab, "nothing settled"))
                 continue
-            rows.append((lab, usd(st["net"]), ret(st["net"], st["risked"], 2) or "-",
+            if lab == "Life":
+                ob = (ret(st["net"], life_in, 0) + "*") if life_in else "-"
+            else:
+                b0 = self.ledger.bank_at(starts[lab]) if starts.get(lab) else None
+                ob = ret(st["net"], b0, 2 if b0 and abs(st["net"] / b0) < 0.01 else 1) or "-"
+            rows.append((lab, usd(st["net"]), ret(st["net"], st["risked"], 1) or "-", ob,
                          pct1(st["won"], st["markets"]), st["losses"]))
         L.append("")
         L.append("💰 <b>By window</b>")
         L.append(pre(table(rows)))
-        L.append(i_("Return = money made on what the bets cost (fees in) · Won = markets won · Lost = markets "
-                    "that lost"))
+        L.append(i_("Return = on what the bets cost (fees in) · of bank = of the main account's bank when the window "
+                    "began%s · Won = markets won · Lost = markets that lost" % (
+                        (" (* Life: of the %s put into it)" % dollars(life_in)) if life_in else "")))
         if life["breakeven_d"] is not None and life["win_n"] is not None:
             L.append("🎯 Lifetime: won <b>%s%%</b> of markets (break-even needs %s%%) · contracts paid %s%% vs "
                      "break-even %s%%: <b>%+.1f pts</b>" % (
@@ -3872,7 +4085,9 @@ class Phone:
         by = {}
         for m in sts[0][4]:
             by[m["book"]] = by.get(m["book"], 0.0) + m["pnl"]
-        L.append(esc("By bot: " + ", ".join("%s %s" % (b, usd(v)) for b, v in sorted(by.items())) + "."))
+        names = {"crypto": "pin bot", "coin race": "coin race", "commodity": "old oil bot (Sep)", "other": "other"}
+        L.append(esc("Lifetime by bot: " + ", ".join("%s %s" % (names.get(b, b), usd(v))
+                                                     for b, v in sorted(by.items(), key=lambda kv: -kv[1])) + "."))
         pid = fl["live"][0] if fl["live"] else None
         live_cl = fl["live"][1] if fl["live"] else ""
         if pid:
@@ -4509,11 +4724,22 @@ class Phone:
         if (now - et_day_start(today)) >= 8 * 3600 and self.last_daily != today and not self.muted:
             self.last_daily = today
             yday = et_day(now - 86400)
-            msg = fmt_or_plain(lambda: alert_daily_text(self.ledger, yday, now),
+            msg = fmt_or_plain(lambda: self.daily_alert(yday, now),
                                lambda: "YESTERDAY\n" + story_day(self.ledger, yday, now=now))
             self.say(msg)
             sent.append(msg)
         return sent
+
+    def daily_alert(self, d, now):
+        """The 8 AM summary (2026-10-26 screen pass): yesterday over EVERY pot -- /yesterday's headline (its % of
+        all pots), the bot-by-bot table (each bot's % of its bank) and the averages -- then the main account's
+        story (story_day, pindesk) behind a tap. The old main-account-only summary when botstats cannot be read."""
+        base = alert_daily_text(self.ledger, d, now)
+        top = self._all_bots_day(d, "Yesterday")
+        if not top or top[0].startswith("❔"):
+            return base
+        return Html("\n".join(["☀️ <b>YESTERDAY, %s</b> · every bot" % esc(_day_long(d))] + top + [
+            "", details(str(base).split("\n"), "🏦 Pin bot + coin race (main account): the day's story -- tap")]))
 
     # ---- charts (2026-10-18) ----
     def chart_after(self, chat_id, text):
@@ -4984,16 +5210,22 @@ def selftest():
         # MONEY COMES FROM KALSHI NOW, not from the log this test plants, so
         # "today" is legitimately empty here. The bank still comes from the
         # bot's own autosize record, which is ours to read.
-        ck("Bank $500.00" in P(s) and "Today " in P(s),
-           "/status carries the bank and a Today line; the money itself is "
-           "Kalshi's (results/kalshi_ledger.json) and is absent in this fixture")
+        ck("Main account $500.00 (pin bot + coin race)" in P(s) and "Pin + race today " in P(s)
+           and "💼 All pots $1,039.10" in P(s) and "+19." not in P(s),
+           "/status carries the main account's bank (no % against every pot's money -- 10-26), every pot's cash and "
+           "the main account's Today line, named as such")
         t = ph.handle(111, "/today")
         _tl = P(t).split("\n")
         # 2026-10-23 (operator: "/today doesn't show the right total it says 11.22 right now it's really 24.85"): the
         # headline is EVERY bot's money (botstats.all_bots, the /bots number); the main account follows, as before
-        ck(_tl[0].split(" ", 1)[-1].startswith("All bots today") and "🏦 Main account" in P(t)
+        # 2026-10-26 ("/yesterday doesn't look good or show % of bank return"): a bot-by-bot table with each bot's
+        # % of its own bank, its return on the bets and its losers; the main account's block behind a tap
+        ck(_tl[0].split(" ", 1)[-1].startswith("All bots today") and "% of all pots)" in _tl[0]
+           and "🏦 Pin bot + coin race (main account)" in P(t) and "📊 By bot" in P(t)
+           and any(x.split() == ["ALL", "-$12.53", "-1.1%", "-10.1%", "2/5"] for x in _tl)
+           and any(x.split() == ["forecaster", "-$2.54", "-9.6%", "-103.7%", "1/1"] for x in _tl)
            and "🟢 Pin + race +$1.66 (+0.33% of the bank)" in _tl and "1 of 1 closes won (100.0%), 0 lost" in P(t)
-           and "of the $500.00 it held at the start of the ET day" in P(t),
+           and "of the $500.00 it held at the start of the ET day" in P(t) and not tg_html_problems(t),
            "/today: every bot's money as the headline, then the main account's money and its %% of the bank at day "
            "start, then closes won with their %%: %r" % P(t)[:600])
         ck("+2.00% on the $83.34 staked" in P(t),
@@ -5072,9 +5304,19 @@ def selftest():
            "NULL: a health reading with no opportunity block still answers")
         ck(ph.handle(111, "/losses") == "No losing closes.", "/losses with none")
         ck(ph.handle(111, "/hedges") == "No hedges yet.", "/hedges with none")
-        ck(ph.handle(111, "/open") == "No open bets.", "/open with none")
-        ck(P(ph.handle(111, "/days")).startswith("🟢 All time +$1.66 (+0.33% on the $500.00 put in)"),
-           "/days leads with all time, its % of the money put in")
+        _op = P(ph.handle(111, "/open"))
+        ck(_op.startswith("📂 Coin race: 1 open · $19.60 at risk") and "race SOL 11:00 AM YES x20 · $19.60" in _op
+           and "Pin bot" not in _op,
+           "/open: every pot -- no pin bet open here (its own log), the coin race's one open leg from Kalshi's "
+           "positions (botstats), with what is at risk: %r" % _op)
+        _dd = P(ph.handle(111, "/days"))
+        ck(_dd.startswith("🔴 All bots last 7 days -$15.95 (-10.0% on $160.13 staked · -1.4% of all pots)")
+           and "all time -$15.95 (-1.4% on the $1,103.75 put in)" in _dd
+           and any(x.split()[:6] == ["Sep", "16", "-$12.53", "-1.1%", "-10.1%", "2/5"] for x in _dd.split("\n"))
+           and any(x.split() == ["ALL", "-$15.95", "-1.4%", "-10.0%", "3/8"] for x in _dd.split("\n"))
+           and "Sep 16: +$1.66 (+0.33% of the bank) · 0 of 1 closes lost" in _dd,
+           "/days: every bot's week as the headline with its % of all pots, all time on the money put in, each day's "
+           "% of all pots, the week bot by bot, the main account's own days (with % of its bank) behind a tap")
         # ---- /stats, /race, /racestats -----------------------------------
         # A planted world: Kalshi's books (the ONLY money source), the bots'
         # order records (only for seconds-left), a VERSIONS.md, the live
@@ -5278,8 +5520,10 @@ def selftest():
                "the fleet, counted and named from the process table")
             ck("Coin race: 2 races since 09/15: 1 won (50.0%), 1 tie, 0 lost, -$0.91 (/race)." in ps,
                "the coin race summary line: the tie is a tie, not a win")
-            ck(any(x.split() == ["Today", "+$0.76", "+0.87%", "60.0%", "2"] for x in ps.split("\n")),
-               "the window table: money, return on what was risked (0.76 / 87.24), markets won, losses")
+            ck(any(x.split() == ["Today", "+$0.76", "+0.9%", "+0.17%", "60.0%", "2"] for x in ps.split("\n"))
+               and "of bank = of the main account's bank when the window began" in ps,
+               "the window table: money, return on what was risked (0.76 / 87.24), its % of the bank that began the "
+               "day (10-26), markets won, losses")
             _blk, _cur = {}, None
             for _ln in ps.split("\n"):                      # the windows' sentences, inside the one quote
                 _k = _ln.split(" (")[0].split(":")[0]
@@ -5325,8 +5569,8 @@ def selftest():
                "+55.30 sits with the won markets")
             ck("First buys: 50% with 20 s or less left (2 mkts, +$4.11), 50% at 21-45 s (2 mkts, -$52.90); 7 not timed." in _l,
                "seconds-left split from the ORDER records, money per bucket, untimed markets counted")
-            ck("By bot: coin race -$1.76, crypto -$55.49." in ps,
-               "the lifetime money split by bot")
+            ck("Lifetime by bot: coin race -$1.76, pin bot -$55.49." in ps,
+               "the lifetime money split by bot, by the names a person knows")
             ck("Made +$1.66 on" in _blk["SINCE v-pinfix"] and "1 mkts" in _blk["SINCE v-pinfix"],
                "SINCE the version: only the market that closed after 12:30Z")
             # this planted world's order rows are /stats-shaped (no "close"), so the per-day loop is stubbed
@@ -5337,8 +5581,8 @@ def selftest():
                 _dy = ph.text_days()
             finally:
                 ph.ledger.days = _days0
-            ck("SINCE v-pinfix (" in P(_dy) and ": +$1.66, 1 markets, 0 lost (0.0%)" in P(_dy)
-               and P(_dy).startswith("🔴 All time "),
+            ck("Pin bot since v-pinfix (" in P(_dy) and ": +$1.66, 1 markets, 0 lost (0.0%)" in P(_dy)
+               and P(_dy).startswith("🔴 All bots last 7 days "),
                "/days carries the running version's own line (a deploy day mixes two versions), same money as /stats; "
                "all time is its headline")
 
@@ -5998,7 +6242,8 @@ def selftest():
             json.dump(_led, _fh)
         os.utime(_pl.LEDGER, (time.time() + 5, time.time() + 5))
         sent = ph.alerts_tick()
-        ck(len(sent) == 1 and P(sent[0]).startswith("🔴 LOSS -$38.80 · the quarter-hour closing 10:15 AM ET on Sep 16")
+        ck(len(sent) == 1 and P(sent[0]).startswith("🔴 LOSS -$38.80 (-")
+           and "% of the bank) · the quarter-hour closing 10:15 AM ET on Sep 16" in P(sent[0]).split("\n")[0]
            and "BTC NO at 97.0c, 40 contracts → settled YES: -$38.80" in P(sent[0]) and "WHY IT HURTS" in P(sent[0])
            and not tg_html_problems(sent[0]),
            "a new losing close is sent with its story: the loss as the headline, one line a leg")
@@ -6013,9 +6258,12 @@ def selftest():
         now["t"] += 86400 - 2 * 3600
         sent = ph.alerts_tick()
         _dl = [m for m in sent if "YESTERDAY" in P(m).split("\n")[0]]
-        ck(len(_dl) == 1 and P(_dl[0]).startswith("☀️ YESTERDAY -$37.14 (-7.43%) · Wed Sep 16")
+        ck(len(_dl) == 1 and P(_dl[0]).startswith("☀️ YESTERDAY, Wed Sep 16 · every bot")
+           and "All bots yesterday" in P(_dl[0]) and "📊 By bot" in P(_dl[0])
+           and "☀️ YESTERDAY -$37.14 (-7.43%) · Wed Sep 16" in P(_dl[0])
            and "MONEY: -$37.14, which is -7.43% of the $500.00" in P(_dl[0]) and not tg_html_problems(_dl[0]),
-           "after 8 AM ET the daily summary of yesterday goes out: its money and % of the day-start bank lead it")
+           "after 8 AM ET the daily summary of yesterday goes out: every bot's day with its % of all pots and each "
+           "bot's % of its bank, then the main account's money and % of its day-start bank behind a tap")
         ck(not any("YESTERDAY" in P(m).split("\n")[0] for m in ph.alerts_tick()), "...once per day")
         ck(all(cid == 111 for cid, _t in tg.sent), "every alert went to the paired chat")
         # long messages are split by the real transport's rule
@@ -6111,7 +6359,8 @@ def selftest():
             ph._chart_q.join()
             with open(LOG, encoding="utf-8") as _fh:
                 _lgc = _fh.read()
-            ck(len(tg.photos) == _n1 and _why in _lgc and "All time" in P(tg.sent[-1][1]).split("\n")[0],
+            ck(len(tg.photos) == _n1 and _why in _lgc and ("All bots last 7 days" in P(tg.sent[-1][1]).split("\n")[0]
+                                                            or "All time" in P(tg.sent[-1][1]).split("\n")[0]),
                "charts: a picture that fails or has nothing to draw only logs (%s); the words went as always" % _why)
         ph.chart_fn, ph.chart_stale_s = _slow_chart, -1
         tg.push(111, "/days")
@@ -6498,8 +6747,9 @@ def selftest():
         t7 = _funds_page(bf, {}, fnow, bh, 7)
         th_ = funds_text(bf, {}, fnow, bh)
         t_ = P(th_)
+        # (subaccount 4 is the FX pairs' pool-0 pot: its coin rows are the old reward test's, left out and said)
         ck(len(t7) > MAX_LEN and len(th_) <= MAX_LEN and t_.count("to fit one message") == 1
-           and t_.count("\n7 days: ") == 9,
+           and t_.count("\n7 days: ") == 8 and "left out: 21 markets of the old coin-race test" in t_,
            "/funds past days: when 7 day lines do not fit one message (%d chars), fewer are listed and that is said "
            "once (%d chars); all 9 accounts keep their 7-day total" % (len(t7), len(th_)))
         # routed: /funds /bank /accounts, through handle() and the poll loop

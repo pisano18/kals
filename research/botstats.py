@@ -1338,7 +1338,11 @@ def running(name, rows, ok, now):
         paths = [log]
         st_t = _t_of(start) if start else None
         for p in paths:
-            h = last_record(p, HALT_KINDS[name])
+            # 2026-10-26: a 'pause' the bot lifted itself ('resume', pinrun AMENDMENT 14) is not a halt -- the pin bot
+            # paused 27 s on its open cap at 10-25 05:59Z and /pin and /bots said HALTED for two days after
+            h = last_record(p, HALT_KINDS[name] + ("resume",))
+            if h and (h.get("kind") or h.get("ev")) == "resume":
+                continue
             ht = _t_of(h) if h else None
             if h and ht is not None and (st_t is None or ht >= st_t):
                 out["halted"] = {"t_et": et_clock(ht), "what": h.get("kind") or h.get("ev"),
@@ -1775,10 +1779,16 @@ def all_bots(now=None, getter=None, procs=None):
             for x in m.get("days_7") or []:
                 if x["day"] == d:
                     by[b] = x
+        mo = round(sum(x["money"] for x in by.values()), 4)
+        pi = round(sum(x["put_in"] for x in by.values()), 4)
+        pot = None if missing else day_pot(ctx, None, d)
         days_7.append({"day": d, "label": day_label(d), "markets": sum(x["markets"] for x in by.values()),
-                       "money": round(sum(x["money"] for x in by.values()), 4),
-                       "put_in": round(sum(x["put_in"] for x in by.values()), 4),
-                       "by_bot": {b: x["money"] for b, x in by.items()}})
+                       "won": sum(x["won"] for x in by.values()), "lost": sum(x["lost"] for x in by.values()),
+                       "money": mo, "put_in": pi, "return_pct": round(100.0 * mo / pi, 2) if pi > 0 else None,
+                       "pot": None if pot is None else round(pot, 2),
+                       "pot_pct": round(100.0 * mo / pot, 2) if pot else None,
+                       "by_bot": {b: x["money"] for b, x in by.items()},
+                       "by_bot_pot_pct": {b: x.get("pot_pct") for b, x in by.items()}})
     bal = {"main": bots["pin"]["balance"]["dollars"], "forecaster": bots["forecaster"]["balance"]["dollars"],
            "ladder": bots["ladder"]["balance"]["dollars"], "weather": bots["weather"]["balance"]["dollars"],
            "fx": bots["fx"]["balance"]["dollars"]}

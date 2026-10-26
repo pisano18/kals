@@ -123,6 +123,7 @@ def brief(day=None, ledger=None, results=None, now=None):
     s = pindesk.Ledger.summary(rows)
     b0 = ledger.bank_at(pindesk.et_day_start(day))
     ps = pindesk.Ledger.summary(ledger.settled_on(prev))
+    pb0 = ledger.bank_at(pindesk.et_day_start(prev))
 
     # the worst single quarter-hour, which is the number that actually hurts
     worst = None
@@ -140,6 +141,9 @@ def brief(day=None, ledger=None, results=None, now=None):
         "pct_of_bank": (round(100.0 * s["net"] / b0, 2) if b0 else None),
         "prev_net": round(ps["net"], 2), "prev_closes": ps["closes"],
         "vs_prev": _pct(s["net"], ps["net"]) if ps["closes"] else None,
+        # 2026-10-26: yesterday's own % of the bank it began with -- the phone printed vs_prev (today against
+        # yesterday, '+124%') where the operator reads a return
+        "prev_pct_of_bank": (round(100.0 * ps["net"] / pb0, 2) if pb0 else None),
         "worst": worst,
         "changed_today": [], "changed_recent": [],
         "arms": [], "ideas": [], "market": [], "watch": [],
@@ -247,18 +251,18 @@ def render(b, say=print):
     if not b["closes"]:
         w("  Nothing settled today yet.")
     else:
-        w("  MONEY: %s%s from %d quarter-hours, %d won and %d lost."
+        w("  MONEY: %s%s from %d quarter-hour%s, %d won and %d lost."
           % (("+$%.2f" % b["net"]) if b["net"] >= 0 else ("-$%.2f" % -b["net"]),
              ("" if b["pct_of_bank"] is None
               else ", which is %+.2f%% of the $%.2f the bank held this morning"
               % (b["pct_of_bank"], b["bank_start"])),
-             b["closes"], b["won"], b["lost"]))
+             b["closes"], "" if b["closes"] == 1 else "s", b["won"], b["lost"]))
         if b["prev_closes"]:
-            w("  Yesterday was %s%s over %d."
+            w("  Yesterday was %s%s over %d quarter-hour%s."
               % (("+$%.2f" % b["prev_net"]) if b["prev_net"] >= 0
                  else ("-$%.2f" % -b["prev_net"]),
-                 "" if b["vs_prev"] is None else (" (%+.0f%%)" % b["vs_prev"]),
-                 b["prev_closes"]))
+                 "" if b.get("prev_pct_of_bank") is None else (" (%+.2f%% of the bank)" % b["prev_pct_of_bank"]),
+                 b["prev_closes"], "" if b["prev_closes"] == 1 else "s"))
         if b["worst"]:
             w("  Worst single quarter-hour: %s, %s on %s."
               % (b["worst"]["when"], "-$%.2f" % -b["worst"]["net"],
