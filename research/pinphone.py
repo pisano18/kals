@@ -110,11 +110,12 @@ FUNDS_WHAT = {
     1: "penny ladder",
     2: "forecaster",
     3: {0: "weather dip-seller (stopped)", 2: "empty"},
-    4: "coin-race reward test (stopped)",
+    4: {0: "FX taker: the 5 currency pairs (penny test, 2026-10-25)", 2: "coin-race reward test (stopped)"},
+    5: "FX taker: the 8 commodities (penny test, 2026-10-25)",
 }
 FUNDS_POOL_NAME = {0: "weather pool", 2: "crypto pool"}     # Kalshi's exchange_index; others say "pool N"
 # whose bet size /funds shows under each account (read from that bot's own log, see funds_sizes)
-FUNDS_SIZE_BOTS = {0: ("pin", "race"), 1: ("ladder",), 2: ("forecaster",)}
+FUNDS_SIZE_BOTS = {0: ("pin", "race"), 1: ("ladder",), 2: ("forecaster",), 5: ("fx",)}
 
 
 def _tgc():
@@ -1684,8 +1685,8 @@ def disk_alert(level, disk_gb):
 # up only in /bots.
 # ===========================================================================
 BOT_CMDS = {"/pin": "pin", "/forecaster": "forecaster", "/fc": "forecaster", "/ladder": "ladder",
-            "/weather": "weather", "/wx": "weather"}
-BOT_CMD_OF = {"pin": "/pin", "race": "/race", "forecaster": "/fc", "ladder": "/ladder", "weather": "/weather"}
+            "/weather": "weather", "/wx": "weather", "/fx": "fx"}
+BOT_CMD_OF = {"pin": "/pin", "race": "/race", "forecaster": "/fc", "ladder": "/ladder", "weather": "/weather", "fx": "/fx"}
 BS_WINDOWS = ("today", "yesterday", "last_7_days", "this_month", "all_time")
 BS_LABEL = {"today": "Today", "yesterday": "Yesterday", "last_7_days": "Last 7 days",
             "this_month": "This month", "all_time": "All time"}
@@ -2579,7 +2580,15 @@ def funds_sizes(results=RESULTS):
             round(100.0 * sc, 2), (", up to %s contracts a side" % rails["per_side"]) if rails.get("per_side") else "",
             when(r), (" on a %s pot" % _usd2(pot)) if pot else "")
 
-    readers = {"pin": pin, "race": race, "ladder": ladder, "forecaster": forecaster}
+    def fx():
+        r = bs.last_record(os.path.join(results, "fxtake-live-orders.jsonl"), ("start",))
+        size = _fnum((r or {}).get("size"))
+        if size is None:
+            return None
+        return "FX taker %g contracts a market (set at its start %s%s)" % (
+            size, when(r), (" on a %s pot" % _usd2(r["sub_balance"])) if _fnum(r.get("sub_balance")) is not None else "")
+
+    readers = {"pin": pin, "race": race, "ladder": ladder, "forecaster": forecaster, "fx": fx}
     out = {}
     for n, bots in FUNDS_SIZE_BOTS.items():
         for b in bots:
@@ -2818,7 +2827,7 @@ def funds_text(f, sizes, now, hist=None):
 
 # /funds on a phone (2026-10-18): a short name an account goes by in the summary table. Edit beside
 # FUNDS_WHAT when a bot moves; an account not here shows its FUNDS_WHAT words, cut short.
-FUNDS_SHORT = {0: "main+race", 1: "ladder", 2: "forecaster", 3: "weather", 4: "race reward"}
+FUNDS_SHORT = {0: "main+race", 1: "ladder", 2: "forecaster", 3: "weather", 4: "fx pairs", 5: "fx commod"}
 
 
 def funds_idle(n):
@@ -4849,6 +4858,8 @@ def selftest():
                                     {"subaccount_number": 1, "exchange_index": 2, "balance": "15.1000"},
                                     {"subaccount_number": 2, "exchange_index": 0, "balance": "0.0000"},
                                     {"subaccount_number": 2, "exchange_index": 2, "balance": "24.0000"},
+                                    {"subaccount_number": 5, "exchange_index": 2, "balance": "0.0000"},   # the FX taker's pot (2026-10-25), empty here
+                                    {"subaccount_number": 4, "exchange_index": 0, "balance": "0.0000"},   # its currency pot (pool 0, 10-25), empty here
                                     {"subaccount_number": 3, "exchange_index": 0, "balance": "0.0000"}]}
         # the WEATHER world (2026-10-04): $50 moved main -> subaccount 3 in POOL 0 at 3 AM ET Sep 15; one Sep 15
         # bracket settled (NY: sold YES at 40c x2, NO won, +0.80) and one is open (MIA NO x2, $1.10). Cash in
@@ -5522,7 +5533,7 @@ def selftest():
            "/bots TODAY is all four pots: -10.40 + 0.37 - 2.54 + 0.042 = -12.53 on 99.80 + 19.60 + 2.45 + 1.958 "
            "put in = -1.1% of the $1,100.33 all pots held at midnight; each bot's share of ITS OWN pot listed")
         ck("Yesterday: -$3.42 on $36.32 put in (-9.4%) = -0.31% of all pots ($1,103.75); 3 markets, 2 won, 1 lost\n"
-           "  pin +$0.54 (+0.05%) | race none | forecaster +$0.55 (+2.7%) | ladder none | weather none | other -$4.51 (-0.42%)"
+           "  pin +$0.54 (+0.05%) | race none | forecaster +$0.55 (+2.7%) | ladder none | weather none | fx none | other -$4.51 (-0.42%)"
            in b_,
            "YESTERDAY: the SOL and XRP markets that closed before midnight ET count on Sep 15 though Kalshi "
            "settled them on the 16th (UTC); the oil market that is no bot's is shown as `other`; the $98 "
@@ -5706,7 +5717,7 @@ def selftest():
            and "of its bank (" not in n_ and "on money put in" not in n_ and "of its bank)" not in n_
            and "% of its bank: not shown -- transfers read failed (HTTP 404)." in n_
            and "Today: -$12.53 on $123.81 put in (-10.1%); 5 markets, 3 won, 2 lost\n"
-               "  pin -$10.40 | race +$0.37 | forecaster -$2.54 | ladder +$0.04 | weather none\n" in nb_
+               "  pin -$10.40 | race +$0.37 | forecaster -$2.54 | ladder +$0.04 | weather none | fx none\n" in nb_
            and "today -$10.40 (-10.4% on bets) · 7 days -$9.86 (-7.6% on bets) · all time -$9.86 (-7.6% on bets) ·" in nb_
            and "% of the pots: not shown -- main account: transfers read failed (HTTP 404)." in nb_,
            "NULL: the deposit/transfer listings unreadable -> every dollar figure still shown, NO percentage of "
@@ -5733,9 +5744,9 @@ def selftest():
            and "Cash: COULD NOT READ" in d_ and "$0.00" not in d_ and "nothing settled" not in d_,
            "DOWN /pin: a failed read is said as a failure -- never $0, never 'nothing settled', never 'not running'")
         ck("Today: unknown -- Kalshi could not be read" in db_ and "Last 7 days: unknown" in db_
-           and "PARTIAL: these totals leave out pin, race, forecaster, ladder, weather, other" in db_
+           and "PARTIAL: these totals leave out pin, race, forecaster, ladder, weather, fx, other" in db_
            and "running? could not tell" in db_ and "money: COULD NOT READ KALSHI" in db_
-           and "money: settlements read failed (HTTP 401): forecaster, ladder, pin, race, weather" in db_
+           and "money: settlements read failed (HTTP 401): forecaster, fx, ladder, pin, race, weather" in db_
            and "nothing settled" not in db_ and "Nothing settled" not in db_,
            "DOWN /bots: every total is 'unknown', the missing pots are named, each error said once")
         # BROKEN botstats: those commands say so; /race still answers
@@ -6222,7 +6233,7 @@ def selftest():
            and "MAIN ACCOUNT (0) -- main bot (pin) + coin race: $530.60" in t_
            and "SUBACCOUNT 1 -- penny ladder: at least $0.00" in t_
            and "crypto pool COULD NOT READ (error: connection reset)" in t_
-           and "SUBACCOUNT 4 -- coin-race reward test (stopped): at least" in t_ and "ALL ACCOUNTS: at least" in t_,
+           and "SUBACCOUNT 4 -- weather pool: FX taker: the 5 currency pairs (penny test, 2026-10-25); crypto pool: coin-race reward test (stopped): at least" in t_ and "ALL ACCOUNTS: at least" in t_,
            "/funds: the list fails and a read raises -> the known accounts are tried, what failed is named, no crash")
         t_ = P(funds_text(funds_read(fw_get([], bad=lambda p, q: (500, {}) if p == "/portfolio/positions"
                                             and q["subaccount"] == 3 else None,
