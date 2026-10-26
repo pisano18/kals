@@ -8,7 +8,8 @@ WHAT IT DOES
   Watches the order books of the 13 FX / commodity 15-minute series (KXWTI15M, KXBRENT15M, KXNATGAS15M, KXGOLD15M,
   KXSILVER15M, KXCOPPER15M, KXPLATINUM15M, KXPALLADIUM15M, KXEURUSD15M, KXGBPUSD15M, KXUSDJPY15M, KXAUDUSD15M,
   KXUSDCAD15M). In the last ENTRY_FROM..ENTRY_TO seconds of a market (default 30..15), when one side's best BID is
-  already >= FAV (0.98) and that side is OFFERED at <= CAP (0.99), it buys SIZE contracts of that side with ONE
+  already >= FAV (0.98) -- and has STAYED there at least HOLD_S (5) seconds (v-fx-hold5, 2026-10-26: every loser was
+  bought within 2 s of the bid first reaching 98c) -- and that side is OFFERED at <= CAP (0.99), it buys SIZE contracts of that side with ONE
   immediate-or-cancel limit at CAP. One order per market, ever. Nothing is held past the close; Kalshi settles.
   Why this rule (results/IDEA_LEDGER.md LS09/LS10, .sweep/q-2026-10-25-fx/fx_book.py on the 10-23 tape): with the
   bid >= 98c the favourite lost 0 of 425 markets at T-30; the offers that remain are stale 1c lottery bids on the
@@ -72,6 +73,13 @@ ENTRY_FROM = 30.0
 ENTRY_TO = 15.0
 LATE_S = 1.0
 STALE_S = 5.0
+HOLD_S = 5.0                 # v-fx-hold5 (2026-10-26): a side is bought only after its bid has STAYED >= FAV this long.
+                             # The first live loss (KXPLATINUM15M 00:30 ET 10-26: NO 63c at T-90, 99c at T-32, bought at
+                             # T-30, 55c at T-5, settled YES) and both losers on the 10-23 tape (GOLD 08:45, GBPUSD 14:15)
+                             # were bought within 2 s of the bid FIRST reaching 98c -- a market still moving. Replayed tick
+                             # by tick on every recorded market (.sweep/q-2026-10-26-fxloss/fx_replay2.py, 10-23 + 10-25/26):
+                             # the old rule 264 buys, 3 lost, -$5.00 at 10 contracts; the buys whose 98c had held >= 5 s:
+                             # 69, 0 lost, +$5.97. A stop-loss exit was worse (-$34 to -$54: the bid dips and comes back).
 MAX_PER_CLOSE = 6           # per POOL (pot) and close: 10-25 the FX pairs got their own pot (subaccount 4, pool 0) so they
 MAX_HELD = 70.0             # never crowd out a commodity buy; both caps count each pot on its own
 DAY_STOP = -25.0
@@ -131,6 +139,21 @@ class Book:
         self.synced = False
         self.last_msg = None
         self.last_trade = None
+        self.since = {"yes": None, "no": None}      # when each side's best bid last rose to >= FAV (HOLD_S)
+
+    def _track(self, t):
+        for side in ("yes", "no"):
+            bb = self.best_bid(side)
+            if bb is not None and bb >= FAV - 1e-9:
+                if self.since[side] is None:
+                    self.since[side] = t
+            else:
+                self.since[side] = None
+
+    def held(self, side, now):
+        """Seconds the side's best bid has stayed >= FAV, or None while it is under."""
+        s0 = self.since.get(side)
+        return None if s0 is None else now - s0
 
     def snapshot(self, msg, t):
         self.yes, self.no = {}, {}
@@ -140,6 +163,7 @@ class Book:
             for a, b in (msg.get(side) or []):                      # cents form, if ever sent
                 d[round(float(a) / 100.0, 4)] = float(b)
         self.synced, self.last_msg = True, t
+        self._track(t)
 
     def delta(self, msg, t):
         d = self.yes if msg.get("side") == "yes" else self.no
@@ -148,6 +172,7 @@ class Book:
         if d[px] <= 1e-9:
             d.pop(px, None)
         self.last_msg = t
+        self._track(t)
 
     def best_bid(self, side):
         d = self.yes if side == "yes" else self.no
@@ -175,10 +200,14 @@ def pick(book, now):
         bb = book.best_bid(side)
         if bb is None or bb < FAV - 1e-9:
             continue
+        held = book.held(side, now)
+        if HOLD_S > 0 and (held is None or held < HOLD_S - 1e-9):
+            return None                                               # v-fx-hold5: 98c only just reached -- still moving
         asks = [(p, q) for p, q in book.asks(side) if p <= CAP + 1e-9]
         if not asks:
             return None
-        return {"side": side, "bid": bb, "ask": asks[0][0], "offered": round(sum(q for _, q in asks), 2)}
+        return {"side": side, "bid": bb, "ask": asks[0][0], "offered": round(sum(q for _, q in asks), 2),
+                "held": None if held is None else round(held, 1)}
     return None
 
 
@@ -273,7 +302,9 @@ class Trader:
                     self.ordered.add(tk)
                     self.log.write("no_order", ticker=tk, tau=round(tau, 2), synced=bool(b and b.synced), fresh=bool(b and b.fresh(now)),
                                    yes_bid=b.best_bid("yes") if b else None, no_bid=b.best_bid("no") if b else None,
-                                   yes_ask=(b.asks("yes") or [(None, 0)])[0][0] if b else None, no_ask=(b.asks("no") or [(None, 0)])[0][0] if b else None)
+                                   yes_ask=(b.asks("yes") or [(None, 0)])[0][0] if b else None, no_ask=(b.asks("no") or [(None, 0)])[0][0] if b else None,
+                                   held_yes=(lambda h: None if h is None else round(h, 1))(b.held("yes", now)) if b else None,
+                                   held_no=(lambda h: None if h is None else round(h, 1))(b.held("no", now)) if b else None)
                     continue
                 if b is None or tau > ENTRY_FROM or tau < LATE_S:
                     continue
@@ -605,8 +636,9 @@ async def run_live(tr, minutes, log):
 
 # ---------------------------------------------------------------------------------------------------- selftest
 def selftest():
-    global STOP_FILE
+    global STOP_FILE, HOLD_S
     fails = []
+    hold_real, HOLD_S = HOLD_S, 0.0                  # the checks below test the rest of the rule and the rails
 
     def ck(cond, what):
         print(("  ok   " if cond else "  FAIL ") + what)
@@ -749,6 +781,27 @@ def selftest():
     ck(et_day(1792800000) == "2026-10-23" and et_offset_s(1792800000) == -4 * 3600 and et_offset_s(1793600000) == -5 * 3600,
        "ET day and the Nov 1 2026 clock change")
     ck(fee(10, 0.99) == 0.01 and fee(1, 0.99) == 0.01 and fee(200, 0.99) == 0.14, "fee rounds up to the cent per order")
+    # v-fx-hold5: the hold
+    HOLD_S = hold_real
+    hb = Book(); t0 = 5000.0
+    hb.snapshot({"yes_dollars_fp": [["0.6300", "100.00"]], "no_dollars_fp": [["0.3500", "100.00"]]}, t0)
+    hb.delta({"side": "no", "price_dollars": "0.9800", "delta_fp": "200.00"}, t0 + 58)       # the platinum shape: a race to 98c
+    hb.delta({"side": "yes", "price_dollars": "0.6300", "delta_fp": "-100.00"}, t0 + 58)
+    hb.delta({"side": "yes", "price_dollars": "0.0100", "delta_fp": "50.00"}, t0 + 58.5)
+    ck(HOLD_S == 5.0 and pick(hb, t0 + 60) is None, "98c reached 2 s ago -> not bought (HOLD_S %g)" % HOLD_S)
+    ph = pick(hb, t0 + 63.1)
+    ck(ph and ph["side"] == "no" and ph["ask"] == 0.99 and ph["held"] == 5.1, "98c held 5.1 s -> bought at 99c: %s" % ph)
+    hb.delta({"side": "no", "price_dollars": "0.9800", "delta_fp": "-200.00"}, t0 + 64)
+    hb.delta({"side": "no", "price_dollars": "0.9600", "delta_fp": "100.00"}, t0 + 64)
+    hb.delta({"side": "no", "price_dollars": "0.9900", "delta_fp": "100.00"}, t0 + 65)
+    ck(pick(hb, t0 + 66) is None and hb.held("no", t0 + 66) == 1.0, "a dip under 98c restarts the clock (back at 99c 1 s ago -> not bought)")
+    hs = Book(); hs.snapshot({"yes_dollars_fp": [["0.9900", "100.00"]], "no_dollars_fp": [["0.0100", "100.00"]]}, t0)
+    hs.snapshot({"yes_dollars_fp": [["0.9900", "80.00"]], "no_dollars_fp": [["0.0100", "90.00"]]}, t0 + 30)
+    ck(hs.held("yes", t0 + 31) == 31.0 and pick(hs, t0 + 31)["side"] == "yes",
+       "a reconnect snapshot that still shows 98c+ keeps the clock (held 31 s, not 1 s)")
+    trh = Trader(log, 4, False, lambda *a: (201, {}), now=lambda: T[0])
+    trh.markets["H-1"] = {"close_s": t0 + 90, "series": "H"}; trh.books["H-1"] = hb
+    ck(trh.decide(t0 + 66) == [] and "H-1" not in trh.ordered, "decide: a market not held long enough is not decided -- it is looked at again")
     print("SELFTEST", "FAILED: %s" % fails if fails else "PASSED")
     return not fails
 
@@ -799,7 +852,7 @@ def main():
     if a.live:
         tr.pool_cash = cash
     log.write("start", pid=os.getpid(), subaccount=a.subaccount, subs={str(p): s for p, s in sorted(subs.items())}, live=a.live, dry=a.dry_run,
-              sub_balance=sub_bal, pool_cash=cash, size=SIZE, fav=FAV, cap=CAP,
+              sub_balance=sub_bal, pool_cash=cash, size=SIZE, fav=FAV, cap=CAP, hold_s=HOLD_S,
               entry_from=ENTRY_FROM, entry_to=ENTRY_TO, max_per_close=MAX_PER_CLOSE, max_held=MAX_HELD, day_stop=DAY_STOP,
               minutes=a.minutes, series=list(SERIES), argv=sys.argv)
     print("fxtake %s: subaccount %d (%s), size %d, window T-%g..T-%g s, %g minutes; log %s" % (

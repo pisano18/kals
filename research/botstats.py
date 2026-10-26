@@ -1181,6 +1181,8 @@ def settings_fx(start):
         bits.append("%s contracts a market" % s["size"])
     if s.get("fav") is not None and s.get("cap") is not None:
         bits.append("buys the side bid %s+ at %s or less" % (_c(s["fav"]), _c(s["cap"])))
+    if s.get("hold_s"):                                  # v-fx-hold5 (2026-10-26)
+        bits.append("only once that bid has held %g s" % float(s["hold_s"]))
     if s.get("entry_from") is not None and s.get("entry_to") is not None:
         bits.append("%g to %g s before the close" % (float(s["entry_from"]), float(s["entry_to"])))
     if s.get("max_per_close") is not None:
