@@ -1015,6 +1015,89 @@ def activity(name, since):
     return out
 
 
+# ---- every bot's FILLS, from its own log (2026-10-26) ------------------------------
+# The operator, 2026-10-26: "On /market it lists the last closes can you include which bot made the trades. Also
+# anywhere that trades or transactions are listed list the account or which bot." Kalshi's books say which pot a market
+# SETTLED in; a fill (what a bot bought, when, at what price) is only in that bot's own log. fills_since reads each
+# bot's log backwards from its end (read_since: only the hours asked for, a few hundredths of a second) and tags every
+# fill with its bot and its pot. What a bot DID, never money: money stays Kalshi's settlements.
+FILL_KINDS = {"pin": ("order", "hedge"), "race": ("live_order",), "forecaster": ("live_fill",),
+              "ladder": ("live_fill",), "weather": ("fill",), "fx": ("fill",)}
+
+
+def fill_sub(name, ticker):
+    """The pot one of a bot's fills is in: the FX taker's currency pairs are subaccount 4, everything else its own pot."""
+    if name == "fx" and str(ticker or "").split("-")[0] in FX_PAIRS:
+        return "4"
+    return SPEC[name]["sub"]
+
+
+def fill_of(name, r):
+    """One record of bot `name`'s own log -> {"bot", "sub", "ticker", "what", "side", "contracts", "price", "t", "close",
+    "hedge", "act"}, or None when it is not a fill (an order that got nothing, a hedge not executed, any other record).
+    `side` is the side bought, 'yes' / 'no', or None when the log does not say; the weather dip-seller SELLS yes
+    (act 'sold'). `close` is the market's close (epoch) from its ticker, None for a market without a quarter-hour."""
+    if not isinstance(r, dict):
+        return None
+    k = r.get("kind") or r.get("ev")
+    if k not in FILL_KINDS.get(name, ()):
+        return None
+    hedge = name == "pin" and k == "hedge"
+    if hedge and str(r.get("status")) != "executed":
+        return None
+    n = pinledger.money(r, "n" if hedge else {"pin": "filled", "race": "filled", "forecaster": "n",
+                                              "fx": "n"}.get(name, "delta"))
+    if n <= 0:
+        return None
+    tk = r.get("ticker")
+    side = str(r.get("want" if (name == "pin" and not hedge) else "side") or "").lower()
+    px = next((_num(r.get(f)) for f in ("exec_price", "px", "price") if r.get(f) is not None), None)
+    close = None
+    if tk:
+        try:
+            import pinflat
+            close = pinflat.close_epoch(tk)
+        except Exception:                                       # noqa: BLE001
+            close = None
+    return {"bot": name, "sub": fill_sub(name, tk), "ticker": tk, "what": describe(tk) if tk else "?",
+            "side": "yes" if name == "weather" else (side if side in ("yes", "no") else None),
+            "contracts": round(n, 2), "price": px, "t": _t_of(r), "close": close, "hedge": hedge,
+            "act": "sold" if name == "weather" else "bought"}
+
+
+def fills_since(since, names=None):
+    """(every fill the bots' own logs hold from `since` (epoch) on, oldest first -- fill_of's dicts; {bot: why} for a bot
+    whose log is missing or could not be read). The pin bot's logs are every pinrun-live-*.jsonl written since `since`."""
+    names = BOTS if names is None else tuple(names)
+    out, unread = [], {}
+    for name in names:
+        if name == "pin":
+            logs = pin_logs()
+            paths = []
+            for p in logs:
+                try:
+                    if os.path.getmtime(p) >= since:
+                        paths.append(p)
+                except OSError:
+                    pass
+        else:
+            p = os.path.join(RESULTS, SPEC[name]["log"])
+            logs = paths = [p] if os.path.exists(p) else []
+        if not logs:
+            unread[name] = "no log file found"
+        for p in paths:
+            rows = read_since(p, since)
+            if rows is None:
+                unread[name] = "its log could not be read"
+                continue
+            for r in rows:
+                f = fill_of(name, r)
+                if f is not None:
+                    out.append(f)
+    out.sort(key=lambda f: f["t"] or 0)
+    return out, unread
+
+
 # ---- what is running, and on what settings -----------------------------------
 _VER = re.compile(r"^#\s+(v-[\w.-]+(?:\s*\+\s*v-[\w.-]+)*)\s+--\s+(.*)$")
 # the weather dip-seller's VERSIONS.md entries (v-dipsell-live ...); pinphone._NOT_PIN_RE carries the same words
@@ -2407,6 +2490,31 @@ def selftest():
         ck(al["sent"] == 3 and al["filled"] == 1 and al["cancelled"] == 2 and al["refused"] == 1
            and any(h["what"] == "stop_file" for h in al["halts"]),
            "ladder today: 3 bids placed, 1 filled, 2 cancelled, 1 refused, and the stop file seen")
+        # every bot's FILLS from its own log, each named by its bot (2026-10-26, /market and /fills)
+        fl_, un_ = fills_since(day_start("2026-09-30"))
+        ck([(f["bot"], f["contracts"]) for f in fl_] == [("race", 20.0), ("ladder", 1.0), ("pin", 50.0),
+                                                           ("forecaster", 5.0)]
+           and all(f["sub"] == SPEC[f["bot"]]["sub"] for f in fl_) and set(un_) == {"weather", "fx"},
+           "fills_since: today's fills from every bot's own log, oldest first, each with its bot and pot -- the 11 PM "
+           "order is yesterday's, an order that got nothing and a hedge not executed are not fills; a bot with no "
+           "log is named, never a zero: %r %r" % ([(f["bot"], f["contracts"]) for f in fl_], un_))
+        fx4 = fill_of("fx", {"kind": "fill", "t": "2026-09-30T15:44:31Z", "ticker": "KXEURUSD15M-26SEP301145-45",
+                             "side": "no", "n": 10.0, "px": 0.99})
+        fx5 = fill_of("fx", {"kind": "fill", "t": "2026-09-30T15:44:32Z", "ticker": "KXGOLD15M-26SEP301145-45",
+                             "side": "yes", "n": 10.0, "px": 0.985})
+        pn = fill_of("pin", {"kind": "order", "t": "2026-09-30T15:44:40Z", "ticker": "KXBTC15M-26SEP301145-45",
+                             "want": "no", "filled": 38.3, "exec_price": 0.9746})
+        ph_ = fill_of("pin", {"kind": "hedge", "t": "2026-09-30T15:44:50Z", "ticker": "KXBTC15M-26SEP301145-45",
+                              "side": "yes", "n": 4.0, "price": 0.12, "status": "executed"})
+        ck(fx4["sub"] == "4" and fx5["sub"] == "5" and fx4["side"] == "no" and fx5["price"] == 0.985
+           and fx4["close"] == T("2026-09-30T15:45:00Z") and fx4["what"] == "EURUSD 11:45 AM"
+           and pn["side"] == "no" and pn["contracts"] == 38.3 and pn["price"] == 0.9746 and not pn["hedge"]
+           and ph_["hedge"] and ph_["side"] == "yes" and ph_["contracts"] == 4.0
+           and fill_of("pin", {"kind": "hedge", "ticker": "X", "n": 4, "status": "canceled"}) is None
+           and fill_of("weather", {"ev": "fill", "ticker": "KXHIGHNY-26SEP30-B72.5", "delta": 2, "px": 0.38})["act"]
+           == "sold",
+           "fill_of: the FX taker's currency pairs are subaccount 4 and its commodities 5; the pin bot's side is the "
+           "side it WANTED, a hedge is its own fill; the weather dip-seller sells")
 
         # 1b. THE POT (2026-10-02): every window as a % of what its pot held when the window began, and
         # all time as a % of the money put in. Worked by hand from the planted books:

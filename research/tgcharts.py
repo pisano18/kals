@@ -5,21 +5,27 @@ THE OPERATOR, 2026-10-18: "Telegram still looks very bad, do actual x y charts a
 work for most commands. For the others figure something out."
 
 WHAT EACH COMMAND GETS (one PNG, sent by pinphone with sendPhoto after the text):
-  /today /yesterday        the day's running total close by close on the ET clock (losing closes marked;
-                           /today has yesterday beside it in grey); orange dashes = the average day of the 7
-                           days before (10-23); right axis = the same dollars as % of the bank at the start of the day
+  /today /yesterday        every bot's running total market by market on the ET clock (each losing market marked
+                           and named by its bot and $; the title line gives each bot's money that day; /today has
+                           yesterday beside it in grey); orange dashes = the average day of the 7 days before
+                           (10-23); right axis = the same dollars as % of all pots at the start of the day
   /days /brief /summary    every ET day: $ bars, % of the bank bars (each with its 7-day average line), the
-                           running total ($ and % of money put in); /stats adds won % over 7 days
-  /stats                   the same from /stats' own source (Kalshi's books since the first live day), plus
-                           each day's won % of markets against its break-even
-  /bots /funds /bank /accounts   every RUNNING account's money over time (cash + open bets at cost), a panel each
+                           running total ($ and % of money put in)
+  /stats                   every bot, one colour a bot (10-26): $ each day stacked by bot, the day's net as % of all
+                           pots, each bot's running total (the small bots again on their own scale). The main
+                           account's old picture (with won % against break-even) when botstats cannot be read
+  /bots /funds /bank /accounts   every RUNNING account's money over time (cash + open bets at cost), a panel each,
+                           in its bot's colour
   /pin /fc /ladder /weather /race /racestats   that bot's running total and its win rate over its last
                            50 markets (races for /race) against break-even
   /losses                  every bot's losing markets, coloured by bot: dollars, and % of that bot's pot that day
-  /hedges                  what the insurance legs made, running total; each hedged bet's net by verdict
-  /status                  the bank over the last 7 days, hour by hour (pindesk's bank_at)
-  /fills /bets             today's orders: price by time, filled vs filled nothing
-  /market                  sellers' share of looks over the last 48 quarter-hours against the record's quartiles
+  /hedges                  what the pin bot's insurance legs made, running total; each hedged bet's net by verdict
+  /status                  the main account's bank over the last 7 days, hour by hour (pindesk's bank_at)
+  /fills /bets             the pin bot's orders today: price by time, filled vs filled nothing
+  /market                  sellers' share of the pin bot's looks over the last 48 quarter-hours against the record's
+                           quartiles
+  (/hedges /status /fills /market read the pin bot's own log, so each says "pin bot"; every bot-split picture uses
+   BOT_COLOUR, one colour a bot, never the green or red of a gain or a loss)
   /bars                    each RUNNING test's numbers against its pre-registered bar (one strip a criterion)
   no picture: /open (one short table already), /help, /pair, /pause /start /stop, /mute /unmute.
 
@@ -239,6 +245,74 @@ def note(ax, x, y, text, dx=0, dy=8, ha="center", color=INK, weight="bold", size
                 fontsize=size, color=color, fontweight=weight, zorder=6)
 
 
+def place_notes(ax, items, size=8.5):
+    """Name points without covering anything: items = [(x, y, text)] in data units (x may be a datetime). Each name
+    takes the first spot around its point that covers no other words, no legend and no line, inside the axes (the
+    least bad spot when none is free). Call it last, after the limits, the legend and the other notes are set."""
+    if not items:
+        return
+    import numpy as np
+    from matplotlib import cbook
+    fig = ax.figure
+    fig.canvas.draw()                                   # the layout settles: from here positions are real pixels
+    rnd = fig.canvas.get_renderer()
+    box = ax.get_window_extent(rnd)
+    taken = [t.get_window_extent(rnd).expanded(1.0, 1.0) for t in ax.texts]
+    if ax.get_legend() is not None:
+        taken.append(ax.get_legend().get_window_extent(rnd))
+    marks, weight = [], []                              # every line, a point each ~3 px (a thick line costs more)
+    for ln in ax.get_lines():
+        xy = np.asarray(ln.get_xydata(), dtype=float)
+        if len(xy) < 2:
+            continue
+        if ln.get_drawstyle().startswith("steps"):
+            xs, ys = cbook.pts_to_poststep(xy[:, 0], xy[:, 1])
+            xy = np.column_stack([xs, ys])
+        p = ax.transData.transform(xy)
+        for a, b in zip(p[:-1], p[1:]):
+            n = max(1, int(np.hypot(*(b - a)) / 3.0))
+            marks.append(a + (b - a) * np.linspace(0.0, 1.0, n + 1)[:, None])
+            weight.append(np.full(n + 1, float(ln.get_linewidth()) ** 2))
+    dots = [ax.transData.transform(np.asarray(c.get_offsets(), dtype=float)) for c in ax.collections
+            if hasattr(c, "get_offsets") and len(c.get_offsets())]
+    marks = np.vstack(marks) if marks else np.zeros((0, 2))
+    weight = np.concatenate(weight) if weight else np.zeros(0)
+    dots = np.vstack(dots) if dots else np.zeros((0, 2))
+    spots = [(-7, 0, "right", "center"), (7, -10, "left", "top"), (-7, -12, "right", "top"), (7, 10, "left", "bottom"),
+             (-7, 12, "right", "bottom"), (0, -16, "center", "top"), (0, 16, "center", "bottom"), (7, 0, "left", "center"),
+             (-7, -26, "right", "top"), (7, -24, "left", "top"), (-7, 26, "right", "bottom"), (7, 24, "left", "bottom")]
+
+    def inside(bb, pts, pad, w=None):
+        if not len(pts):
+            return 0.0
+        hit = ((pts[:, 0] >= bb.x0 - pad) & (pts[:, 0] <= bb.x1 + pad) & (pts[:, 1] >= bb.y0 - pad) & (pts[:, 1] <= bb.y1 + pad))
+        return float(np.sum(w[hit])) if w is not None else float(np.sum(hit))
+    for x, y, text in items:
+        best = None
+        two = text.replace(" -$", "\n-$").replace(" +$", "\n+$")      # narrower, on two lines: tried after one
+        for words in (text, two) if two != text else (text,):
+            for dx, dy, ha, va in spots:
+                far = abs(dy) > 14
+                a = ax.annotate(words, (x, y), xytext=(dx, dy), textcoords="offset points", ha=ha, va=va, fontsize=size,
+                                color=INK, zorder=6, linespacing=1.0,
+                                arrowprops=dict(arrowstyle="-", color=MUTED, lw=0.7, shrinkA=0, shrinkB=4) if far else None)
+                bb = a.get_window_extent(rnd)
+                score = (0 if (bb.x0 >= box.x0 and bb.x1 <= box.x1 and bb.y0 >= box.y0 and bb.y1 <= box.y1) else 1000)
+                score += 1000 * sum(1 for t in taken if bb.overlaps(t))
+                score += inside(bb, marks, 1.0, weight) + 40 * inside(bb, dots, 6.0) + (2 if words is two else 0) + (2 if far else 0)
+                if best is None or score < best[0]:
+                    if best is not None:
+                        best[1].remove()
+                    best = (score, a, bb)
+                else:
+                    a.remove()
+                if score == 0:
+                    break
+            if best[0] == 0:
+                break
+        taken.append(best[2])
+
+
 def ups_downs(vals):
     return [UP if (v or 0) >= 0 else DOWN for v in vals]
 
@@ -359,27 +433,57 @@ def bs_load(ctx):
 # =======================================================================================================
 # the charts. Each returns (png bytes, caption) or None when there is nothing live to draw.
 # =======================================================================================================
-def all_day_markets(ctx):
-    """Every bot's settled markets from botstats (the /bots source, Kalshi's books, every pot):
-    (bs, pot context, [(ET close day, settled epoch, $, bot)] by time, [pots that could not be read])."""
-    bs, c, _prows, _ok = bs_load(ctx)
+def _all_markets(ctx):
+    """Every bot's settled markets from botstats, whole: (bs, c, process rows, process table read?, pot context,
+    [(bot, botstats.market row)] by settled time, [bots whose pots could not be read])."""
+    bs, c, prows, ok = bs_load(ctx)
     today = bs.et_day(ctx["now"])
     pctx_ = bs.pot_context(c, today)
-    rows, missing = [], []
+    out, missing = [], []
     for name in tuple(bs.BOTS) + ("other",):
         blk = bs._money_block(c, name, today, pctx_)
         if not blk.get("ok"):
             missing.append(name)
             continue
-        rows += [(m["day"], m["t"], m["money"], name) for m in blk.get("markets") or [] if m["t"] is not None and m["day"]]
-    rows.sort(key=lambda r: r[1])
-    return bs, pctx_, rows, missing
+        out += [(name, m) for m in blk.get("markets") or [] if m["t"] is not None and m["day"]]
+    out.sort(key=lambda r: r[1]["t"])
+    return bs, c, prows, ok, pctx_, out, missing
+
+
+def all_day_markets(ctx):
+    """Every bot's settled markets from botstats (the /bots source, Kalshi's books, every pot):
+    (bs, pot context, [(ET close day, settled epoch, $, bot)] by time, [pots that could not be read])."""
+    bs, _c, _prows, _ok, pctx_, ms, missing = _all_markets(ctx)
+    return bs, pctx_, [(m["day"], m["t"], m["money"], name) for name, m in ms], missing
 
 
 BOT_SHORT = {"pin": "Pin bot", "race": "Coin race", "forecaster": "Forecaster", "ladder": "Ladder",
              "weather": "Weather", "fx": "FX taker", "other": "Other"}
-BOT_COLOUR = {"pin": DOWN, "race": ORANGE, "forecaster": "#7a4fc0", "ladder": BLUE, "weather": "#1a9e9e",
-              "fx": "#b8860b", "other": GREY}
+# One colour a bot, the same in every picture that splits by bot (/stats /losses /bots, each bot's page). Green and red mean
+# gain and loss on these charts, so no bot is either (operator 10-26: "every bank in different colors"). The five
+# running bots pass the dataviz palette check on every pair, colour-blind included (validate_palette.js --pairs all).
+BOT_COLOUR = {"pin": "#2a78d6",          # blue
+              "race": "#ef7f1a",         # orange, yellower than the 7-day dashes' so it never reads as a loss
+              "forecaster": "#a0479f",   # plum
+              "ladder": "#1aa3a3",       # teal
+              "weather": "#4b3fa0",      # indigo (stopped)
+              "fx": "#8a5a00",           # brown-gold
+              "other": "#8f8d86"}        # grey
+BOT_ORDER = ("pin", "race", "forecaster", "ladder", "weather", "fx", "other")
+LOSS_NAMES = 8                          # /today: the losing markets named on the picture (the biggest, when more)
+
+
+def _wrap(text, width, sep=" · "):
+    """Break a ' · ' list onto as many lines as it needs, `width` characters a line at most (where it can)."""
+    out, line = [], ""
+    for part in text.split(sep):
+        cand = (line + sep + part) if line else part
+        if line and len(cand) > width:
+            out.append(line)
+            line = part
+        else:
+            line = cand
+    return "\n".join(out + [line])
 
 
 def all_losses(ctx, week_days=7):
@@ -459,12 +563,12 @@ def chart_day(ctx, which):
         t0 = bs.day_start(d)
         t1 = bs.day_start(bs.shift_day(d, 1))
         pts, cum, lost = [], 0.0, []
-        for dd, t, v, _b in rows:
+        for dd, t, v, b in rows:
             if dd == d:
                 cum += v
                 pts.append((min(max(t, t0), t1) - t0, cum))
                 if v < -0.004:
-                    lost.append((min(max(t, t0), t1) - t0, cum))
+                    lost.append((min(max(t, t0), t1) - t0, cum, v, b))
         return pts, lost
     pts, lost = curve(day)
     if not pts:
@@ -508,25 +612,39 @@ def chart_day(ctx, which):
             alab = "Average of the %d days before %s" % (len(ds), usd(avg[-1][1]))
         ax.plot([etdt(d0 + g) for g, _v in avg], [v for _g, v in avg], color=ORANGE, lw=1.8, ls="--",
                 label=alab, zorder=2)
-    ax.step(X, Y, where="post", color=BLUE, lw=2.2, label="%s %s" % (label, usd(net)), zorder=3)
+    # every bot together is the dark line (/stats' 'all bots'); blue is the pin bot's own colour now (10-26)
+    ax.step(X, Y, where="post", color=INK, lw=2.2, label="%s %s" % (label, usd(net)), zorder=3)
+    named = sorted(sorted(lost, key=lambda x: x[2])[:LOSS_NAMES], key=lambda x: x[0])
     if lost:
-        ax.scatter([etdt(d0 + s) for s, _c in lost], [c for _s, c in lost], s=46, color=DOWN, edgecolor=SURF,
-                   linewidth=1.5, zorder=5, label="a losing market")
+        ax.scatter([etdt(d0 + s) for s, _c, _v, _b in lost], [c for _s, c, _v, _b in lost], s=46, color=DOWN,
+                   edgecolor=SURF, linewidth=1.5, zorder=5,
+                   label="a losing market, named by bot" if len(named) == len(lost)
+                   else "a losing market (the %d biggest named)" % len(named))
+        lo, hi = ax.get_ylim()                          # room under the lowest loss for its name
+        low = min(c for _s, c, _v, _b in named)
+        if low - lo < 0.12 * (hi - lo):
+            ax.set_ylim(low - 0.12 * (hi - lo), hi)
     zero_line(ax)
     ax.set_xlim(etdt(d0), etdt(d0 + 86400))
     date_axis(ax, 1)
     money_axis(ax)
     note(ax, X[-1], Y[-1], usd(Y[-1]), dx=-4, ha="right")
     pct_of_axis(ax, b0, "%% of all pots at midnight ET (%s)" % usd(b0, False) if b0 else "")
-    ax.set_title("Every bot, running total market by market (ET)")
+    each = {}                                           # each bot's money that day: who made the day
+    for _d, _t, v, b in ms:
+        each[b] = each.get(b, 0.0) + v
+    by_bot = " · ".join("%s %s" % (BOT_SHORT.get(b, b), usd(v)) for b, v in sorted(each.items(), key=lambda kv: kv[1]))
+    ax.set_title("Every bot, running total market by market (ET)\n%s" % _wrap("By bot: " + by_bot, 78))
     legend(ax)
+    place_notes(ax, [(etdt(d0 + s), c, "%s %s" % (BOT_SHORT.get(b, b), usd(v))) for s, c, v, b in named])
     r = (net / b0) if b0 else None
     headline(fig, "%s %s%s · %d of %d markets won" % (label, usd(net), (" (%s of all pots)" % pctx(r, 2)) if r is not None else "",
                                                     won, len(ms)))
     cap = ("%s: every bot's money market by market (pin, coin race, forecaster, ladder, FX taker; Kalshi's books, every pot; "
-           "a market counts on the ET day it closed). Orange dashes: the average day of the %d days before, on the "
-           "same clock. Right axis: the same dollars as %% of all pots at the start of the ET day.%s" % (
-               label, AVG_DAYS, (" PARTIAL: leaves out %s (Kalshi could not be read)." % ", ".join(missing)) if missing else ""))
+           "a market counts on the ET day it closed). By bot: %s. Red dots: a losing market, named by its bot. Orange "
+           "dashes: the average day of the %d days before, on the same clock. Right axis: the same dollars as %% of all "
+           "pots at the start of the ET day.%s" % (
+               label, by_bot, AVG_DAYS, (" PARTIAL: leaves out %s (Kalshi could not be read)." % ", ".join(missing)) if missing else ""))
     return png(fig), cap
 
 
@@ -750,6 +868,184 @@ def chart_days(ctx, src):
     return png(fig), cap
 
 
+def chart_stats_main(ctx):
+    """The old /stats picture: the main account only (pin bot + coin race, pinphone.markets_from since the first live
+    day), with each day's won % of markets against its break-even. Drawn when botstats cannot be read."""
+    return chart_days(ctx, "stats")
+
+
+def chart_stats(ctx):
+    """/stats (operator 10-26: "The command slash stats graph shows only pins bank. Perhaps every bank in different
+    colors would be better."): EVERY bot's money from botstats (Kalshi's books, every pot), one colour a bot
+    (BOT_COLOUR, the same as /losses, /bots and each bot's page):
+      top     $ each ET day stacked by bot, gains up and losses down; the dark dot is the day's net over every bot;
+      middle  that net as % of what all the pots held when the day began (botstats.day_pot, the /bots and /days base;
+              a day whose pots are unknown is left out, never guessed), with its 7-day average;
+      bottom  the running total: every bot together (dark, thick) and each big bot; then the bots too small to see
+              on that scale, on their own; each key carries each bot's all-time $ (a stopped bot says so).
+    The won % against break-even panel of the old picture is not drawn: the bots buy at very different prices (race
+    legs near 50c, the pin bot and the ladder near 96-98c), so one won % over all of them follows the mix of bots
+    that day, not how well any one did; each bot's own is on its page (/pin /fc /ladder /race /fx).
+    The main account's picture (chart_stats_main) when botstats cannot be read."""
+    try:
+        bs, _c, prows, ok, pctx_, ms, missing = _all_markets(ctx)
+    except Exception:                                   # noqa: BLE001 (no botstats: the main account's picture)
+        return chart_stats_main(ctx) if ctx.get("ledger") is not None else None
+    if not ms:
+        return chart_stats_main(ctx) if ctx.get("ledger") is not None else None
+    now = ctx["now"]
+    today = bs.et_day(now)
+    names = {n for n, _m in ms}
+    bots = [b for b in BOT_ORDER if b in names] + sorted(names - set(BOT_ORDER))
+    per = {}                                            # (ET day, bot) -> that bot's money that day
+    for n, m in ms:
+        per[(m["day"], n)] = per.get((m["day"], n), 0.0) + m["money"]
+    first = min(m["day"] for _n, m in ms)
+    days_all, d = [], first
+    while d <= today:
+        days_all.append(d)
+        d = bs.shift_day(d, 1)
+    cut = bs.et_day(now - WINDOW_DAYS * 86400)          # the picture shows the last WINDOW_DAYS; totals count all
+    days = [d for d in days_all if d >= cut] or days_all
+    acc = {b: 0.0 for b in bots}
+    run = {b: {} for b in bots}
+    for d in days_all:
+        for b in bots:
+            acc[b] += per.get((d, b), 0.0)
+            run[b][d] = acc[b]
+    life = {b: acc[b] for b in bots}
+    total = sum(life.values())
+    born = {b: min(m["day"] for n, m in ms if n == b) for b in bots}
+    stopped = {b for b in bots if b in bs.SPEC and bot_stopped(bs, b, prows, ok)}
+
+    def name(b):
+        return BOT_SHORT.get(b, b) + (" (stopped)" if b in stopped else "")
+    xs = [etdt(bs.day_start(d) + 43200) for d in days]
+    nets = [sum(per.get((d, b), 0.0) for b in bots) for d in days]
+    allv = [sum(run[b][d] for b in bots) for d in days]
+    # a bot whose running total is small next to every bot's would be a flat line at $0: it gets a panel of its
+    # own scale under the big ones
+    big_span = max([abs(v) for v in allv] + [1.0])
+    reach = {b: max([abs(run[b][d]) for d in days if d >= born[b]] + [0.0]) for b in bots}
+    big = [b for b in bots if reach[b] >= 0.3 * big_span]
+    small = [b for b in bots if b not in big and any(d >= born[b] for d in days)]
+    n = 4 if small else 3
+    fig, axs = fig_new(n, 14.4 if small else 11.6, ratios=[1.2, 0.8, 1.0, 1.0][:n], sharex=True)
+
+    # top: each day's money, stacked by bot
+    ax = axs[0]
+    up, dn = [0.0] * len(days), [0.0] * len(days)
+    for b in bots:
+        v = [per.get((d, b), 0.0) for d in days]
+        if not any(abs(x) > 0.004 for x in v):
+            continue
+        pv = [max(0.0, x) for x in v]
+        nv = [min(0.0, x) for x in v]
+        ax.bar(xs, pv, width=0.8, bottom=up, color=BOT_COLOUR.get(b, GREY), edgecolor=SURF, linewidth=0.5, zorder=3,
+               label=BOT_SHORT.get(b, b))
+        ax.bar(xs, nv, width=0.8, bottom=dn, color=BOT_COLOUR.get(b, GREY), edgecolor=SURF, linewidth=0.5, zorder=3)
+        up = [a + x for a, x in zip(up, pv)]
+        dn = [a + x for a, x in zip(dn, nv)]
+    ax.scatter(xs, nets, s=16, color=INK, edgecolor=SURF, linewidth=0.8, zorder=5, label="net, every bot")
+    zero_line(ax)
+    hi, lo = max(up + [0.0]), min(dn + [0.0])
+    span = max(hi - lo, 1.0)
+    ax.set_ylim(lo - 0.08 * span, hi + 0.28 * span)     # headroom: the key, two rows
+    note(ax, xs[-1], nets[-1], usd(nets[-1]), dy=8 if nets[-1] >= 0 else -8, ha="right", dx=4)
+    money_axis(ax)
+    ax.set_title("$ each ET day, by bot: gains up, losses down (dot = the day's net)")
+    ax.legend(loc="upper left", fontsize=8.5, ncol=4, frameon=True, facecolor=SURF, edgecolor="none", framealpha=0.92,
+              columnspacing=1.0, handlelength=1.2)
+
+    # middle: the day's net as % of all pots when it began
+    ax = axs[1]
+    pot = {}
+    lo_d = days[0]
+    for _ in range(AVG_DAYS - 1):
+        lo_d = bs.shift_day(lo_d, -1)
+    for d in days_all:
+        if d >= lo_d:
+            pot[d] = bs.day_pot(pctx_, None, d) if not missing else None
+    pct = {d: 100.0 * sum(per.get((d, b), 0.0) for b in bots) / pot[d] for d in pot if pot[d]}
+    px = [x for x, d in zip(xs, days) if d in pct]
+    pv = [pct[d] for d in days if d in pct]
+    if pv:
+        ax.bar(px, pv, width=0.8, color=ups_downs(pv), zorder=3)
+        note(ax, px[-1], pv[-1], "%+.2f%%" % pv[-1], dy=6 if pv[-1] >= 0 else -6, ha="right", dx=4)
+        ax_x, ax_v = [], []                             # the average of that day and the 6 before it (known days)
+        for x, d in zip(xs, days):
+            if d >= today:
+                continue
+            span_d, e = [], d
+            for _ in range(AVG_DAYS):
+                if e in pct:
+                    span_d.append(pct[e])
+                e = bs.shift_day(e, -1)
+            if span_d:
+                ax_x.append(x)
+                ax_v.append(sum(span_d) / len(span_d))
+        if ax_v:
+            ax.plot(ax_x, ax_v, color=INK2, lw=1.6, ls="--", zorder=4,
+                    label="%d-day average, to yesterday (%+.2f%% a day)" % (AVG_DAYS, ax_v[-1]))
+            legend(ax)
+    else:
+        ax.text(0.5, 0.5, "what the pots held could not be worked out", transform=ax.transAxes, ha="center",
+                va="center", color=MUTED, fontsize=10)
+    zero_line(ax)
+    pct_ticks(ax)
+    ax.set_title("% of all pots each day (what they held when that ET day began)")
+
+    # the running totals: every bot (dark) and the big bots; then the small ones on their own scale
+    def lines(ax, which):
+        vals = []
+        for b in which:
+            bx = [x for x, d in zip(xs, days) if d >= born[b]]
+            by = [run[b][d] for d in days if d >= born[b]]
+            if bx:
+                ax.plot(bx, by, color=BOT_COLOUR.get(b, GREY), lw=2.0, zorder=3, label="%s %s" % (name(b), usd(life[b])))
+                vals += by
+        return vals
+    ax = axs[2]
+    vals = lines(ax, big)
+    ax.plot(xs, allv, color=INK, lw=2.8, zorder=4, label="Every bot %s" % usd(total))
+    note(ax, xs[-1], allv[-1], usd(allv[-1]), dx=-4, ha="right")
+    zero_line(ax)
+    lo_r, hi_r = min([0.0] + allv + vals), max([0.0] + allv + vals)
+    span = max(hi_r - lo_r, 1.0)
+    ax.set_ylim(lo_r - 0.06 * span, hi_r + 0.14 * span)
+    money_axis(ax)
+    dep = bs.pot_for(pctx_, None, "all_time")[0] if not missing else None
+    pct_of_axis(ax, dep, "%% of the %s put in" % usd(dep, False) if dep else "")
+    bign = ["the " + BOT_SHORT.get(b, b).lower() for b in big]
+    ax.set_title("Running total: every bot together (dark)%s" % (
+        (" and " + (", ".join(bign[:-1]) + " and " if len(bign) > 1 else "") + bign[-1]) if bign else ""))
+    h, lab = ax.get_legend_handles_labels()
+    ax.legend(h[-1:] + h[:-1], lab[-1:] + lab[:-1], loc="upper left", fontsize=9, frameon=True,
+              facecolor=SURF, edgecolor="none", framealpha=0.92, handlelength=1.4)
+    if small:
+        ax = axs[3]
+        vals = lines(ax, small)
+        zero_line(ax)
+        lo_r, hi_r = min([0.0] + vals), max([0.0] + vals)
+        span = max(hi_r - lo_r, 1.0)
+        ax.set_ylim(lo_r - 0.08 * span, hi_r + 0.42 * span)     # headroom: the key
+        money_axis(ax)
+        ax.set_title("Running total of the other bots, on their own scale")
+        ax.legend(loc="upper left", fontsize=8.5, ncol=2, frameon=True, facecolor=SURF, edgecolor="none",
+                  framealpha=0.92, columnspacing=1.0, handlelength=1.4)
+    date_axis(axs[-1])
+    headline(fig, "Every bot, all time %s%s" % (usd(total), (" (%s on the %s put in)" % (pctx(total / dep, 1), usd(dep, False)))
+                                                if dep else ""))
+    cap = ("/stats: every bot, every pot (Kalshi's books through botstats), one colour a bot; the last %d days drawn, "
+           "the totals count every day since %s. Top: each ET day's money by bot, gains up and losses down; the dark "
+           "dot is the day's net over every bot. Middle: that net as %% of what all the pots held when the day began "
+           "(a day whose pots are unknown is left out); dashes: its %d-day average, to yesterday. Bottom: each bot's "
+           "running total and every bot together. All time: %s.%s" % (
+               len(days), first, AVG_DAYS, ", ".join("%s %s" % (name(b), usd(life[b])) for b in bots),
+               (" PARTIAL: leaves out %s (Kalshi could not be read)." % ", ".join(missing)) if missing else ""))
+    return png(fig), cap
+
+
 def _account_series(bs, c, sub, now):
     """[(epoch, dollars)] for pot `sub`, or a tuple of pots added up (the FX taker's 5 + 4): money moved in
     (botstats.flows) + every settlement (botstats.market), hour by hour, worked forward from Kalshi's books; plus the
@@ -818,12 +1114,13 @@ def chart_funds(ctx):
     for ax, (key, live, pts, v, why, each) in zip(axs, drawn):
         X = [etdt(t) for t, _y in pts]
         Y = [y for _t, y in pts]
-        ax.plot(X, Y, color=BLUE, lw=2.0, zorder=3)
-        ax.fill_between(X, Y, 0, color=BLUE, alpha=0.07, lw=0)
+        col = BOT_COLOUR.get(live[0], BLUE)             # the account's (first) bot's colour, as on /stats (10-26)
+        ax.plot(X, Y, color=col, lw=2.0, zorder=3)
+        ax.fill_between(X, Y, 0, color=col, alpha=0.08, lw=0)
         nowv = v if v is not None else Y[-1]
         total += nowv
         whole = whole and v is not None
-        ax.scatter([X[-1]], [nowv], s=50, color=BLUE, edgecolor=SURF, linewidth=1.5, zorder=5)
+        ax.scatter([X[-1]], [nowv], s=50, color=col, edgecolor=SURF, linewidth=1.5, zorder=5)
         note(ax, X[-1], nowv, usd(nowv, False), dx=-4, ha="right")
         lo = min(Y + [nowv])
         ax.set_ylim(bottom=min(0.0, lo))
@@ -1001,7 +1298,7 @@ def chart_bot(ctx, name):
     i0 = next((i for i, m in enumerate(ms) if m["t"] >= cut), len(ms) - 1)
     Xall = [etdt(m["t"]) for m in ms]
     X, R, W = Xall[i0:], run[i0:], ms[i0:]
-    ax.step(X, R, where="post", color=BLUE, lw=2.0, zorder=3)
+    ax.step(X, R, where="post", color=BOT_COLOUR.get(name, BLUE), lw=2.0, zorder=3)    # its /stats colour (10-26)
     lx = [x for x, m in zip(X, W) if m["money"] < -0.004]
     ly = [y for y, m in zip(R, W) if m["money"] < -0.004]
     run = R
@@ -1022,14 +1319,14 @@ def chart_bot(ctx, name):
         n = min(ROLL, max(5, len(races) // 4))
         rr = roll([100.0 if w else 0.0 for _t, _v, w, _tie in races], n)
         j0 = max(n - 1, next((i for i, r in enumerate(races) if r[0] >= cut), len(races)))
-        ax.plot([etdt(r[0]) for r in races[j0:]], rr[j0:], color=BLUE, lw=2.0,
+        ax.plot([etdt(r[0]) for r in races[j0:]], rr[j0:], color=BOT_COLOUR.get(name, BLUE), lw=2.0,
                 label="won %% of the last %d races" % n, zorder=3)
         what = "races (a tie counts as not won)"
     else:
         n = min(ROLL, max(5, len(ms) // 4))
         j0 = max(n - 1, i0)
-        ax.plot(Xall[j0:], roll([100.0 if m["money"] > 0.004 else 0.0 for m in ms], n)[j0:], color=BLUE, lw=2.0,
-                label="won %% of the last %d markets" % n, zorder=3)
+        ax.plot(Xall[j0:], roll([100.0 if m["money"] > 0.004 else 0.0 for m in ms], n)[j0:], color=BOT_COLOUR.get(name, BLUE),
+                lw=2.0, label="won %% of the last %d markets" % n, zorder=3)
         pe = [((m["put_in"] + m["fees"]) / m["contracts"], 1.0) if m["contracts"] > 0 else (0.0, 0.0) for m in ms]
         acc = []
         sv = sw = 0.0
@@ -1257,7 +1554,7 @@ def chart_hedges(ctx):
     ax.set_title("What the insurance legs made on their own, running total")
     ax = axs[1]
     for verdict, col, lab in (("WASTED", GREY, "WASTED (the bet held)"), ("NEEDED", BLUE, "NEEDED (the bet lost)"),
-                              (None, ORANGE, "not settled")):
+                              (None, INK, "not settled")):           # not orange: the coin race's colour
         g = [x for x in ho if x.get("verdict") == verdict]
         if g:
             ax.scatter([etdt(x["t"]) for x in g], [x["net"] for x in g], s=30, color=col, edgecolor=SURF, linewidth=1.0,
@@ -1268,9 +1565,10 @@ def chart_hedges(ctx):
         legend(ax)
     ax.set_title("Each hedged bet: what the whole market netted")
     date_axis(axs[-1])
-    headline(fig, "Insurance: %s all time on %d hedged markets" % (usd(tot), len(hm)))
-    cap = ("Top: each hedged market's other side, on its own (pinphone.markets_from's hedge_pnl, Kalshi's books), "
-           "added up. Bottom: every executed hedge (the bot's records) and its market's net, by verdict.")
+    headline(fig, "Pin bot insurance: %s all time on %d hedged markets" % (usd(tot), len(hm)))
+    cap = ("The pin bot's insurance. Top: each hedged market's other side, on its own (pinphone.markets_from's "
+           "hedge_pnl, Kalshi's books, main account), added up. Bottom: every executed hedge (the pin bot's records) "
+           "and its market's net, by verdict.")
     return png(fig), cap
 
 
@@ -1289,20 +1587,20 @@ def chart_status(ctx):
     reads = [(a["t"], a["bank"]) for a in led.autosize if a["bank"] is not None and a["t"] and a["t"] >= t0]
     if reads:
         ax.scatter([etdt(t) for t, _b in reads], [b for _t, b in reads], s=14, color=INK2, zorder=4,
-                   label="the bot's own bank reads")
+                   label="the pin bot's own bank reads")
     mv = [e for e in led.external if e.get("t") and e["t"] >= t0 and abs(float(e.get("amount") or 0)) >= Ledger.TRANSFER_MIN]
     for e in mv:
-        ax.axvline(etdt(e["t"]), color=ORANGE, lw=1.2, ls=":", zorder=2)
+        ax.axvline(etdt(e["t"]), color=INK2, lw=1.2, ls=":", zorder=2)
     if mv:
-        ax.plot([], [], color=ORANGE, lw=1.2, ls=":", label="money moved in or out")
+        ax.plot([], [], color=INK2, lw=1.2, ls=":", label="money moved in or out")
     note(ax, X[-1], Y[-1], usd(Y[-1], False), dx=-4, ha="right")
     money_axis(ax, signed=False)
     date_axis(ax, 7)
-    ax.set_title("The bank, hour by hour, last 7 days")
+    ax.set_title("Main account (pin bot + coin race), hour by hour, last 7 days")
     if reads or mv:
         legend(ax)
     headline(fig, "Bank %s · 7 days ago %s" % (usd(Y[-1], False), usd(Y[0], False)))
-    cap = ("The main account's bank over the last 7 days: the bot's last bank read plus every settlement since "
+    cap = ("The main account's bank (pin bot + coin race) over the last 7 days: the pin bot's last bank read plus every settlement since "
            "(pindesk's bank_at, the figure /status shows). A deposit or withdrawal moves it too -- never profit.")
     return png(fig), cap
 
@@ -1329,11 +1627,11 @@ def chart_fills(ctx):
     g = [(o, p) for o, p in got if p is not None]
     if g:
         ax.scatter([etdt(o["t"]) for o, _p in g], [p for _o, p in g],
-                   s=[min(220, 18 + 4 * float(o.get("filled") or 0)) for o, _p in g], color=BLUE, alpha=0.85,
+                   s=[min(220, 18 + 4 * float(o.get("filled") or 0)) for o, _p in g], color=BOT_COLOUR["pin"], alpha=0.85,
                    edgecolor=SURF, linewidth=1.0, zorder=4, label="filled: %d (dot size = contracts)" % len(got))
     z = [(o, p) for o, p in zero if p is not None]
-    if z:
-        ax.scatter([etdt(o["t"]) for o, _p in z], [p for _o, p in z], marker="x", s=40, color=ORANGE, linewidth=1.8,
+    if z:                                               # dark, not orange: orange is the coin race's colour (10-26)
+        ax.scatter([etdt(o["t"]) for o, _p in z], [p for _o, p in z], marker="x", s=40, color=INK, linewidth=1.8,
                    zorder=5, label="filled nothing: %d (at the price it saw)" % len(zero))
     d0 = et_day_start(day)
     ax.set_xlim(etdt(d0), etdt(d0 + 86400))
@@ -1345,8 +1643,9 @@ def chart_fills(ctx):
     ax.set_title("Each order today: the price, by time sent (ET) · got %g of %g contracts" % (
         sum(float(o.get("filled") or 0) for o in rows), sum(float(o.get("asked") or 0) for o in rows)))
     legend(ax)
-    headline(fig, "Orders today: %d · %d filled · %d filled nothing" % (len(rows), len(got), len(zero)))
-    cap = "Today's orders from the bot's own records (as /fills lists them): what it paid, and the ones that lost the race."
+    headline(fig, "Pin bot orders today: %d · %d filled · %d filled nothing" % (len(rows), len(got), len(zero)))
+    cap = ("Today's orders from the pin bot's own records (main account): what it paid, and the ones that lost the "
+           "race. Pin bot only.")
     return png(fig), cap
 
 
@@ -1365,7 +1664,7 @@ def chart_market(ctx):
     f = [(x, y) for (c, _s), x, y in zip(pts, X, Y) if c.get("fired")]
     if f:
         ax.scatter([x for x, _y in f], [y for _x, y in f], s=34, color=BLUE, edgecolor=SURF, linewidth=1.2, zorder=4,
-                   label="a quarter-hour it bought")
+                   label="a quarter-hour the pin bot bought")
     for k, ls, lab in (("p25", ":", "quiet below"), ("median", "--", "typical"), ("p75", ":", "busy above")):
         if act.get(k) is not None:
             ax.axhline(100.0 * act[k], color=MUTED, lw=1.1, ls=ls, zorder=2)
@@ -1377,7 +1676,7 @@ def chart_market(ctx):
     if f:
         legend(ax)
     headline(fig, "Sellers: %s%s" % (act["level"], (" · %.0f%% of looks lately" % (100 * act["recent"])) if act.get("recent") is not None else ""))
-    cap = ("The last %d quarter-hours from the bot's close summaries (as /market reads them); the dashed and dotted "
+    cap = ("The last %d quarter-hours from the pin bot's close summaries (as /market reads them); the dashed and dotted "
            "lines are the whole record's typical and quartile levels." % len(pts))
     return png(fig), cap
 
@@ -1493,7 +1792,9 @@ def build(kind, ctx):
     """(png bytes, caption) for picture `kind`, or None when there is nothing live to draw."""
     if kind in ("today", "yesterday"):
         return chart_day(ctx, kind)
-    if kind in ("days", "stats"):
+    if kind == "stats":
+        return chart_stats(ctx)
+    if kind == "days":
         return chart_days(ctx, kind)
     if kind == "funds":
         return chart_funds(ctx)
@@ -1590,10 +1891,18 @@ def selftest():
         sv = pinledger.load_cache
         try:
             pinledger.load_cache = lambda path=None: {"%s|%s" % (r["ticker"], r["settled_time"]): r for r in rows}
-            ctx2 = {"now": now, "ledger": led, "pp": PP}
+            class _NoBS:                                # botstats unreadable: /stats falls back to the main account
+                def __getattr__(self, k):
+                    if k == "_bs":
+                        raise RuntimeError("botstats cannot be read (planted)")
+                    return getattr(PP, k)
+            ctx2 = {"now": now, "ledger": led, "pp": _NoBS()}
             for kind in ("stats", "hedges"):
                 got = build(kind, ctx2)
-                ck(is_png(got), "%s: a PNG from pinphone.markets_from / window_stats (%d KB)" % (kind, len(got[0]) // 1024 if got else 0))
+                ck(is_png(got) and (kind != "stats" or "main account" in got[1]),
+                   "%s: a PNG from pinphone.markets_from / window_stats (%d KB)%s" % (
+                       kind, len(got[0]) // 1024 if got else 0,
+                       "; botstats unreadable -> the main account's picture" if kind == "stats" else ""))
         finally:
             pinledger.load_cache = sv
 
@@ -1676,7 +1985,44 @@ def selftest():
             ck(abs(_want - sum(BS._money_block(BS._load(now, None, None)[0], b_, et_day(now), _p3)["today"]["money"]
                                for b_ in tuple(BS.BOTS) + ("other",))) < 1e-6,
                "/today's all-bots total = the sum of every bot's botstats 'today' (the /bots number)")
+            _each = {}
+            for d_, _t, v, b_ in _rows3:
+                if d_ == et_day(now):
+                    _each[b_] = _each.get(b_, 0.0) + v
+            ck(all(("%s %s" % (BOT_SHORT[b_], usd(v))) in got[1] for b_, v in _each.items()) and "named by its bot" in got[1],
+               "/today (10-26): each bot's money that day is said (%s) and the losing markets are named by bot"
+               % ", ".join("%s %s" % (b_, usd(v)) for b_, v in sorted(_each.items())))
             ck(is_png(build("yesterday", ctx3)), "/yesterday from botstats: a PNG")
+
+            # /stats (10-26): every bot's money, one colour a bot. A bot with only LOSSES still draws (planted: every
+            # weather market lost): its colour is on the picture, and none of it when it has no market at all
+            import matplotlib.image as _mi
+
+            def _px(png_, hexc):
+                a_ = _mi.imread(io.BytesIO(png_))[:, :, :3]
+                want_ = [int(hexc[i:i + 2], 16) / 255.0 for i in (1, 3, 5)]
+                return int((abs(a_ - want_) < 0.02).all(axis=2).sum())
+            sv_w = c["subs"]["3"]["rows"]
+            try:
+                c["subs"]["3"]["rows"] = {k_: dict(r_, market_result="no", revenue=0, value=0) for k_, r_ in sv_w.items()}
+                _r4 = all_day_markets(ctx3)[2]
+                _wx = sum(v for _d, _t, v, b_ in _r4 if b_ == "weather")
+                got = build("stats", ctx3)
+                n_with = _px(got[0], BOT_COLOUR["weather"]) if is_png(got) else 0
+                c["subs"]["3"]["rows"] = {}
+                got0 = build("stats", ctx3)
+                n_without = _px(got0[0], BOT_COLOUR["weather"]) if is_png(got0) else -1
+            finally:
+                c["subs"]["3"]["rows"] = sv_w
+            ck(is_png(got) and "every bot, every pot" in got[1] and _wx < 0
+               and all(v < 0 for _d, _t, v, b_ in _r4 if b_ == "weather")
+               and ("Weather (stopped) %s" % usd(_wx)) in got[1]
+               and all(BOT_SHORT[b_] in got[1] for b_ in ("pin", "race", "forecaster", "ladder", "fx"))
+               and n_with > 400 and 0 <= n_without < 30,
+               "/stats (10-26): every bot, every pot, one colour a bot; the weather bot with ONLY losses (%s) draws "
+               "(%d px of its colour; %d with no market) and is named stopped: %r" % (usd(_wx), n_with, n_without,
+                                                                                    got[1][:90] if got else None))
+            ck(is_png(got0) and "Weather" not in got0[1], "/stats: a bot with no market at all is neither drawn nor named")
             ck(build("bot:weather", ctx3) is None, "/weather: its stop file is set -> no picture of a stopped bot")
             procs.pop(3)
             ck(build("bot:ladder", ctx3) is None, "/ladder: not in the process table -> no picture")
@@ -1700,6 +2046,16 @@ def selftest():
     ck(kind_of("/open") is None and kind_of("/stop") is None and kind_of("/pause") is None and kind_of("/help") is None
        and kind_of("/mute") is None and kind_of("/today") == "today" and kind_of("/fc") == "bot:forecaster",
        "words-only commands get no picture; the controls never queue one")
+    import colorsys
+
+    def _hs(hexc):
+        h_, s_, _v = colorsys.rgb_to_hsv(*(int(hexc[i:i + 2], 16) / 255.0 for i in (1, 3, 5)))
+        return 360.0 * h_, s_
+    hs = {b: _hs(x) for b, x in BOT_COLOUR.items()}
+    ck(len(set(BOT_COLOUR.values())) == len(BOT_COLOUR) == len(BOT_ORDER) and set(BOT_ORDER) == set(BOT_SHORT)
+       and all(s_ < 0.25 or (min(h_, 360.0 - h_) >= 20 and abs(h_ - 120.0) >= 40) for h_, s_ in hs.values()),
+       "one colour a bot, none of them the red or green of a loss or gain: %s"
+       % ", ".join("%s %.0f deg" % (b, h_) for b, (h_, _s) in hs.items()))
     print("tgcharts selftest: OK (matplotlib %s)" % mpl()["version"])
 
 

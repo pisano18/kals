@@ -667,10 +667,10 @@ HELP_TEXT = Html("""📱 <b>Commands</b>
 🔎 <b>Right now</b>
 /status — is it trading, with the evidence
 /open — open bets in every pot
-/fills — every order today: filled, price paid, seconds out
-/market — how active sellers are
+/fills — the pin bot's orders today: filled, price paid, seconds out; then every other bot's fills, each named
+/market — how active sellers are, and which bot bought what at each of the last closes
 /losses — every bot's losing markets: which bot, $ and % of its pot
-/hedges — insurance, whether it was needed, % of the bank
+/hedges — the pin bot's insurance, whether it was needed, % of the bank
 /brief — the daily briefing: money, what changed, what it did, the market, what to watch
 /bars — the September tests against their pre-registered bars (all finished; kept for the record)
 /features — what each bot does and the settings it runs with now (read from boot_all.ps1), and the rules they run under
@@ -733,16 +733,20 @@ def disk_alert_html(msg, level):
 
 def alert_loss_text(ledger, close, net, legs):
     """A new losing close: story_loss's facts (pindesk), laid out -- the loss as the headline, one line a
-    leg, why it hurts. The desktop's 'double-click a row' hint is left out: there is no row on a phone."""
+    leg, why it hurts. The desktop's 'double-click a row' hint is left out: there is no row on a phone.
+    2026-10-26 (operator: "anywhere that trades or transactions are listed list the account or which bot"): the headline
+    names the bot and its account; each leg names its bot too when one close holds both main-account bots' legs."""
     b0 = ledger.bank_at(close - 1) if close else None
-    L = ["🔴 <b>LOSS %s%s</b> · the quarter-hour closing %s ET on %s" % (
-        esc(usd(net)), (" (%s of the bank)" % esc(pct(net / b0))) if b0 else "", esc(et_str(close)),
-        esc(et_str(close, "%b %d")))]
-    for l_ in legs:
-        n = ledger.contracts_for(l_["tk"])
-        L.append("• <b>%s</b> %s at %.1fc, %g contracts → settled %s: <b>%s</b>" % (
-            esc(nice_coin(l_["tk"])), esc(str(l_["want"]).upper()), 100 * float(l_["cost"] or 0), n,
-            esc(str(l_["result"]).upper()), esc(usd(l_["pnl"]))))
+    whose = [BOT_WORD.get(main_bot_of(l_["tk"]), "?") for l_ in legs]
+    who = list(dict.fromkeys(whose))
+    L = ["🔴 <b>LOSS %s%s</b> · %s (main account) · the quarter-hour closing %s ET on %s" % (
+        esc(usd(net)), (" (%s of the bank)" % esc(pct(net / b0))) if b0 else "", esc(" + ".join(who) or "?"),
+        esc(et_str(close)), esc(et_str(close, "%b %d")))]
+    for l_, w in zip(legs, whose):
+        n = ledger.contracts_for(l_["tk"]) or _f(l_.get("n"))      # a coin-race leg is not in the pin bot's orders
+        L.append("• %s<b>%s</b> %s at %.1fc, %g contracts → settled %s: <b>%s</b>" % (
+            (esc(w) + " · ") if len(who) > 1 else "", esc(_mkt_short(l_["tk"])), esc(str(l_["want"]).upper()),
+            100 * float(l_["cost"] or 0), n, esc(str(l_["result"]).upper()), esc(usd(l_["pnl"]))))
     L.append("")
     L.append("<b>WHY IT HURTS:</b> <i>a win here makes 2c to 4c a contract; a loss costs most of the 96c-98c "
              "paid. So one losing close wipes out many winning ones.</i>")
@@ -1133,9 +1137,10 @@ def stats_block(title, st, ndays=None):
         h = "%d hedged, their hedge legs netted %s" % (st["hedged_losses"], money(st["recovered"]))
         if st["hedged_wins"]:
             h += "; hedge legs on won mkts netted %s" % money(st["wasted"])
-        L.append("Losses %d: %s, avg %s, worst %s (%s %s); %s."
+        L.append("Losses %d: %s, avg %s, worst %s (%s, %s %s); %s."
                  % (st["losses"], money(st["lost_total"]), money(st["lost_total"] / st["losses"]),
-                    money(st["largest_loss"]), _leg_name(wm["tk"]), _md(wm["day"]), h))
+                    money(st["largest_loss"]), BOT_WORD.get(main_bot_of(wm["tk"]), "?"), _leg_name(wm["tk"]),
+                    _md(wm["day"]), h))
     else:
         L.append("No losses.")
     tm = st["timing"]
@@ -2060,12 +2065,100 @@ def _wlabel(k, w):
     return BS_SHORT[k]
 
 
-def run_dot(r):
+# 2026-10-26, the operator: "/bots should change the color of the emoji for each type of bot, like a green emoji for a
+# negative bank makes no sense". A red or green dot means MONEY, never the running state: a bot's headline dot is the sign
+# of its money today, and whether it runs is said in words beside it -- loud when it does not.
+def money_dot(m, key="today"):
+    """A bot's headline colour from a botstats money block: the sign of its money in window `key` (dot) -- 🟢 up,
+    🔴 down, ⚪ nothing settled or flat, ❔ Kalshi could not be read."""
+    w = m.get(key) if m and m.get("ok") else None
+    if w is None:
+        return "❔"
+    return dot(w["money"]) if w.get("markets") else "⚪"
+
+
+def run_words(r):
+    """Whether a bot runs, in words (Html), for the line under its name: 'running since Oct 23 9:45 PM ET' when all is
+    well; loud when not -- '⚠️ NOT RUNNING ...', '🛑 HALTED ...', '⏸ STOPPED by its stop file ...'."""
+    if r.get("alive") is None:
+        return "❔ <b>running? could not tell</b> (the process list could not be read)"
+    if r.get("alive"):
+        since = esc(r.get("started_et") or "?")
+        if r.get("halted"):
+            return "🛑 <b>HALTED %s</b> -- no new bets (running since %s)" % (esc(r["halted"].get("t_et") or "?"), since)
+        return "running since %s%s" % (since, " · ⏸ its stop file is set: it stops at its next check"
+                                       if r.get("stop_flag") else "")
+    if r.get("stop_flag"):
+        return "⏸ <b>STOPPED</b> by its stop file (%s)" % esc(r.get("stop_flag_et") or "?")
+    return "⚠️ <b>NOT RUNNING</b>%s -- no stop file, it stopped on its own" % (
+        (" since about %s (its log's last write)" % esc(r["log_last_et"])) if r.get("log_last_et") else "")
+
+
+def state_icon(r):
+    """The running state as an icon that is not a money colour: ▶️ running, 🛑 halted, ⏸ stopped, ⚠️ not running,
+    ❔ could not tell."""
     if r.get("alive") is None:
         return "❔"
     if r.get("alive"):
-        return "🟠" if r.get("halted") else "🟢"
-    return "⏸" if r.get("stop_flag") else "🔴"
+        return "🛑" if r.get("halted") else "▶️"
+    return "⏸" if r.get("stop_flag") else "⚠️"
+
+
+def bs_running_html(r):
+    """bs_running_lines for a phone: the same words, a bot that is not running (or halted, or not known) said loud --
+    its headline's dot is its money, not its state (2026-10-26)."""
+    out = []
+    for x in bs_running_lines(r):
+        e = esc(norm_money(x))
+        if x.startswith(("Running: NO", "Running: COULD NOT TELL")):
+            e = "%s <b>%s</b>" % (state_icon(r), e)
+        elif x.startswith("HALTED "):
+            e = "🛑 <b>%s</b>" % e
+        out.append(e)
+    return out
+
+
+# WHICH BOT a trade is (2026-10-26, the operator: "anywhere that trades or transactions are listed list the account or
+# which bot"). The words a line uses for each bot; 'other' = a main-account market no bot claims.
+BOT_WORD = {"pin": "pin bot", "race": "coin race", "forecaster": "forecaster", "ladder": "ladder",
+            "weather": "weather dip-seller", "fx": "FX taker", "other": "not any bot's"}
+
+
+def main_bot_of(tk):
+    """Which bot a MAIN-ACCOUNT market is: 'pin', 'race' or 'other' (botstats.owner, the /bots split; pinday's book when
+    botstats cannot be imported)."""
+    try:
+        return _bs().owner(tk, "0")
+    except Exception:                                           # noqa: BLE001
+        return {"crypto": "pin", "coin race": "race"}.get(pinday.book_of(tk), "other")
+
+
+def _mkt_short(tk):
+    """A market's short name without its clock: 'BTC', 'BTC hourly', 'SOL' (a coin-race leg), 'EURUSD', 'GOLD'."""
+    t = str(tk or "")
+    if t.startswith("KXCRYPTO"):
+        return t.rsplit("-", 1)[-1]
+    m = re.match(r"^KX([A-Z]+?)D-", t)
+    if m:
+        return "%s hourly" % m.group(1)
+    return coin(t) if t else ""
+
+
+def buys_words(name, fills):
+    """What one bot bought on one quarter-hour's markets (botstats.fill_of dicts), short enough for a phone line:
+    'coin race 2 (SOL YES)', 'forecaster 26 (ETH YES) + 2 (BTC YES)', 'FX taker 3 markets x10', 'ladder 3 markets, 288
+    contracts'."""
+    by = {}
+    for f in fills:
+        k = " ".join(x for x in (_mkt_short(f.get("ticker")), str(f.get("side") or "").upper()) if x)
+        by[k] = by.get(k, 0.0) + _f(f.get("contracts"))
+    who = BOT_WORD.get(name, name)
+    items = sorted(by.items(), key=lambda kv: -kv[1])
+    if len(items) <= 2:
+        return "%s %s" % (who, " + ".join("%s%s" % (_cnt(n), (" (%s)" % k) if k else "") for k, n in items))
+    if len({round(n, 2) for _k, n in items}) == 1:
+        return "%s %d markets x%s" % (who, len(items), _cnt(items[0][1]))
+    return "%s %d markets, %s contracts" % (who, len(items), _cnt(sum(n for _k, n in items)))
 
 
 def bs_money_table(windows, whose="of bank"):
@@ -2251,11 +2344,11 @@ def bs_bot_html(b, now_et):
         pot += ", shared with the " + " and ".join(bs.SPEC[x]["label"].lower() for x in b["shares_subaccount_with"])
     L = [bs_headline(m["today"] if m["ok"] else None, who=b["label"],
                      goal=LADDER_GOAL_PCT if b["name"] == "ladder" else None),
-         "%s <b>%s</b> -- %s" % (run_dot(r), esc(b["label"].upper()), esc(b["what"])),
+         "%s <b>%s</b> -- %s" % (state_icon(r), esc(b["label"].upper()), esc(b["what"])),
          "<i>%s · Pot: %s.</i>" % (esc(now_et), esc(pot))]
     L.append("")
     L.append("⚙️ <b>Status</b>")
-    L += elines(bs_running_lines(r))
+    L += bs_running_html(r)
     setup = bs_setup_lines(r)
     L += elines([x for x in setup if not x.startswith("Settings: ")])
     L.append("")
@@ -2359,30 +2452,22 @@ def bs_all_html(a):
                 esc(bt["label"].lower()), esc(r["stop_flag_et"] or "?"),
                 (" · all time %s" % esc(usd(at["money"]))) if at.get("markets") else "", BOT_CMD_OF[name]))
             continue
-        if r["alive"] is None:
-            run = "running? could not tell"
-        elif r["alive"]:
-            run = "running since %s" % (r["started_et"] or "?")
-        elif r["stop_flag"]:
-            run = "STOPPED by its stop file (%s)" % (r["stop_flag_et"] or "?")
-        else:
-            run = "NOT RUNNING and no stop file -- it stopped on its own"
-        if r["halted"]:
-            run += ", HALTED %s" % r["halted"]["t_et"]
         mon = ("money: COULD NOT READ KALSHI" if not m["ok"] else
                "today %s · 7 days %s · all time %s" % (_short_html(m["today"]), _short_html(m["last_7_days"]),
                                                        _short_html(m["all_time"])))
         op = ("open: ?" if not o["ok"] else "open: none" if not o["count"] else
               "open: %d (%s at risk)" % (o["count"], esc(_cash(o["at_risk"]))))
-        L.append("%s <b>%s</b> · %s · %s" % (run_dot(r), esc(bt["label"].upper()),
+        # 2026-10-26 (operator: "a green emoji for a negative bank makes no sense"): the dot is the bot's money TODAY, the
+        # first figure on its money line; whether it runs is said in words on the line under its name, loud when it does not
+        L.append("%s <b>%s</b> · %s · %s" % (money_dot(m), esc(bt["label"].upper()),
                                             esc(_pot_words(bt)), BOT_CMD_OF[name]))
-        L.append("%s · %s" % (esc(run), esc(r["version"] or "no version entry")))
+        L.append("%s · %s" % (run_words(r), esc(r["version"] or "no version entry")))
         L.append("%s · %s" % (mon, op))
     ot = a["other"]
     if ot.get("ok") and ot.get("all_time") and ot["all_time"]["markets"]:
         w = ot["all_time"]
-        L.append("⚪ NOT ANY BOT'S (main account): all time %s on %s; worst %s %s (%s)." % (
-            esc(usd(w["money"])), esc(_nof(w["markets"], "market")), esc(usd(w["worst"]["money"])),
+        L.append("%s NOT ANY BOT'S (main account): all time %s on %s; worst %s %s (%s)." % (
+            dot(w["money"]), esc(usd(w["money"])), esc(_nof(w["markets"], "market")), esc(usd(w["worst"]["money"])),
             esc(w["worst"]["what"]), esc(bs.day_label(w["worst"]["day"]))))
     L += parked
     bal = a["balances"]
@@ -2429,7 +2514,9 @@ def bs_all_html(a):
     while keep and not keep[-1].strip():
         keep.pop()
     L.append(details(elines(keep), "🔎 Details: each window by bot, each day by bot, what the % mean"))
-    L.append("<i>One bot in full: /pin /race /fc /ladder /weather /fx · every account's cash: /funds</i>")
+    L.append("<i>A bot's dot = its money today: 🟢 up, 🔴 down, ⚪ no gain or loss yet, ❔ Kalshi unread; whether it runs "
+             "is in words under its name. One bot in full: /pin /race /fc /ladder /weather /fx · every account's cash: "
+             "/funds</i>")
     return L
 
 
@@ -3585,7 +3672,7 @@ class Phone:
                 up = hours_up_et_day(day, self.now() if day == et_day(self.now()) else et_day_start(day) + 86400)
             except Exception:                            # noqa: BLE001
                 up = None
-            L.append("%s, %s contracts%s" % (
+            L.append("Pin bot: %s, %s contracts%s" % (            # its own orders; the coin race's are in /race
                 esc(_nof(fs["fills"], "fill")), "{:,.0f}".format(fs["contracts"] or 0),
                 (" · %d of %d orders filled nothing (%s)" % (fs["zero"], fs["orders"], pct_of(fs["zero"], fs["orders"])))
                 if fs["orders"] else ""))
@@ -3643,7 +3730,7 @@ class Phone:
         opn = pinflat.positions(self.ledger.newest_rows) if h["alive"] else {}
         if opn:
             lines.append("")
-            lines.append("📂 <b>Open:</b> " + esc(", ".join("%s %s closes %s" % (coin(t), "x%g" % self.ledger.contracts_for(t), close_et(t)) for t in opn)))
+            lines.append("📂 <b>Pin bot open:</b> " + esc(", ".join("%s %s closes %s" % (coin(t), "x%g" % self.ledger.contracts_for(t), close_et(t)) for t in opn)))
         wd = h.get("watchdog_s")
         rec = "both writing" if (h.get("kalshi_ok") and h.get("feeds_ok")) else "CHECK RECORDERS"
         lines.append("")
@@ -3897,12 +3984,17 @@ class Phone:
         ZERO-FILL ORDERS ARE SHOWN, not hidden. An order that filled nothing is
         a race we lost, and it is about one in five -- a list that quietly drops
         them would report a fill rate of 100%.
+
+        2026-10-26 (operator: "anywhere that trades or transactions are listed list the account or which bot"): the
+        table is the PIN BOT's orders (its own log) and says so; every other bot's fills that day follow, each line
+        naming its bot (_other_fills_html).
         """
         day = day or et_day(self.now())
         rows = [o for o in self.ledger.orders
                 if o.get("t") and et_day(o["t"]) == day]
+        other = self._other_fills_html(day)
         if not rows:
-            return Html("No orders today (%s)." % esc(day))
+            return Html("\n".join(["No pin bot orders today (%s)." % esc(day)] + other))
         rows.sort(key=lambda o: o["t"])
         tbl = [("Time", "Coin", "Got/asked", "Paid", "Left")]
         nf = got = asked = 0.0
@@ -3921,13 +4013,50 @@ class Phone:
             tbl.append((hm(o["t"]), coin(o.get("tk") or ""), ("%g/%g" % (f, a)) if a else ("%g" % f),
                         ("%.1fc" % (100 * float(px))) if px else "-",
                         ("%ss" % tau) if tau is not None else "(oil)"))
-        out = ["🧾 <b>Orders today: %d</b> · %d filled · %d filled nothing%s" % (
+        out = ["🧾 <b>Pin bot orders today: %d</b> · %d filled · %d filled nothing%s" % (
             len(rows), int(nf), zero, (" (%s)" % pct_of(zero, len(rows))) if rows else ""),
             i_("%s ET · Left = seconds before the close when it was sent" % day),
             pre(table(tbl, "llrrr")),
             "Asked %g contracts, got <b>%g</b> (<b>%s</b>). %d orders: %d filled, %d lost the race." % (
                 asked, got, esc(pct(got / asked, False) if asked else "-"), len(rows), int(nf), zero)]
-        return Html("\n".join(out))
+        return Html("\n".join(out + other))
+
+    def _other_fills_html(self, day, shown=8):
+        """/fills' second part (2026-10-26): every OTHER bot's fills on ET day `day`, from its own log
+        (botstats.fills_since, today's part only) -- how many each bot had, then the newest few, every line naming its
+        bot. Html lines; a failure costs these lines only."""
+        try:
+            bs = _bs()
+            names = [b for b in bs.BOTS if b != "pin"]
+            fl, unread = bs.fills_since(et_day_start(day), names)
+        except Exception:                                       # noqa: BLE001
+            log(traceback.format_exc())
+            return ["", i_("The other bots' fills could not be read.")]
+        fl = [f for f in fl if f["t"] is not None and et_day(f["t"]) == day]
+        when = "today" if day == et_day(self.now()) else _day_long(day)
+        L = ["", "🧾 <b>Other bots' fills %s: %d</b> <i>(each bot's own log)</i>" % (esc(when), len(fl))]
+        if fl:
+            per = []
+            for b in names:
+                mine = [f for f in fl if f["bot"] == b]
+                if mine:
+                    per.append("%s %s, %s contracts" % (BOT_WORD.get(b, b), _nof(len(mine), "fill"),
+                                                        _cnt(sum(f["contracts"] for f in mine))))
+            L.append(esc(" · ".join(per)))
+            for f in list(reversed(fl))[:shown]:
+                side = " ".join(x for x in ("sold" if f["act"] == "sold" else "", (f["side"] or "").upper()) if x)
+                what = f["what"][5:] if f["bot"] == "race" and f["what"].startswith("race ") else f["what"]
+                L.append(esc("%s · %s · %s%s x%s%s" % (
+                    hm(f["t"]), BOT_WORD.get(f["bot"], f["bot"]), what, (" " + side) if side else "",
+                    _cnt(f["contracts"]), (" · %.1fc" % (100.0 * f["price"])) if f["price"] else "")))
+            if len(fl) > shown:
+                L.append(i_("the newest %d of %d, newest first" % (shown, len(fl))))
+        else:
+            L.append("None.")
+        bad = [BOT_WORD.get(b, b) for b, why in unread.items() if why != "no log file found"]
+        if bad:
+            L.append(i_("could not read: %s" % ", ".join(bad)))
+        return L
 
     def text_brief(self):
         """The daily briefing, from pinbrief -- the same words the CLI prints.
@@ -3958,12 +4087,22 @@ class Phone:
         else:
             out = ["🛒 <b>Sellers: %s</b>" % esc(act["level"])]
         out.append("")
-        out.append("<b>Last %d closes</b>" % min(8, len(self.ledger.closes)))
-        for c in list(reversed(self.ledger.closes))[:8]:
+        # 2026-10-26, the operator: "On /market it lists the last closes can you include which bot made the trades". The
+        # close summaries and their count are the PIN BOT's own (its log; the coin race's orders are in the race's log),
+        # so each close says 'pin bot ...', then every other bot's buys on the markets closing then, from its own log.
+        closes = list(reversed(self.ledger.closes))[:8]
+        out.append("<b>Last %d closes</b> <i>(who bought, in contracts; sellers = share of the pin bot's looks with a "
+                   "seller)</i>" % min(8, len(self.ledger.closes)))
+        others, unread = self._close_buys(closes)
+        want = {s["tk"]: s["want"] for s in self.ledger.signals if s.get("tk") and s.get("want") in ("yes", "no")}
+        for c in closes:
             share = Ledger.offer_share(c)
+            parts = [self._pin_close_words(c, want)] + others.get(int(c["close"]) if c["close"] else None, [])
             out.append("<b>%s</b> · sellers %s · %s" % (esc(et_str(c["close"]) if c["close"] else "?"),
                                                        esc(pct(share, False) if share is not None else "-"),
-                                                       esc(self.ledger.reason(c))))
+                                                       esc(" · ".join(parts))))
+        if unread:
+            out.append(i_("could not read %s, so its buys are not listed" % unread))
         today = et_day(self.now())
         fs = Ledger.fill_stats(self.ledger.fills_on(today))
         out.append("")
@@ -3992,6 +4131,55 @@ class Phone:
         except Exception:                                   # noqa: BLE001
             pass
         return Html("\n".join(out))
+
+    def _pin_close_words(self, c, want):
+        """What the PIN BOT did on one quarter-hour, from its own log (close summary, orders, hedges; `want` = {ticker:
+        side} from its signals): 'pin bot bought 115 (NEAR NO)', '... + hedge 4 YES', 'pin bot LOST THE RACE: ordered 50,
+        got 0 (someone bought it first)' or 'pin bot passed: <why>'. The count is Ledger.reason's: every pin order
+        filled for that close."""
+        why = self.ledger.reason(c)
+        if not why.startswith("BOUGHT"):
+            if why.startswith("LOST THE RACE"):
+                return "pin bot " + why
+            return "pin bot passed: " + ("nothing met its rules" if why == "nothing passed" else why)
+        legs = []
+        for o in self.ledger.orders:
+            if o["close"] == c["close"] and o["filled"] > 0:
+                side = want.get(o["tk"]) or (c.get("best_want") if o["tk"] == c.get("best_ticker") else None)
+                k = " ".join(x for x in (_mkt_short(o["tk"]), str(side or "").upper()) if x)
+                if k and k not in legs:
+                    legs.append(k)
+        s = "pin bot bought %g%s" % (sum(o["filled"] for o in self.ledger.orders if o["close"] == c["close"]),
+                                     (" (%s)" % ", ".join(legs)) if legs else "")
+        hed = [g for g in self.ledger.hedges if g.get("kind") == "hedge" and str(g.get("status")) == "executed"
+               and g.get("tk") and pinflat.close_epoch(g["tk"]) == c["close"]]
+        if hed:
+            s += " + hedge " + ", ".join(" ".join(x for x in ("%g" % _f(g.get("n")), str(g.get("side") or "").upper())
+                                                  if x) for g in hed)
+        return s
+
+    def _close_buys(self, closes):
+        """({close epoch: ['coin race 2 (SOL YES)', 'forecaster 26 (ETH YES)', 'FX taker 3 markets x10']}, the bots whose
+        log could not be read, in words, or None): what every bot but the pin bot bought on the markets closing at each
+        of `closes`, from its own log (botstats.fills_since, back two hours past the oldest close: hundredths of a
+        second). A failure costs these words only."""
+        cs = {int(c["close"]) for c in closes if c.get("close")}
+        if not cs:
+            return {}, None
+        try:
+            bs = _bs()
+            names = [b for b in bs.BOTS if b != "pin"]
+            fl, unread = bs.fills_since(min(cs) - 2 * 3600, names)
+        except Exception:                                       # noqa: BLE001
+            log(traceback.format_exc())
+            return {}, "the other bots' logs"
+        by = {}
+        for f in fl:
+            if f["close"] is not None and int(f["close"]) in cs:
+                by.setdefault(int(f["close"]), {}).setdefault(f["bot"], []).append(f)
+        out = {k: [buys_words(b, v[b]) for b in names if b in v] for k, v in by.items()}
+        bad = [BOT_WORD.get(b, b) for b, why in unread.items() if why != "no log file found"]
+        return out, (", ".join(bad) if bad else None)
 
     def text_losses(self):
         """/losses: EVERY bot's losing markets (operator 10-26: "Make it so /losses outputs losses not just for pin and
@@ -4077,7 +4265,7 @@ class Phone:
         ho = list(reversed(self.ledger.hedge_outcomes()))[:8]
         if not ho:
             return Html("No hedges yet.")
-        out = ["🛡 <b>Insurance</b> (the last %d hedges, newest first)" % len(ho)]
+        out = ["🛡 <b>Pin bot's insurance</b> (the last %d hedges, newest first)" % len(ho)]
         for g in ho:
             mark = {"NEEDED": "✅", "WASTED": "➖"}.get(g["verdict"], "⏳")
             b0 = self.ledger.bank_at(g["t"]) if g.get("t") and g.get("net") is not None else None
@@ -4278,12 +4466,12 @@ class Phone:
             L = ["⚪ <b>Coin race today: no races settled yet</b>"]
         L.append(i_("🏁 COIN RACE · %s ET · live, real money, main account (Kalshi's books)"
                     % et_str(now, "%a %m/%d %I:%M %p")))
-        if fl["penny"]:
-            L.append("🟢 <b>RUNNING</b>, pid %d" % fl["penny"][0])
+        if fl["penny"]:                 # 2026-10-26: a red / green dot means money; the state is an icon and words
+            L.append("▶️ <b>RUNNING</b>, pid %d" % fl["penny"][0])
         elif fl["unknown"]:
             L.append("❔ <b>Running? The process table could not be read.</b>")
         else:
-            L.append("🔴 <b>NOT RUNNING</b> (no pinracearm --live in the process table).")
+            L.append("⚠️ <b>NOT RUNNING</b> (no pinracearm --live in the process table).")
         if os.path.exists(os.path.join(res, "pinracepenny.stop")):
             L.append("⏸ <b>STOOD DOWN</b>: the stop file results/pinracepenny.stop is present.")
         L.append("")
@@ -5299,7 +5487,8 @@ def selftest():
                                                          "max_commit": 22.0, "px": [0.75, 0.985],
                                                          "day_stop": -12.0, "run_stop": -20.0}},
                        {"t": "2026-09-16T13:59:30.000Z", "ev": "placed", "filled": 5.0},
-                       {"t": "2026-09-16T13:59:30.100Z", "ev": "live_fill", "n": 5},
+                       {"t": "2026-09-16T13:59:30.100Z", "ev": "live_fill", "n": 5, "ticker": "KXETH15M-26SEP161000-00",
+                        "side": "yes", "px": 0.49},
                        {"t": "2026-09-16T13:59:41.000Z", "ev": "refused", "why": "in_flight"}):
                 _fh.write(json.dumps(_r) + "\n")
         os.utime(os.path.join(_bsdir, "forecaster-live-orders.jsonl"), (now["t"] - 30, now["t"] - 30))
@@ -5355,15 +5544,48 @@ def selftest():
            "/today: the return on what the bets cost, from Kalshi's books (+1.6626 on 83.30 + 0.0374 fees) -- "
            "shown because Kalshi's money for the day is the headline's money")
         ck("No settled bets" in P(ph.handle(111, "/yesterday")), "/yesterday with nothing settled says so")
-        ck("Sellers:" in P(ph.handle(111, "/market")) and "BOUGHT 85" in P(ph.handle(111, "/market")),
-           "/market: level and what happened")
+        # /market (2026-10-26, operator: "include which bot made the trades"): the FX taker's own log, planted for this
+        # check and /fills' below (removed after them): three fills on markets closing at 10:00 AM ET and an order that
+        # got nothing; the forecaster's planted fill is ETH 10:00 YES x5
+        _fxlog = os.path.join(_bsdir, "fxtake-live-orders.jsonl")
+        with open(_fxlog, "w", encoding="utf-8") as _fh:
+            for _r in ({"t": "2026-09-16T13:59:31Z", "kind": "fill", "ticker": "KXEURUSD15M-26SEP161000-00", "side": "no",
+                        "n": 10.0, "px": 0.99},
+                       {"t": "2026-09-16T13:59:32Z", "kind": "fill", "ticker": "KXGOLD15M-26SEP161000-00", "side": "yes",
+                        "n": 10.0, "px": 0.99},
+                       {"t": "2026-09-16T13:59:33Z", "kind": "fill", "ticker": "KXWTI15M-26SEP161000-00", "side": "yes",
+                        "n": 10.0, "px": 0.985},
+                       {"t": "2026-09-16T13:59:34Z", "kind": "placed", "ticker": "KXSILVER15M-26SEP161000-00",
+                        "filled": 0.0}):
+                _fh.write(json.dumps(_r) + "\n")
+        _mk = P(ph.handle(111, "/market"))
+        _mk10 = [x for x in _mk.split("\n") if x.startswith("10:00 AM · ")]
+        ck("Sellers:" in _mk and _mk10 == ["10:00 AM · sellers 40.00% · pin bot bought 85 (BNB NO) · forecaster 5 "
+                                           "(ETH YES) · FX taker 3 markets x10"] and "BOUGHT" not in _mk,
+           "/market: each close names who bought -- the pin bot's own count with its coin and side (its signal), then "
+           "every other bot's buys on the markets closing then, from its own log (the FX taker's 3 summed): %r" % _mk)
+        ck(buys_words("forecaster", [{"ticker": "KXETH15M-26SEP161000-00", "side": "yes", "contracts": 26},
+                                     {"ticker": "KXBTC15M-26SEP161000-00", "side": "yes", "contracts": 2.02}])
+           == "forecaster 26 (ETH YES) + 2.02 (BTC YES)"
+           and buys_words("race", [{"ticker": "KXCRYPTOLEAD15M-26SEP161000-SOL", "side": "yes", "contracts": 2}])
+           == "coin race 2 (SOL YES)"
+           and buys_words("ladder", [{"ticker": "KXNEAR15M-X", "side": "yes", "contracts": 96},
+                                     {"ticker": "KXZEC15M-X", "side": "no", "contracts": 96},
+                                     {"ticker": "KXXRP15M-X", "side": "yes", "contracts": 95}])
+           == "ladder 3 markets, 287 contracts",
+           "/market's words a bot: one or two markets each named with its side; three or more summed")
         # THE DAILY BRIEFING REACHES THE PHONE, and a failure inside it must
         # not take the command down -- he reads this when the app is not in
         # front of him.
         # /fills -- the operator's ask: filled, paid, seconds out, per order.
         _fl = ph.handle(111, "/fills")
-        ck("Orders today:" in P(_fl) or "No orders today" in P(_fl),
-           "/fills answers with today's orders or says there were none")
+        ck("Pin bot orders today:" in P(_fl) or "No pin bot orders today" in P(_fl),
+           "/fills answers with the pin bot's orders today or says there were none")
+        ck("🧾 Other bots' fills today: 4 (each bot's own log)\nforecaster 1 fill, 5 contracts · FX taker 3 fills, 30 "
+           "contracts\n9:59a · FX taker · WTI 10:00 AM YES x10 · 98.5c\n9:59a · FX taker · GOLD 10:00 AM YES x10 · 99.0c\n"
+           "9:59a · FX taker · EURUSD 10:00 AM NO x10 · 99.0c\n9:59a · forecaster · ETH 10:00 AM YES x5 · 49.0c" in P(_fl),
+           "/fills (10-26): every other bot's fills today from its own log, a count a bot, then newest first, each line "
+           "naming its bot -- the order that got nothing is not a fill: %r" % P(_fl))
         ck(ph.handle(111, "/bets") == _fl, "/bets is the same command")
         _sv_o = L.orders
         L.orders = [
@@ -5381,7 +5603,7 @@ def selftest():
                "an order shows what filled, the price PAID in cents, and how "
                "many seconds were left -- the three things he asked for, on one table row")
             ck("0/50" in _f2 and "1 lost the race" in _f2 and _f2.split("\n")[0] ==
-               "🧾 Orders today: 3 · 2 filled · 1 filled nothing (33%)",
+               "🧾 Pin bot orders today: 3 · 2 filled · 1 filled nothing (33%)",
                "a ZERO-FILL order is shown, not hidden -- about one order in "
                "five fills nothing, and dropping them would report a 100% fill "
                "rate; the headline counts it with its share")
@@ -5393,6 +5615,7 @@ def selftest():
             ck(max(len(x) for x in _f2.split("\n")[2:6]) <= 36, "/fills: the table fits a phone's width")
         finally:
             L.orders = _sv_o
+        os.remove(_fxlog)                       # the FX taker's planted log: only for /market and /fills above
         _br = ph.handle(111, "/brief")
         ck("THE DAY --" in _br or "Could not build" in _br,
            "/brief answers with the daily briefing, or says plainly that it "
@@ -5681,12 +5904,14 @@ def selftest():
                "break-even = dollars paid / contracts (87.24 / 89 = 98.0c); the margin is against "
                "the contracts paid (98.9 - 98.0) and matches the real profit per $100 risked; "
                "the count version beside it")
-            ck("Losses 2: -$0.95, avg -$0.48, worst -$0.48 (HYPE 09/16); 0 hedged, their hedge legs netted +$0.00." in _t,
-               "TODAY's losses are the two tied legs")
+            ck("Losses 2: -$0.95, avg -$0.48, worst -$0.48 (coin race, HYPE 09/16); 0 hedged, their hedge legs netted "
+               "+$0.00." in _t,
+               "TODAY's losses are the two tied legs; the worst names its bot (10-26): the main account holds pin and race")
             _7 = _blk["LAST 7 DAYS"]
             ck("Made -$53.00 on" in _7 and "8 mkts" in _7,
                "LAST 7 DAYS adds 09-15 and 09-14: -38.80 -14.10 -0.856 on top of today (09-09 is outside it)")
-            ck("Losses 5: -$54.71, avg -$10.94, worst -$38.80 (BTC 09/15); 1 hedged, their hedge legs netted +$5.00." in _7,
+            ck("Losses 5: -$54.71, avg -$10.94, worst -$38.80 (pin bot, BTC 09/15); 1 hedged, their hedge legs netted "
+               "+$5.00." in _7,
                "...five losses, the worst named, the hedged one counted with what its hedge got back")
             ck("LAST 3 DAYS: the same 8 markets as LAST 7 DAYS, so the same numbers." in _blk["LAST 3 DAYS"],
                "LAST 3 DAYS holds the same markets, so it says so instead of repeating every sentence")
@@ -5696,7 +5921,7 @@ def selftest():
                "EXCLUDES the 09-07 row: 11 markets, not 12")
             ck("Best day +$0.76 (09/16), worst -$39.66 (09/15); avg -$6.36/day over 9 days." in _l,
                "best and worst ET day, and the average over the calendar days since 09/08")
-            ck("Losses 6: -$91.21, avg -$15.20, worst -$38.80 (BTC 09/15); 2 hedged, their hedge legs "
+            ck("Losses 6: -$91.21, avg -$15.20, worst -$38.80 (pin bot, BTC 09/15); 2 hedged, their hedge legs "
                "netted +$44.00; hedge legs on won mkts netted +$55.30." in _l,
                "the FULL hedge counts (5.00 + 39.00 on two hedged losses) and the over-hedge's "
                "+55.30 sits with the won markets")
@@ -5955,16 +6180,43 @@ def selftest():
            "the cash of every pot, and HIS QUESTION answered: the main page counts pin + race only")
         ck("Kalshi's own app shows the MAIN account only. The $39.10 sitting in the forecaster, ladder, weather and FX pots" in b_,
            "/bots says why Kalshi's app reads lower than all pots: the bot pots' cash (24.00 + 15.10) is outside it")
-        ck("🟢 PIN BOT · main account · /pin\nrunning since Sep 16 7:59 AM ET · v-reopen98 + v-floor90\ntoday -$10.40 "
+        # 2026-10-26 (operator: "a green emoji for a negative bank makes no sense"): a card's dot is the bot's money
+        # TODAY -- the pin bot is running and DOWN, so red -- and whether it runs is in words on the line under it
+        ck("🔴 PIN BOT · main account · /pin\nrunning since Sep 16 7:59 AM ET · v-reopen98 + v-floor90\ntoday -$10.40 "
            "(-10.4% on bets · -0.96% of bank) · 7 days -$9.86 (-7.6% on bets · -0.93% of bank) · all time -$9.86 "
            "(-7.6% on bets · -0.93% of bank) · open: 1 ($29.10 at risk)" in b_,
-           "a card a bot: running since (ET), version, money with its share of the pot, open bets, its command")
-        ck("⏸ LADDER · subaccount 1 · /ladder\nSTOPPED by its stop file" in b_
-           and "FORECASTER · subaccount 2 · /fc\nrunning since Sep 16 8:34 AM ET · v-forecaster-race1" in b_
-           and "COIN RACE · main account · /race\nrunning since Sep 15 10:49 PM ET · v-race20" in b_,
-           "the paper race arm is not the live race; the ladder with a stop file is STOPPED, not dead")
-        ck("NOT ANY BOT'S (main account): all time -$4.51 on 1 market; worst -$4.51 WTI 2:00 PM (Sep 15)." in b_,
-           "a main-account market that is no bot's is shown on its own, never folded into pin")
+           "a card a bot: its dot is its money today (pin is running and down: red), running since (ET) in words, "
+           "version, money with its share of the pot, open bets, its command")
+        ck("🟢 LADDER · subaccount 1 · /ladder\n⏸ STOPPED by its stop file" in b_
+           and "🔴 FORECASTER · subaccount 2 · /fc\nrunning since Sep 16 8:34 AM ET · v-forecaster-race1" in b_
+           and "🟢 COIN RACE · main account · /race\nrunning since Sep 15 10:49 PM ET · v-race20" in b_,
+           "the paper race arm is not the live race; the ladder with a stop file is STOPPED, not dead -- said in words "
+           "under a dot that is its money today (up 4c: green); the forecaster runs and is down (red)")
+        ck("⚪ WEATHER DIP-SELLER · subaccount 3 · /weather\n⚠️ NOT RUNNING -- no stop file, it stopped on its own" in b_
+           and "⚪ FX TAKER · subaccount 5 + subaccount 4 · /fx\n⚠️ NOT RUNNING -- no stop file, it stopped on its own" in b_
+           and "🟠" not in b_ and "A bot's dot = its money today" in b_,
+           "a DEAD bot stays loud in words (NOT RUNNING, no stop file) though its dot is only its money (nothing settled: "
+           "white); the legend says what the dot is: %r" % b_[b_.find("WEATHER DIP"):b_.find("WEATHER DIP") + 260])
+        ck("🔴 NOT ANY BOT'S (main account): all time -$4.51 on 1 market; worst -$4.51 WTI 2:00 PM (Sep 15)." in b_,
+           "a main-account market that is no bot's is shown on its own, never folded into pin; its dot is its money")
+        _r0 = {"alive": True, "started_et": "Sep 16 7:59 AM ET", "halted": None, "stop_flag": False}
+        ck(money_dot({"ok": True, "today": {"markets": 2, "money": -10.4}}) == "🔴"
+           and money_dot({"ok": True, "today": {"markets": 1, "money": 0.9}}) == "🟢"
+           and money_dot({"ok": True, "today": {"markets": 0, "money": 0.0}}) == "⚪"
+           and money_dot({"ok": False, "today": None}) == "❔"
+           and run_words(_r0) == "running since Sep 16 7:59 AM ET"
+           and run_words(dict(_r0, halted={"t_et": "Sep 16 9:00 AM ET", "what": "day_stop", "why": ""}))
+           == "🛑 <b>HALTED Sep 16 9:00 AM ET</b> -- no new bets (running since Sep 16 7:59 AM ET)"
+           and run_words(dict(_r0, alive=False, stop_flag=True, stop_flag_et="Sep 10 5:47 AM ET"))
+           == "⏸ <b>STOPPED</b> by its stop file (Sep 10 5:47 AM ET)"
+           and run_words(dict(_r0, alive=False, log_last_et="Sep 16 10:58 AM ET"))
+           == "⚠️ <b>NOT RUNNING</b> since about Sep 16 10:58 AM ET (its log's last write) -- no stop file, it stopped on its own"
+           and run_words(dict(_r0, alive=None)).startswith("❔ <b>running? could not tell</b>")
+           and run_words(dict(_r0, stop_flag=True)).endswith("its stop file is set: it stops at its next check")
+           and [state_icon(dict(_r0, **x)) for x in ({}, {"halted": {"t_et": "x"}}, {"alive": False, "stop_flag": True},
+                                                     {"alive": False}, {"alive": None})] == ["▶️", "🛑", "⏸", "⚠️", "❔"],
+           "a dot is money (up / down / nothing / unread); the running state is words -- running since, HALTED, STOPPED, "
+           "NOT RUNNING since its log's last write, could not tell -- and an icon that is not a money colour")
         # /pin
         ph_ = ph.handle(111, "/pin")
         p_ = P(ph_)
@@ -5972,6 +6224,8 @@ def selftest():
            "/pin fits one Telegram message on this world (%d chars), Telegram-valid" % len(ph_))
         ck(p_.split("\n")[0] == "🔴 Pin bot today -$10.40 (-10.4% on $99.80 staked · -0.96% of its bank)",
            "/pin: today's money, its return on what the bets cost and its share of the pot lead the page")
+        ck(p_.split("\n")[1] == "▶️ PIN BOT -- 15-minute coin markets + hourly Bitcoin" and "🟢" not in p_.split("\n")[1],
+           "/pin (10-26): under the red money headline the running state is an icon that is not a money colour")
         for _want, _why in (
                 ("Pot: main account, shared with the coin race.", "its pot, and who shares it"),
                 ("Running: YES, pid 3882400, since Sep 16 7:59 AM ET.", "running, pid, since when in ET"),
@@ -6030,9 +6284,11 @@ def selftest():
             ck(_want in f_, "/forecaster: " + _why)
         # /ladder
         l_ = P(ph.handle(111, "/ladder"))
-        ck("Running: NO -- stopped by its stop file (set " in l_ and ': "stood down by the operator".' in l_
-           and "stopped on its own" not in l_,
-           "/ladder: NOT running, and WHY -- its stop file, with what the file says")
+        ck("⏸ Running: NO -- stopped by its stop file (set " in l_ and ': "stood down by the operator".' in l_
+           and "stopped on its own" not in l_ and l_.split("\n")[0].startswith("🟢 Ladder today +$0.04")
+           and l_.split("\n")[1].startswith("⏸ LADDER -- "),
+           "/ladder: NOT running, and WHY -- its stop file, with what the file says, said loud under a headline whose "
+           "dot is its money (up: green)")
         ck("Today: +$0.04 on $1.96 put in (+2.1%) = +0.28% of its bank ($15.06); 1 market, 1 won, 0 lost" in l_
            and "Cash: $15.10 -- its own pot (subaccount 1)." in l_
            and "Version: v-ladder-settlefix, live since Sep 16 9:16 AM ET." in l_,
@@ -6397,10 +6653,19 @@ def selftest():
         os.utime(_pl.LEDGER, (time.time() + 5, time.time() + 5))
         sent = ph.alerts_tick()
         ck(len(sent) == 1 and P(sent[0]).startswith("🔴 LOSS -$38.80 (-")
-           and "% of the bank) · the quarter-hour closing 10:15 AM ET on Sep 16" in P(sent[0]).split("\n")[0]
-           and "BTC NO at 97.0c, 40 contracts → settled YES: -$38.80" in P(sent[0]) and "WHY IT HURTS" in P(sent[0])
+           and "% of the bank) · pin bot (main account) · the quarter-hour closing 10:15 AM ET on Sep 16"
+           in P(sent[0]).split("\n")[0]
+           and "\n• BTC NO at 97.0c, 40 contracts → settled YES: -$38.80" in P(sent[0]) and "WHY IT HURTS" in P(sent[0])
            and not tg_html_problems(sent[0]),
-           "a new losing close is sent with its story: the loss as the headline, one line a leg")
+           "a new losing close is sent with its story: the loss as the headline naming the bot and its account (10-26), "
+           "one line a leg")
+        _mix = P(alert_loss_text(L, calendar.timegm((2026, 9, 16, 14, 15, 0)), -37.0, [
+            {"tk": c2, "want": "no", "cost": 0.97, "result": "yes", "pnl": -38.80},
+            {"tk": "KXCRYPTOLEAD15M-26SEP161015-SOL", "want": "yes", "cost": 0.9, "result": "yes", "pnl": 1.80, "n": 20.0}]))
+        ck(" · pin bot + coin race (main account) · " in _mix.split("\n")[0]
+           and "\n• pin bot · BTC NO at 97.0c, 40 contracts" in _mix and "\n• coin race · SOL YES at 90.0c, 20 contracts" in _mix,
+           "a losing close holding both main-account bots' legs names both, and each leg its bot (the race leg's "
+           "contracts are Kalshi's, not the pin bot's orders): %r" % _mix)
         ck(ph.alerts_tick() == [], "...once")
         ph.muted = True
         state["h"] = dict(state["h"], alive=False)
