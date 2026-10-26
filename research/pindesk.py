@@ -134,6 +134,9 @@ def et_now_str():
     return et_str(time.time(), "%a %b %d %I:%M:%S %p") + " ET"
 
 
+POSITION_KINDS = ("order", "hedge", "settled")      # what pinflat.positions() reads; nothing else uses newest_rows
+
+
 def coin(ticker):
     m = re.match(r"^KX([A-Z0-9]+?)15M-", str(ticker or ""))
     return m.group(1) if m else str(ticker or "")[:8]
@@ -202,7 +205,7 @@ class Ledger:
         self.starts = []
         self.closes = []           # close_summary records, trimmed
         self.newest = None
-        self.newest_rows = []      # every row of the newest file (for open positions)
+        self.newest_rows = []      # the newest file's order / hedge / settled rows (for open positions)
 
     def _load_kalshi(self):
         """Settled MONEY, one row per MARKET, from Kalshi's own books.
@@ -319,7 +322,9 @@ class Ledger:
                 except ValueError:
                     continue
                 self._ingest(r, p)
-                if p == newest:
+                # 2026-10-26 (operator: "free up memory"): only the kinds pinflat.positions() counts -- the newest log
+                # held 25,655 rows, most of them close summaries and feed health, ~100 MB in the phone process
+                if p == newest and r.get("kind") in POSITION_KINDS:
                     self.newest_rows.append(r)
             self.files[p] = done + cut + 1
             changed = True

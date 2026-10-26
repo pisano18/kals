@@ -85,6 +85,12 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+# 2026-10-26 (operator: "free up memory"): numpy's OpenBLAS -- pulled in by matplotlib when a chart is drawn -- commits a
+# work buffer for each of the 16 CPU threads: measured +614 MB private on the first chart, +131 MB with one thread. The
+# charts are small 2-D plots; one thread draws them the same. Must be set before numpy is first imported.
+for _blas in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(_blas, "1")
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import pindesk                                                       # noqa: E402

@@ -94,6 +94,8 @@ _M = {}
 
 def mpl():
     if not _M:
+        for _blas in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):    # see pinphone.py: one BLAS
+            os.environ.setdefault(_blas, "1")                                          # thread, not 16 buffers (10-26)
         import matplotlib
         from matplotlib.figure import Figure
         from matplotlib.backends.backend_agg import FigureCanvasAgg
