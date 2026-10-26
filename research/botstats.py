@@ -614,6 +614,34 @@ def _remember_good(c, now):
     return True
 
 
+def pot_settlements(now=None, getter=None):
+    """({pot: [settled rows]}, {pot: why not}): every pot's settlement rows from the cache, after the same refresh
+    /bots and every chart make (Kalshi re-read at most every REFRESH_S). A pot is given only when its LATEST read
+    reached Kalshi and its whole history is on file; any other pot is in the second dict, for the caller to read
+    some other way. The process table is not read.
+
+    2026-10-26, the operator: "check if ... you're collecting or doing something with the same data multiple times
+    anywhere across the project". /funds paged every account's last 7 days of settlements from Kalshi itself (7
+    GETs on the live books), seconds before its own picture refreshed this cache with the same rows; its past days
+    read these now."""
+    now = time.time() if now is None else float(now)
+    c = load_cache()
+    if refresh(c, now, getter):
+        save_cache(c)
+    rows, why = {}, {}
+    for sub in SUBS:
+        x = (c.get("subs") or {}).get(sub) or {}
+        if x.get("tried") is None:
+            why[sub] = "Kalshi has not been read yet"
+        elif x.get("err") or x.get("fetched") != x.get("tried"):
+            why[sub] = x.get("err") or "the last settlements read failed"
+        elif not x.get("complete"):
+            why[sub] = "its history is still loading"
+        else:
+            rows[sub] = list((x.get("rows") or {}).values())
+    return rows, why
+
+
 # ---- the process table -------------------------------------------------------
 _PS = ("Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | ForEach-Object { "
        "$s = ''; if ($_.CreationDate) { $s = $_.CreationDate.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ') }; "
@@ -2466,6 +2494,14 @@ def selftest():
             cj = json.load(fh)
         ck(set(cj["subs"]) == set(SUBS) and all(set(r) <= set(KEEP) for r in cj["subs"]["0"]["rows"].values()),
            "the cache holds the three pots, each row trimmed to the fields the money needs")
+        # 2026-10-26: /funds' past days read the same rows (pot_settlements), never a second pull of their own
+        n0 = len(asked)
+        ps_, pw_ = pot_settlements(now=NOW + 230, getter=fake)
+        ck(len(asked) == n0 and pw_ == {} and sorted(ps_) == sorted(SUBS)
+           and all(sorted(map(pinledger.key_of, ps_[s])) == sorted(cj["subs"][s]["rows"]) for s in SUBS)
+           and len(ps_["2"]) == 4,
+           "pot_settlements: every pot's rows as the cache holds them (the forecaster's new one included), and inside "
+           "60 s of the last read it asks Kalshi nothing")
         ck(len(cj["ledgers"]["transfers"]) == 4 and len(cj["ledgers"]["deposits"]) == 3,
            "and the account's books, the transfer history walked across both its pages")
 
@@ -2533,6 +2569,10 @@ def selftest():
         ck(b1["money"]["complete"] is False and b1["money"]["all_time"]["markets"] < 8
            and "HISTORY STILL LOADING" in _bot_text(b1),
            "a first walk that fails on page 2 is flagged partial, never shown as the whole history")
+        ps_, pw_ = pot_settlements(now=NOW + 1, getter=fake)
+        ck("0" not in ps_ and pw_.get("0") == "settlements read failed (HTTP 500)" and len(ps_.get("1") or []) == 2,
+           "pot_settlements: a pot whose last read failed is NOT given (the caller reads it some other way); the "
+           "pots that read whole are")
         fail["page2"] = False
         b2 = bot("pin", now=NOW + 61, getter=fake, procs=PROCS)
         ck(b2["money"]["complete"] is True and b2["money"]["all_time"]["markets"] == 8
@@ -2550,6 +2590,9 @@ def selftest():
            "NULL: Kalshi refusing (401) gives money None and a PARTIAL total -- never $0")
         ck(fp["running"]["alive"] is None and "COULD NOT TELL" in _bot_text(fp) and "COULD NOT READ KALSHI" in _bot_text(fp),
            "NULL: an unreadable process list is 'could not tell', never 'not running'")
+        ps_, pw_ = pot_settlements(now=NOW + 1, getter=fake)
+        ck(ps_ == {} and sorted(pw_) == sorted(SUBS) and set(pw_.values()) == {"settlements read failed (HTTP 401)"},
+           "NULL: pot_settlements with Kalshi refusing gives no pot's rows -- never an empty list read as 'nothing settled'")
         fail["all"] = False
     finally:
         globals()["RESULTS"] = saved[0]

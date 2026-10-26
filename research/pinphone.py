@@ -2703,6 +2703,14 @@ def funds_sizes(results=RESULTS):
 #
 # Each account's pull is kept FUNDS_HIST_TTL_S (60 s), so /funds sent twice does not read Kalshi twice. A
 # failed or cut-short pull is not kept: the days it did reach are shown and the rest are named NOT READ.
+#
+# ONE READ, NOT TWO (2026-10-26). The operator: "check if ... you're collecting or doing something with the
+# same data multiple times anywhere across the project". botstats' cache already holds every account's
+# settlement rows, re-read at most once a minute, and /funds' own picture refreshed it seconds after this page
+# had paged the same rows again (7 GETs on the live books, on a key the live bots share and Kalshi rate-limits).
+# So the past days come from botstats.pot_settlements (funds_hist); this page's own pull (funds_settled) is
+# kept for an account botstats does not hold or whose latest botstats read failed. Same rows, same rules,
+# same figures.
 # ---------------------------------------------------------------------------------------------------------
 FUNDS_DAYS = 7
 FUNDS_SHOW_DAYS = (7, 5, 3, 0)          # day lines listed, most first, until the page fits one message
@@ -2780,6 +2788,27 @@ def funds_settled(getter, subs, now, clock=time.monotonic, deadline_s=FUNDS_HIST
         if err is None:
             memo[n] = {"t": clock(), "since": since, "res": res}
         out[n] = res
+    return out
+
+
+def funds_hist(getter, subs, now, bs_getter=None, memo=None):
+    """funds_settled's answer for accounts `subs`, read once: every account botstats' cache holds whole after its
+    usual refresh (botstats.pot_settlements through `bs_getter`, the phone's botstats getter -- the read /bots and
+    the /funds picture make anyway) is its rows from there; only the rest are pulled here (funds_settled through
+    `getter`). A failing botstats costs nothing but that: every account is pulled as before."""
+    bs = _bs()
+    try:
+        have, _why = bs.pot_settlements(now, bs_getter)
+    except Exception:                                           # noqa: BLE001
+        log(traceback.format_exc())
+        have = {}
+    since = bs.day_start(bs.shift_day(pinday.et_day_of_epoch(now), -(FUNDS_DAYS - 1)))
+    # the whole history is on file, so every day shown is read (oldest is only consulted after an error)
+    out = {n: {"rows": have[str(n)], "err": None, "oldest": None, "since": since, "cached": True}
+           for n in subs if str(n) in have}
+    rest = [n for n in subs if n not in out]
+    if rest:
+        out.update(funds_settled(getter, rest, now, memo=memo))
     return out
 
 
@@ -4554,12 +4583,14 @@ class Phone:
     # ---- /funds /bank /accounts ----
     def text_funds(self):
         """Every Kalshi account's money (funds_read) with each bot's bet size (funds_sizes) and its last
-        FUNDS_DAYS ET days of gains and losses (funds_settled). A failure costs this command only."""
+        FUNDS_DAYS ET days of gains and losses (funds_hist: botstats' settlement rows, this page's own pull only
+        for an account botstats could not give). A failure costs this command only."""
         try:
             getter = self.funds_getter or _bs().default_getter()
             f = funds_read(getter)
             now = self.now()
-            return funds_text(f, funds_sizes(self.ledger.results), now, funds_settled(getter, f["subs"], now))
+            return funds_text(f, funds_sizes(self.ledger.results), now,
+                              funds_hist(getter, f["subs"], now, bs_getter=self.bs_getter))
         except Exception as e:                                  # noqa: BLE001
             log(traceback.format_exc())
             return ("Could not build /funds: %s\nEverything else still works -- /bots shows each bot pot's "
@@ -6878,6 +6909,8 @@ def selftest():
         # routed: /funds /bank /accounts, through handle() and the poll loop
         ck(ph.funds_getter is None, "/funds reads Kalshi through botstats' getter (kauth.get, GET only) by default")
         _FUNDS_HIST.clear()
+        _bs_sandbox("botstats-funds-down")                  # botstats cannot read Kalshi: /funds pulls its past days
+        _bs_mode["m"] = "down"
         fa = []
         ph.funds_getter = fw_get(fa)
         ck(all(P(ph.handle(111, c_) or "").startswith("🏦 ALL ACCOUNTS: $651.95")
@@ -6890,8 +6923,8 @@ def selftest():
            and "Split: main bot -$18.76" in t_ and "7 days: -$17.82 (2 of 6 lost)" in t_
            and "7 days: -$9.85 (1 of 2 lost)" in t_
            and sum(1 for p, _q in fa if p == FUNDS_HIST_PATH) == 5,
-           "/funds through handle() carries every account's past days (phone clock: Thu Sep 17), and nine /funds "
-           "inside 60 s read the settlements once")
+           "/funds through handle() carries every account's past days (phone clock: Thu Sep 17); botstats cannot read "
+           "Kalshi here, so /funds pulls them itself, and nine /funds inside 60 s read them once")
         ck(ph.handle(333, "/funds") is None, "/funds: a stranger gets nothing")
         ck("/funds" in HELP_TEXT and "/bank" in HELP_TEXT and "/accounts" in HELP_TEXT, "/funds is in /help")
         tg.push(111, "/funds")
@@ -6904,6 +6937,21 @@ def selftest():
         ck(os.path.dirname(LOG) == td and "SENT: 🏦 ALL ACCOUNTS: $651.95" in _lg,
            "the self-test logs what it 'sent' to its own temp folder (the phone's words, utf-8), never the live "
            "phone bot's results/pinphone.log")
+        # ONE READ (2026-10-26): botstats reads every pot whole -> the past days are its rows and /funds asks Kalshi
+        # for no settlements itself; the page is exactly the one its own pull of the same rows gives
+        _bs_sandbox("botstats-funds")
+        _bs_mode["m"] = "planted"
+        _FUNDS_HIST.clear()
+        fa = []
+        ph.funds_getter = fw_get(fa)
+        t_ = ph.handle(111, "/funds")
+        _own = funds_text(funds_read(fw_get([])), funds_sizes(ph.ledger.results), now["t"],
+                          funds_settled(lambda p, q: _bs_fake(p, dict(q, subaccount=str(q["subaccount"]))), [0, 1, 3],
+                                        now["t"], memo={}))
+        ck(str(t_) == str(_own) and not any(p == FUNDS_HIST_PATH for p, _q in fa) and not _FUNDS_HIST
+           and "7 days: -$14.00 (2 of 5 lost)" in P(t_) and "7 days: +$0.04 (0 of 1 lost)" in P(t_),
+           "/funds past days from botstats' rows: no settlements read of its own, and the same page (main -$14.00, "
+           "ladder +$0.04) as this page's own pull of the same rows")
         _FUNDS_HIST.clear()
     globals()["LOG"] = _st_log
     _pl.LEDGER = _pl_sv

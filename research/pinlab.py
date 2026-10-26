@@ -1467,11 +1467,86 @@ def _settled_pnl(r):
     return _NOPOS
 
 
+# A LOG'S SPAN IS READ ONCE PER VERSION OF THE FILE (2026-10-26). The
+# operator: "make the project more efficient" -- /brief took about 50 s, and
+# 40 of them were here: one live_progress spanned 573 paper logs 968 times
+# (an arm's logs are spanned again for every entry that matches them), about
+# six million timestamps through time.strptime. Now a span is kept against the
+# file's size and modified time (a log still being written, or one changed in
+# the last SPAN_SETTLE_S, is read again), and a stamp in the shape every log
+# writes is compared as TEXT -- that shape sorts the way time does -- so only
+# the earliest and latest become epochs. Any other stamp goes through strptime
+# exactly as before, and an impossible date at either end (Feb 30) sends the
+# file back to the old line-by-line read. Same answer, by construction.
+SPAN_SETTLE_S = 2.0
+_SPANS = {}                     # path -> ((size, mtime_ns), span)
+_STAMP = re.compile(r"[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])"
+                    r"T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\Z")
+
+
 def _log_span(path):
     """(first_epoch, last_epoch) of a log's timestamped records; None when
     the log is readable but carries no timestamps; False when it cannot be
     read at all. The two are different answers and join_logs treats them
     differently -- one is kept, the other dropped."""
+    try:
+        st = os.stat(path)
+        ver = (st.st_size, st.st_mtime_ns)
+    except OSError:
+        st = ver = None
+    got = _SPANS.get(path)
+    if ver is not None and got is not None and got[0] == ver:
+        return got[1]
+    span = _scan_span(path)
+    if ver is not None and span is not False and time.time() - st.st_mtime > SPAN_SETTLE_S:
+        _SPANS[path] = (ver, span)
+    return span
+
+
+def _scan_span(path):
+    """_log_span's read of the whole file (the note above _SPANS)."""
+    import calendar
+    import time as _t
+
+    def epoch(t):
+        return calendar.timegm(_t.strptime(t, "%Y-%m-%dT%H:%M:%S"))
+    lo = hi = None              # the earliest / latest stamp in the usual shape, as text
+    elo = ehi = None            # every other stamp strptime reads, as epochs
+    try:
+        fh = open(path, encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    usual = _STAMP.match
+    with fh:
+        for line in fh:
+            i = line.find('"t": "')
+            if i < 0:
+                continue
+            t = line[i + 6:i + 25]
+            if usual(t):
+                if lo is None or t < lo:
+                    lo = t
+                if hi is None or t > hi:
+                    hi = t
+                continue
+            try:
+                ts = epoch(t)
+            except (TypeError, ValueError):
+                continue
+            elo = ts if elo is None else min(elo, ts)
+            ehi = ts if ehi is None else max(ehi, ts)
+    if lo is not None:
+        try:
+            lo_t, hi_t = epoch(lo), epoch(hi)
+        except ValueError:
+            return _scan_span_each(path)
+        elo = lo_t if elo is None else min(elo, lo_t)
+        ehi = hi_t if ehi is None else max(ehi, hi_t)
+    return None if elo is None else (elo, ehi)
+
+
+def _scan_span_each(path):
+    """The span the old way: every stamp through strptime, line by line."""
     import calendar
     import time as _t
     lo = hi = None
@@ -1879,6 +1954,10 @@ def live_progress(cmdlines=None, logs=None):
     """
     out = {}
     cmdlines = cmdlines or []
+    # the logs and each one's first record, read once a call (2026-10-26: they were globbed again for each of the
+    # 64 entries and the first record read 24,627 times for 668 logs; see the note above _SPANS)
+    pool = logs if logs is not None else _paper_logs()
+    firsts = {}
     for e in EXPERIMENTS:
         m = e.get("match")
         if not m:
@@ -1907,7 +1986,6 @@ def live_progress(cmdlines=None, logs=None):
         # (`select`), and an entry with no `select` gets no log at all --
         # blank is honest, a stranger's numbers under your name is not.
         sel = e.get("select")
-        pool = logs if logs is not None else _paper_logs()
         matched = []
         # AN ARM'S LOGS START NO EARLIER THAN THE ARM. A `select` names the
         # settings, and settings recur: `pin 0.99` was a paper run on 09-13
@@ -1920,7 +1998,9 @@ def live_progress(cmdlines=None, logs=None):
                 stamp = re.search(r"(\d{8})T\d{6}Z", os.path.basename(p))
                 if since and stamp and stamp.group(1) < since:
                     continue
-                r = _first_record(p)
+                if p not in firsts:
+                    firsts[p] = _first_record(p)
+                r = firsts[p]
                 if r is None or r.get("kind") != "start":
                     continue
                 if all(_sel_ok(r.get(k), want) for k, want in sel.items()):
@@ -2192,6 +2272,32 @@ def selftest():
     ck(join_logs([jn, ja]) == ([ja, jn], []),
        "NULL: a log with no timestamps is KEPT, last, and never counted as an "
        "overlap -- dropping it made every confidence arm disappear")
+    # 2026-10-26: a span is read once per version of the file, and comparing
+    # stamps as text gives strptime's answer -- odd stamps included
+    import calendar
+    jx = os.path.join(td, "pinrun-paper-jx.jsonl")
+    with open(jx, "w", encoding="utf-8") as fh:
+        for t in ("2026-09-18T12:00:00Z", "2026-09-18t09:00:00Z",
+                  "2026-02-30T01:00:00Z", "2026-09-18T11:00:00.5Z"):
+            fh.write(json.dumps({"kind": "watch", "t": t}) + "\n")
+    _old = os.path.getmtime(jx) - 60
+    os.utime(jx, (_old, _old))
+    sx = _log_span(jx)
+    ck(sx == _scan_span_each(jx) == (calendar.timegm((2026, 9, 18, 9, 0, 0)),
+                                     calendar.timegm((2026, 9, 18, 12, 0, 0)))
+       and _SPANS[jx][1] == sx,
+       "a log's span is strptime's, line by line: a lower-case 't' stamp "
+       "counts, an impossible Feb 30 does not -- and it is kept for next time")
+    with open(jx, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"kind": "watch", "t": "2026-09-18T13:00:00Z"}) + "\n")
+    os.utime(jx, (_old, _old))
+    ck(_log_span(jx)[1] == calendar.timegm((2026, 9, 18, 13, 0, 0)),
+       "a log that grew is read again, never answered from the kept span")
+    jy = os.path.join(td, "pinrun-paper-jy.jsonl")
+    with open(jy, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps({"kind": "watch", "t": "2026-09-18T10:00:00Z"}) + "\n")
+    ck(_log_span(jy) is not None and jy not in _SPANS,
+       "a log written in the last %g s is not kept: it is read again" % SPAN_SETTLE_S)
 
     # WHAT IF THE ARM HAD BEEN LIVE
     ap_, ac = [(100, 1.0), (200, -3.0), (300, 2.0)], 60.0
