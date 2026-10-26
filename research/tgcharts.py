@@ -15,7 +15,7 @@ WHAT EACH COMMAND GETS (one PNG, sent by pinphone with sendPhoto after the text)
   /bots /funds /bank /accounts   every RUNNING account's money over time (cash + open bets at cost), a panel each
   /pin /fc /ladder /weather /race /racestats   that bot's running total and its win rate over its last
                            50 markets (races for /race) against break-even
-  /losses                  every losing close: dollars, and % of the bank at that moment
+  /losses                  every bot's losing markets, coloured by bot: dollars, and % of that bot's pot that day
   /hedges                  what the insurance legs made, running total; each hedged bet's net by verdict
   /status                  the bank over the last 7 days, hour by hour (pindesk's bank_at)
   /fills /bets             today's orders: price by time, filled vs filled nothing
@@ -374,6 +374,45 @@ def all_day_markets(ctx):
         rows += [(m["day"], m["t"], m["money"], name) for m in blk.get("markets") or [] if m["t"] is not None and m["day"]]
     rows.sort(key=lambda r: r[1])
     return bs, pctx_, rows, missing
+
+
+BOT_SHORT = {"pin": "Pin bot", "race": "Coin race", "forecaster": "Forecaster", "ladder": "Ladder",
+             "weather": "Weather", "fx": "FX taker", "other": "Other"}
+BOT_COLOUR = {"pin": DOWN, "race": ORANGE, "forecaster": "#7a4fc0", "ladder": BLUE, "weather": "#1a9e9e",
+              "fx": "#b8860b", "other": GREY}
+
+
+def all_losses(ctx, week_days=7):
+    """Every bot's LOSING markets from botstats (the /bots source, Kalshi's books, every pot). Operator 10-26: "Make
+    it so /losses outputs losses not just for pin and race and show which bot it lost" -- /losses was the main
+    account only (pin + race, one row a quarter-hour). (bs, losers newest day first and newest settled first in a
+    day, {bot: totals}, [bots whose pots could not be read]). A loser is botstats.market's row plus bot, pot (that
+    bot's pot when its day began + money moved in that day: botstats.day_pot, the /bots base) and pct (None when
+    the pot is unknown -- never a guessed base). Totals: settled, lost, lost_7d, money_lost, worst."""
+    bs, c, _prows, _ok = bs_load(ctx)
+    today = bs.et_day(ctx["now"])
+    pctx_ = bs.pot_context(c, today)
+    week = {bs.shift_day(today, -k) for k in range(week_days)}
+    out, per, missing, pots = [], {}, [], {}
+    for name in tuple(bs.BOTS) + ("other",):
+        blk = bs._money_block(c, name, today, pctx_)
+        if not blk.get("ok"):
+            missing.append(name)
+            continue
+        subs = bs.bot_subs(name)
+        key = subs if len(subs) > 1 else subs[0]
+        ms = blk.get("markets") or []
+        lost = [m for m in ms if m["money"] < -0.004]
+        per[name] = {"settled": len(ms), "lost": len(lost), "lost_7d": sum(1 for m in lost if m["day"] in week),
+                     "money_lost": round(sum(m["money"] for m in lost), 4),
+                     "worst": min((m["money"] for m in lost), default=None)}
+        for m in lost:
+            if (key, m["day"]) not in pots:
+                pots[(key, m["day"])] = bs.day_pot(pctx_, key, m["day"]) if m["day"] else None
+            pot = pots[(key, m["day"])]
+            out.append(dict(m, bot=name, pot=pot, pct=(100.0 * m["money"] / pot) if pot else None))
+    out.sort(key=lambda r: (r["day"] or "", r["t"] or 0), reverse=True)
+    return bs, out, per, missing
 
 
 def by_now(rows, bs, day, now, n=AVG_DAYS):
@@ -1014,6 +1053,57 @@ def chart_bot(ctx, name):
 
 
 def chart_losses(ctx):
+    """/losses: EVERY bot's losing markets (all_losses, the words' own source), coloured by bot; top dollars, bottom
+    the same loss as % of that bot's pot that day. Falls back to the main account's losing closes
+    (chart_losses_main) when botstats cannot be read."""
+    try:
+        bs, rows, per, missing = all_losses(ctx)
+    except Exception:                                   # noqa: BLE001 -- no botstats: the main account's picture
+        return chart_losses_main(ctx) if ctx.get("ledger") is not None else None
+    rows = [r for r in rows if r["t"]]
+    if not rows:
+        return None
+    rows.sort(key=lambda r: r["t"])
+    fig, axs = fig_new(2, 7.6, sharex=True)
+    names = [b for b in tuple(bs.BOTS) + ("other",) if any(r["bot"] == b for r in rows)]
+    for ax, key in ((axs[0], "money"), (axs[1], "pct")):
+        for b in names:
+            pts = [(etdt(r["t"]), r[key]) for r in rows if r["bot"] == b and r[key] is not None]
+            if not pts:
+                continue
+            X, Y = [p[0] for p in pts], [p[1] for p in pts]
+            ax.vlines(X, 0, Y, color=BOT_COLOUR.get(b, GREY), lw=1.4, zorder=3)
+            ax.scatter(X, Y, s=26, color=BOT_COLOUR.get(b, GREY), edgecolor=SURF, linewidth=1.0, zorder=4,
+                       label=BOT_SHORT.get(b, b) if key == "money" else None)
+        zero_line(ax)
+    ax = axs[0]
+    t0, t1 = rows[0]["t"], rows[-1]["t"]
+    mid = t0 + (t1 - t0) / 2.0
+    for k, r in enumerate(sorted(rows, key=lambda r: r["money"])[:3]):           # the 3 worst, staggered
+        left = r["t"] < mid
+        note(ax, etdt(r["t"]), r["money"], "%s %s %s %s" % (BOT_SHORT.get(r["bot"], r["bot"]), r["what"],
+                                                          et_clock(r["t"], "%m/%d"), usd(r["money"])),
+             dx=6 if left else -6, dy=4 + 15 * k, ha="left" if left else "right", size=8.5, weight="normal")
+    money_axis(ax)
+    ax.set_title("Each losing market, dollars")
+    if len(names) > 1:                  # the key under the % panel's newest end, clear of the 3 worst's notes
+        h, lab = ax.get_legend_handles_labels()
+        axs[1].legend(h, lab, loc="lower right", fontsize=8.5, frameon=True, framealpha=0.9, edgecolor=GRID,
+                      ncol=min(3, len(names)))
+    axs[1].set_title("The same loss as % of that bot's pot when its day began")
+    pct_ticks(axs[1])
+    date_axis(axs[-1])
+    lost = sum(p["lost"] for p in per.values())
+    settled = sum(p["settled"] for p in per.values())
+    headline(fig, "%d losing markets of %d, every bot (%.1f%%) · worst %s" % (
+        lost, settled, 100.0 * lost / settled if settled else 0.0, usd(min(r["money"] for r in rows))))
+    cap = ("Every losing market, all time, every bot (Kalshi's books, every pot; colour = the bot). Bottom: the loss "
+           "as %% of that bot's pot when its day began (botstats.day_pot; pin + race share the main account).%s" % (
+               (" Left out (Kalshi could not be read): " + ", ".join(missing) + ".") if missing else ""))
+    return png(fig), cap
+
+
+def chart_losses_main(ctx):
     led = ctx["ledger"]
     lc = [(k, net, legs) for k, net, legs in led.losing_closes() if k]
     if not lc:
@@ -1476,6 +1566,14 @@ def selftest():
                "moved into 5 and 4's pool 0 + its own markets (the $55 moved into 4's pool 2 and the reward-test leg "
                "left out): %r" % (((_pts[-1][1] if _pts else None), _v, _each, _why),))
             ck(kind_of("/fx") == "bot:fx" and is_png(build("bot:fx", ctx3)), "/fx: a PNG of the FX taker over both pots")
+            _bsl, _lrows, _lper, _lmiss = all_losses(ctx3)
+            got = build("losses", ctx3)
+            ck(is_png(got) and "every bot" in got[1] and not _lmiss
+               and {r["bot"] for r in _lrows} >= {"pin", "race", "forecaster", "fx"}
+               and all(r["money"] < 0 for r in _lrows) and sum(p["lost"] for p in _lper.values()) == len(_lrows)
+               and [(r["day"], r["t"]) for r in _lrows] == sorted([(r["day"], r["t"]) for r in _lrows], reverse=True),
+               "/losses (10-26): every bot's losing markets (pin, race, forecaster, fx ...), newest day first, one PNG "
+               "coloured by bot: %d losers" % len(_lrows))
             for b in ("pin", "race", "forecaster", "ladder"):
                 got = build("bot:" + b, ctx3)
                 ck(is_png(got), "/%s: a PNG (%d KB)" % (b, len(got[0]) // 1024 if got else 0))
