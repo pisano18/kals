@@ -43,8 +43,27 @@ close, won if it made money and lost if it did not.
 Runs under pythonw (no console); anything that would have been a traceback
 goes to results\pindesk.err instead.
 
+REMOTE MODE (2026-10-27: every live bot moved to the Ohio server). When
+C:\kals\server.json exists, this computer only WATCHES the bots:
+  * the numbers come from the server: research\server_sync.py copies what
+    changed in the server's results\ into this one, once when the app opens
+    and every 2 minutes while it is open, on a background thread (a failed
+    sync says so in the banner and the old numbers stay);
+  * START / PAUSE / STOP run `pindesk.py --action start|pause|stop --yes` ON
+    THE SERVER over ssh, and the server's lines stream into the log here.
+    There the action is started through WMI, outside the ssh session,
+    because Windows' ssh server kills everything a session started when it
+    closes (measured 2026-10-27) -- a bot started from inside it would die
+    with the connection;
+  * every local control -- the stand-down flag, boot_all.ps1,
+    restart_bot.ps1, stopping or starting a process, the Lab's arm buttons --
+    REFUSES here (RemoteOnly), whoever calls it.
+Without server.json (the server itself) everything works exactly as above.
+
     python research/pindesk.py --selftest
     pythonw research/pindesk.py            # what the desktop shortcut runs
+    python research/pindesk.py --action status [--json]
+    python research/pindesk.py --action start|pause|stop --yes
 """
 import calendar
 import collections
@@ -78,6 +97,11 @@ STOP_FLAG = os.path.join(RESULTS, "pinrun-live.stop")
 RESET_FLAG = os.path.join(RESULTS, "pinrun-hwm.reset")
 HEARTBEAT = os.path.join(RESULTS, "watch_bot.heartbeat")
 ERR_FILE = os.path.join(RESULTS, "pindesk.err")
+# REMOTE MODE: present on the laptop, absent on the server (see the docstring)
+SERVER_JSON = os.path.join(KALS, "server.json")
+SERVER_STATUS = os.path.join(RESULTS, "server_status.json")    # written by server_sync
+SERVER_BOTS = os.path.join(RESULTS, "server_bots.json")        # written by server_sync
+SERVER_STALE_S = 600       # no news from the server for this long: the banner says it cannot see it
 REFRESH_MS = 5000
 STALE_MIN = 20
 CREATE_NO_WINDOW = 0x08000000
@@ -1229,17 +1253,91 @@ def last_line(path):
         return ""
 
 
+# ===========================================================================
+# remote mode: this computer watches a server that runs the bots
+# ===========================================================================
+class RemoteOnly(RuntimeError):
+    """A local control was asked for on a computer that only watches the trading server."""
+
+
+def remote_config(path=None):
+    """C:\\kals\\server.json as a dict when this computer only watches the trading server, else None.
+
+    PRESENT BUT UNREADABLE STILL MEANS REMOTE. A broken file must never turn
+    the laptop back into a machine that starts live bots: the dict then
+    carries `error`, every local control still refuses, and the server
+    buttons say what is wrong instead of acting."""
+    p = path or SERVER_JSON
+    if not os.path.exists(p):
+        return None
+    try:
+        with open(p, encoding="utf-8-sig") as fh:
+            d = json.load(fh)
+        if not isinstance(d, dict) or not d.get("host") or not d.get("user") or not d.get("key"):
+            raise ValueError("it needs host, user and key")
+    except (OSError, ValueError) as e:
+        return {"error": "%s cannot be read: %s" % (p, e), "host": "?"}
+    d.setdefault("python", PY)
+    d.setdefault("repo", r"C:\kals-repo")
+    return d
+
+
+def _refuse_local(what):
+    """Every local control calls this first. On a computer that watches the server it raises."""
+    if remote_config() is not None:
+        raise RemoteOnly("%s refused: the bots run on the trading server and this computer only "
+                         "watches it (%s exists). The app's buttons act on the server."
+                         % (what, SERVER_JSON))
+
+
+def load_server_status(path=None):
+    """The server's own facts from the last sync (results\\server_status.json), or None."""
+    try:
+        with open(path or SERVER_STATUS, encoding="utf-8") as fh:
+            d = json.load(fh)
+        return d if isinstance(d, dict) and d.get("at") else None
+    except (OSError, ValueError):
+        return None
+
+
+def server_facts_into(h, snap, now=None):
+    """Remote mode: the bot's process, stand-down flag, heartbeats and open bets AS THE SERVER SAW
+    THEM at its last sync. The ages are the server's own at that moment (adding the time since
+    would call a 30-second watchdog dead between two syncs); the banner says when that was."""
+    now = time.time() if now is None else now
+    h.update(remote=True, server=snap or None, pid=None, alive=False, flag=None, quiet_s=None,
+             watchdog_s=None, phone_s=None, blind=None, flat="UNKNOWN", open={})
+    if not snap:
+        h["server_age_s"], h["remote_stale"] = None, True
+        return h
+    for k in ("pid", "flag", "quiet_s", "watchdog_s", "phone_s", "blind", "flat", "flat_err"):
+        if snap.get(k) is not None:
+            h[k] = snap[k]
+    h["alive"] = bool(snap.get("alive"))
+    h["open"] = snap.get("open") or {}
+    age = max(0.0, now - float(snap.get("at") or 0))
+    h["server_age_s"] = age
+    h["remote_stale"] = age > SERVER_STALE_S
+    h["checked"] = "Checked on the server at %s" % et_str(float(snap["at"]), "%I:%M:%S %p")
+    h["server_disk_gb"], h["server_ram_gb"] = snap.get("disk_gb"), snap.get("ram_gb")
+    return h
+
+
 def health(ledger):
     h = {}
-    pid = pinflat.live_pid()
-    h["pid"] = pid
-    h["alive"] = bool(pid) and pinflat.pid_alive(pid)
-    h["flag"] = read_flag()
-    ages = [a for a in (_file_age_s(ledger.newest) if ledger.newest else None,
-                        _file_age_s(os.path.join(RESULTS, "pinrun-live.out"))) if a is not None]
-    h["quiet_s"] = min(ages) if ages else None
-    h["watchdog_s"] = _file_age_s(HEARTBEAT)
-    h["phone_s"] = _file_age_s(os.path.join(RESULTS, "pinphone.heartbeat"))
+    remote = remote_config() is not None
+    if remote:
+        server_facts_into(h, load_server_status())
+    else:
+        pid = pinflat.live_pid()
+        h["pid"] = pid
+        h["alive"] = bool(pid) and pinflat.pid_alive(pid)
+        h["flag"] = read_flag()
+        ages = [a for a in (_file_age_s(ledger.newest) if ledger.newest else None,
+                            _file_age_s(os.path.join(RESULTS, "pinrun-live.out"))) if a is not None]
+        h["quiet_s"] = min(ages) if ages else None
+        h["watchdog_s"] = _file_age_s(HEARTBEAT)
+        h["phone_s"] = _file_age_s(os.path.join(RESULTS, "pinphone.heartbeat"))
     try:
         with open(os.path.join(KALS, "logs", "run_all.pid")) as fh:
             h["run_all"] = pinflat.pid_alive(int(fh.read().strip()))
@@ -1247,9 +1345,10 @@ def health(ledger):
         h["run_all"] = None
     h["kalshi_ok"], h["kalshi_prev"], h["kalshi_open"], h["kalshi_chans"], h["kalshi_age"] = recorder_ok(os.path.join(KALS, "kalshi_data"))
     h["feeds_ok"], h["feeds_prev"], h["feeds_open"], h["feeds_chans"], h["feeds_age"] = recorder_ok(os.path.join(KALS, "feed_data"))
-    lives = glob.glob(os.path.join(RESULTS, "pinrun-live-*.jsonl"))
-    h["blind"] = (blind_of(tail_rows(max(lives, key=os.path.getmtime)), time.time())
-                  if lives and h["alive"] else None)
+    if not remote:
+        lives = glob.glob(os.path.join(RESULTS, "pinrun-live-*.jsonl"))
+        h["blind"] = (blind_of(tail_rows(max(lives, key=os.path.getmtime)), time.time())
+                      if lives and h["alive"] else None)
     h["cdc_age"] = newest_mtime_age(os.path.join(KALS, "cdc_data"))
     now = time.time()
     h["paper_arms"] = sum(1 for p in glob.glob(os.path.join(RESULTS, "pinrun-paper-*.jsonl"))
@@ -1261,14 +1360,15 @@ def health(ledger):
     except OSError:
         h["disk_gb"] = None
     h["ram_gb"] = _ram_free_gb()
-    try:
-        st, d = pinflat.check()
-        h["flat"] = st
-        h["open"] = d.get("open") or {}
-    except Exception as e:                              # noqa: BLE001
-        h["flat"] = "UNKNOWN"
-        h["open"] = {}
-        h["flat_err"] = str(e)[:120]
+    if not remote:
+        try:
+            st, d = pinflat.check()
+            h["flat"] = st
+            h["open"] = d.get("open") or {}
+        except Exception as e:                          # noqa: BLE001
+            h["flat"] = "UNKNOWN"
+            h["open"] = {}
+            h["flat_err"] = str(e)[:120]
     # IS THE OPPORTUNITY GOING AWAY? The operator, 2026-09-18: *"Something
     # like this needs to be on the health tab to track this trend. This needs
     # to be watched like a hawk and is terrifying."* Reads two small JSON
@@ -1302,7 +1402,10 @@ def evidence(h):
     by opening its pid; 'trading' means its own log was written recently; the
     stand-down flag is a file on disk, read every refresh."""
     q = h.get("quiet_s")
-    return "Checked just now: process %s %s; its log was written %s; stand-down flag %s." % (
+    if h.get("remote") and not h.get("server"):
+        return "Nothing heard from the server yet (no results\\server_status.json from a sync)."
+    return "%s: process %s %s; its log was written %s; stand-down flag %s." % (
+        h.get("checked") or "Checked just now",
         h.get("pid") or "?", "is OPEN (alive)" if h["alive"] else "is NOT running",
         ("%d s ago" % q) if q is not None else "never",
         "PRESENT" if h.get("flag") else "absent")
@@ -1317,6 +1420,15 @@ def status_of(h, now=None):
 
 def _status_of(h, now=None):
     now = time.time() if now is None else now
+    if h.get("remote") and h.get("remote_stale"):
+        # REMOTE MODE, AND THE SERVER'S FACTS ARE MISSING OR OLD. Saying TRADING or
+        # NOT RUNNING off a snapshot this old would be a label, not a check.
+        snap = h.get("server") or {}
+        return ("UNKNOWN",
+                ("CANNOT SEE THE SERVER -- last news %s" % et_str(float(snap["at"]))) if snap.get("at")
+                else "NO NEWS FROM THE SERVER YET",
+                "The bots run on the Ohio server and keep trading without this app. Check this "
+                "computer's internet, then press Refresh.", C["grey"])
     n_open = sum(v if isinstance(v, (int, float)) else (v.get("n", 1) if isinstance(v, dict) else 1)
                  for v in (h.get("open") or {}).values())
     if h["alive"]:
@@ -1374,6 +1486,7 @@ def _status_of(h, now=None):
 # controls
 # ===========================================================================
 def _ps(script, *args, timeout=180):
+    _refuse_local("running %s" % os.path.basename(script))
     cmd = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, *args]
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
                        creationflags=CREATE_NO_WINDOW, cwd=REPO)
@@ -1389,6 +1502,7 @@ def _cmdline(pid):
 
 def terminate_live_bot(log):
     """Stop the live bot by pid, only after proving what that pid is."""
+    _refuse_local("stopping the live bot here")
     pid = pinflat.live_pid()
     if not pid or not pinflat.pid_alive(pid):
         log("bot is not running; nothing to stop")
@@ -1409,11 +1523,13 @@ def terminate_live_bot(log):
 
 
 def write_flag(reason):
+    _refuse_local("writing the stand-down flag here")
     with open(STOP_FLAG, "w", encoding="utf-8") as fh:
         fh.write("%s at %s" % (reason, et_now_str()))
 
 
 def clear_flag():
+    _refuse_local("clearing the stand-down flag here")
     try:
         os.remove(STOP_FLAG)
     except OSError:
@@ -1462,6 +1578,7 @@ def arm_hwm_reset(h, log, path=None):
     DRAWDOWN halt. Returns True when written. The bot, at its next live
     start, sets its mark to the balance, deletes the flag, and records
     `hwm_rebased` in its log and a dated line in VERSIONS.md."""
+    _refuse_local("re-basing the high mark here")
     if not start_rebases(h):
         return False
     hwm, bank, lim = drawdown_halt_of(h["halt"])
@@ -1490,6 +1607,8 @@ def quick_health():
 
 
 def do_start(log, h=None):
+    """Returns True when the bot is running at the end (or restart_bot said it started it)."""
+    _refuse_local("START")
     # v-hwm-reset: decide on the re-base BEFORE the stand-down flag goes,
     # because a stand-down present means the banner read STOPPED, not the
     # drawdown halt, and START must then only start.
@@ -1502,7 +1621,7 @@ def do_start(log, h=None):
     pid = pinflat.live_pid()
     if pid and pinflat.pid_alive(pid):
         log("bot already running, pid %s -- watchdog re-armed" % pid)
-        return
+        return True
     log("starting the bot through restart_bot.ps1 ...")
     code, out = _ps(os.path.join(REPO, "restart_bot.ps1"))
     for l in out.strip().splitlines():
@@ -1510,16 +1629,19 @@ def do_start(log, h=None):
         if l and not l.startswith("*") and "transcript" not in l.lower():
             log("restart_bot: " + l)
     log("restart_bot exit code %d" % code)
+    return code == 0
 
 
 def do_pause(log, set_status):
+    """Returns True when the bot is stopped (or was not running) at the end."""
+    _refuse_local("PAUSE")
     write_flag("operator PAUSE")
     log("stand-down flag written; watchdog will not relaunch")
     while True:
         st, d = pinflat.check()
         if not d.get("alive"):
             log("bot is not running; paused")
-            return
+            return True
         if st == "FLAT":
             break
         opn = d.get("open") or {}
@@ -1529,13 +1651,312 @@ def do_pause(log, set_status):
             soon.append("%s closes %s" % (coin(tk), close_et(tk)) if c else coin(tk))
         set_status("PAUSING -- waiting for %d open bet(s): %s" % (len(opn), ", ".join(soon)[:80]))
         time.sleep(5)
-    terminate_live_bot(log)
+    return terminate_live_bot(log)
 
 
 def do_stop(log):
+    """Returns True when the bot is stopped (or was not running) at the end."""
+    _refuse_local("STOP")
     write_flag("operator STOP")
     log("stand-down flag written; watchdog will not relaunch")
-    terminate_live_bot(log)
+    return terminate_live_bot(log)
+
+
+# ===========================================================================
+# the command line: `--action`, here or on the server
+#
+# THE SAME THREE BUTTONS WITHOUT A WINDOW, so the desktop app on the laptop
+# can press them ON THE SERVER over ssh:
+#     pindesk.py --action status [--json]        reads only, anywhere
+#     pindesk.py --action start|pause|stop --yes
+# On a computer with server.json the three go to the server (never here).
+# On the server, run from inside an ssh session, the action is started
+# through WMI and this process only follows its log: Windows' ssh server
+# kills every process a session started when the session closes, so a bot
+# or watchdog launched from inside it would die with the connection
+# (measured 2026-10-27: a Start-Process child died at session close; one
+# started through Win32_Process.Create, and ITS child, lived, and neither
+# is in a job object -- the same as the live bot and its watchdog).
+# ===========================================================================
+ACTIONS = ("status", "start", "pause", "stop")
+ACTION_END = "PINDESK-ACTION-END"
+STATUS_TAG = "PINDESK-STATUS"
+OLD_TAG = "PINDESK-OLD"
+ACTION_DIR = os.path.join(RESULTS, "desk_actions")
+
+
+def psq(s):
+    """A PowerShell single-quoted literal."""
+    return "'" + str(s).replace("'", "''") + "'"
+
+
+def remote_cli_cmd(rc, action, yes=False, json_out=False):
+    """The ssh argv that runs `pindesk.py --action <action>` ON THE SERVER named by server.json.
+
+    Only fixed words go into it. It first checks that the server's
+    pindesk.py has this command line at all (a copy from before 10-27 would
+    open its WINDOW instead, with no screen, and hang); if not it prints
+    PINDESK-OLD and exits 3."""
+    if action not in ACTIONS:
+        raise ValueError("unknown action %r" % action)
+    import server_sync
+    desk = rc.get("desk") or (str(rc.get("repo") or r"C:\kals-repo").rstrip("\\") + r"\research\pindesk.py")
+    args = ["--action", action, "--from-desk"] + (["--yes"] if yes else []) + (["--json"] if json_out else [])
+    ps = ("if (-not (Select-String -Quiet -SimpleMatch -Path {d} -Pattern 'def cli_action')) "
+          "{{ Write-Output '{old} the pindesk.py on the server has no --action yet: bring C:\\kals-repo "
+          "on the server up to date first'; exit 3 }}; & {py} -u {d} {a}; exit $LASTEXITCODE"
+          ).format(d=psq(desk), old=OLD_TAG, py=psq(rc.get("python") or PY), a=" ".join(args))
+    return server_sync.ssh_base(rc) + [ps]
+
+
+def run_remote(rc, action, yes=False, log=print, json_out=False, timeout=None, on_line=None):
+    """Run an action on the server and stream its lines to `log`. Returns (exit code, lines)."""
+    _refuse_on_error(rc)
+    cmd = remote_cli_cmd(rc, action, yes=yes, json_out=json_out)
+    timeout = timeout or {"status": 120, "start": 900, "stop": 600, "pause": 3600}[action]
+    p = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                         creationflags=CREATE_NO_WINDOW)
+    gave_up = []
+
+    def _give_up():
+        gave_up.append(1)
+        p.kill()
+    killer = threading.Timer(timeout, _give_up)
+    killer.daemon = True
+    killer.start()
+    lines = []
+    try:
+        for raw in p.stdout:
+            line = raw.decode("utf-8", "replace").rstrip("\r\n")
+            if not line.strip():
+                continue
+            lines.append(line)
+            if on_line:
+                on_line(line)
+            if not line.startswith(STATUS_TAG):
+                log(line)
+        code = p.wait()
+    finally:
+        killer.cancel()
+    if gave_up:
+        log("stopped waiting after %d min; the %s carries on by itself on the server" % (timeout // 60, action))
+    elif code == 255:
+        log("could not reach the server (ssh exit 255). If an action had already begun there, "
+            "it carries on by itself.")
+    return code, lines
+
+
+def _refuse_on_error(rc):
+    if rc and rc.get("error"):
+        raise RemoteOnly(rc["error"])
+
+
+def remote_status(rc):
+    """The server's own `--action status --json`, as a dict, or (None, why)."""
+    try:
+        code, lines = run_remote(rc, "status", json_out=True, log=lambda _m: None)
+    except (OSError, RemoteOnly) as e:
+        return None, str(e)
+    for l in reversed(lines):
+        if l.startswith(STATUS_TAG):
+            try:
+                return json.loads(l[len(STATUS_TAG):].strip()), None
+            except ValueError:
+                break
+    return None, (lines[-1] if lines else "no answer (exit %s)" % code)
+
+
+def status_facts(now=None):
+    """`--action status`: what the buttons would act on, read only (quick_health plus open bets)."""
+    now = time.time() if now is None else now
+    h = quick_health()
+    try:
+        st, d = pinflat.check()
+        h["flat"], h["open"] = st, d.get("open") or {}
+    except Exception as e:                              # noqa: BLE001
+        h["flat"], h["flat_err"] = "UNKNOWN", str(e)[:120]
+    lives = glob.glob(os.path.join(RESULTS, "pinrun-live-*.jsonl"))
+    ages = [a for a in ((_file_age_s(max(lives, key=os.path.getmtime)) if lives else None),
+                        _file_age_s(os.path.join(RESULTS, "pinrun-live.out"))) if a is not None]
+    h["quiet_s"] = min(ages) if ages else None
+    h["phone_s"] = _file_age_s(os.path.join(RESULTS, "pinphone.heartbeat"))
+    h["at"] = now
+    try:
+        import socket
+        h["host"] = socket.gethostname()
+    except Exception:                                   # noqa: BLE001
+        pass
+    return h
+
+
+def _in_ssh_session():
+    return bool(os.environ.get("SSH_CONNECTION") or os.environ.get("SSH_CLIENT"))
+
+
+def _cli_logger(path=None):
+    def log(msg):
+        line = "%s  %s" % (et_str(time.time(), "%I:%M:%S %p"), msg)
+        print(line, flush=True)
+        for p in ([path] if path else []) + [os.path.join(RESULTS, "pindesk.log")]:
+            try:
+                with open(p, "a", encoding="utf-8") as fh:
+                    fh.write((line if p == path else time.strftime("%Y-%m-%dT%H:%M:%S") + "  cli: " + msg) + "\n")
+            except OSError:
+                pass
+    return log
+
+
+def _run_action(action, log):
+    """The buttons' own functions, headless. Returns an exit code."""
+    if action == "start":
+        log("START (from the command line)")
+        return 0 if do_start(log) else 1
+    if action == "pause":
+        log("PAUSE (from the command line)")
+        last = [None]
+
+        def set_status(s):
+            if s != last[0]:
+                last[0] = s
+                log(s)
+        return 0 if do_pause(log, set_status) else 1
+    if action == "stop":
+        log("STOP (from the command line)")
+        h = status_facts()
+        if h.get("alive") and h.get("open"):
+            log("%d open bet(s); they still settle on Kalshi by themselves, but will not be hedged "
+                "(stopping anyway: --yes)" % len(h["open"]))
+        return 0 if do_stop(log) else 1
+    raise ValueError(action)
+
+
+def _detach(action, argv_extra=(), log=print):
+    """Start this action in a process OUTSIDE the ssh session (WMI), then follow its log here."""
+    os.makedirs(ACTION_DIR, exist_ok=True)
+    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    logpath = os.path.join(ACTION_DIR, "%s-%s.log" % (stamp, action))
+    open(logpath, "w").close()
+    py = PY if os.path.exists(PY) else sys.executable
+    cl = subprocess.list2cmdline([py, "-u", os.path.abspath(__file__), "--action", action, "--child", logpath]
+                                 + list(argv_extra))
+    ps = ("$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments "
+          "@{CommandLine=%s; CurrentDirectory=%s}; Write-Output (\"{0} {1}\" -f $r.ReturnValue, $r.ProcessId)"
+          % (psq(cl), psq(REPO)))
+    import base64
+    r = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand",
+                        base64.b64encode(ps.encode("utf-16-le")).decode()],
+                       capture_output=True, text=True, timeout=90, creationflags=CREATE_NO_WINDOW)
+    parts = (r.stdout or "").split()
+    if len(parts) < 2 or parts[0] != "0" or not parts[1].isdigit():
+        log("could not start the %s outside this session: %s" % (action, ((r.stdout or "") + (r.stderr or "")).strip()[:200]))
+        return 1
+    pid = int(parts[1])
+    log("%s is running on %s as process %d, outside this connection (it finishes even if the "
+        "connection drops); its log: %s" % (action.upper(), os.environ.get("COMPUTERNAME", "this computer"),
+                                            pid, logpath))
+    pos, buf = 0, b""
+    while True:
+        try:
+            with open(logpath, "rb") as fh:
+                fh.seek(pos)
+                chunk = fh.read()
+        except OSError:
+            chunk = b""
+        pos += len(chunk)
+        buf += chunk
+        *done, buf = buf.split(b"\n")
+        for raw in done:
+            line = raw.decode("utf-8", "replace").rstrip("\r")
+            if line.startswith(ACTION_END):
+                try:
+                    return int(line.split()[1])
+                except (IndexError, ValueError):
+                    return 1
+            print(line, flush=True)
+        if not chunk and not pinflat.pid_alive(pid):
+            time.sleep(1)
+            with open(logpath, "rb") as fh:
+                fh.seek(pos)
+                rest = fh.read()
+            if not rest:
+                log("the %s process ended without finishing its log; see %s" % (action, logpath))
+                return 1
+            continue
+        time.sleep(0.5)
+
+
+def cli_action(argv):
+    """`--action ...`. Returns the exit code. See the block comment above."""
+    def val(flag):
+        return argv[argv.index(flag) + 1] if flag in argv and argv.index(flag) + 1 < len(argv) else None
+    action = val("--action")
+    if action not in ACTIONS:
+        print("usage: pindesk.py --action %s [--yes] [--json]" % "|".join(ACTIONS))
+        return 2
+    yes, as_json, child = "--yes" in argv, "--json" in argv, val("--child")
+    rc = remote_config()
+    if rc is not None:
+        if "--from-desk" in argv:
+            # sent here BY a desktop app, yet this computer also has server.json: it would only
+            # call itself in a loop
+            print("REFUSED: this computer has %s, so it is not the trading server. Delete that file "
+                  "on the server." % SERVER_JSON)
+            return 4
+        if action != "status" and not yes:
+            print("This would %s the bots ON THE SERVER (%s). Add --yes to do it." % (action.upper(), rc.get("host")))
+            return 2
+        try:
+            code, _lines = run_remote(rc, action, yes=yes, json_out=as_json, log=print)
+        except RemoteOnly as e:
+            print("REFUSED: %s" % e)
+            return 4
+        if as_json:
+            for l in _lines:
+                if l.startswith(STATUS_TAG):
+                    print(l)
+        return code
+    if action == "status" and not child:
+        if "--detach" in argv:
+            return _detach("status", ["--json"] if as_json else [])
+        h = status_facts()
+        state, hl, det, _c = status_of(h)
+        if as_json:
+            print("%s %s" % (STATUS_TAG, json.dumps(dict(h, state=state, headline=hl), default=str)), flush=True)
+        print("%s: %s\n%s" % (state, hl, det), flush=True)
+        return 0
+    if child:
+        log = _cli_logger(child)
+        code = 1
+        try:
+            if action == "status":
+                h = status_facts()
+                state, hl, det, _c = status_of(h)
+                if as_json:                    # raw, no clock in front: the app looks for the tag
+                    with open(child, "a", encoding="utf-8") as fh:
+                        fh.write("%s %s\n" % (STATUS_TAG, json.dumps(dict(h, state=state, headline=hl), default=str)))
+                log("%s: %s" % (state, hl))
+                code = 0
+            else:
+                code = _run_action(action, log)
+        except Exception as e:                          # noqa: BLE001
+            log("ERROR: %s" % e)
+            with open(ERR_FILE, "a", encoding="utf-8") as fh:
+                fh.write("%s cli %s:\n%s\n" % (time.strftime("%Y-%m-%dT%H:%M:%S"), action, traceback.format_exc()))
+        finally:
+            with open(child, "a", encoding="utf-8") as fh:
+                fh.write("%s %d\n" % (ACTION_END, code))
+        return code
+    if not yes:
+        print("This would %s the live bot on THIS computer. Add --yes to do it." % action.upper())
+        return 2
+    if _in_ssh_session() or "--detach" in argv:
+        return _detach(action, ["--yes"])
+    log = _cli_logger()
+    try:
+        return _run_action(action, log)
+    except RemoteOnly as e:
+        log("REFUSED: %s" % e)
+        return 4
 
 
 # ===========================================================================
@@ -2167,6 +2588,7 @@ def git_commit_file(path, message):
 
 def terminate_arm(pid, cmdline, match, log):
     """Stop ONE paper arm, and only after proving that pid IS that arm."""
+    _refuse_local("stopping a paper arm here")
     if not arm_kill_ok(cmdline, match):
         log("REFUSING to stop pid %s as %r: its command line reads %r. The app "
             "only stops a paper arm it can prove, and never anything with "
@@ -2185,6 +2607,7 @@ def terminate_arm(pid, cmdline, match, log):
 
 def launch_arm(argv, slug, log):
     """Start a paper arm from the argv recorded when it was paused."""
+    _refuse_local("starting a paper arm here")
     if not arm_launch_ok(argv):
         log("REFUSING to start %r: %s -- that is not a paper arm this app may "
             "launch." % (slug, " ".join(argv)[:140]))
@@ -2624,6 +3047,31 @@ def bots_view(a, err=None, text_of=None):
     return v
 
 
+class ServerBotstats:
+    """Remote mode's botstats for bots_load(): what botstats.all_bots() returned ON THE SERVER at
+    the last sync (results\\server_bots.json, written by server_sync). Its words (_bot_text) are
+    this computer's botstats', which only formats that dict. How old the numbers are is on the
+    page (the server's own as-of clock) and in the banner (the last sync)."""
+
+    def __init__(self, path=None):
+        self.path = path or SERVER_BOTS
+        try:
+            import botstats as _b
+            self._bot_text = getattr(_b, "_bot_text", None)
+        except Exception:                                               # noqa: BLE001
+            self._bot_text = None
+
+    def all_bots(self, now=None):
+        try:
+            with open(self.path, encoding="utf-8") as fh:
+                d = json.load(fh)
+        except OSError:
+            raise RuntimeError("no numbers from the server yet (the first sync has not finished)")
+        if d.get("error"):
+            raise RuntimeError("botstats failed on the server: %s" % d["error"])
+        return d.get("all")
+
+
 def bots_load(bs=None, now=None, prev=None, errlog=None):
     """(view, the all_bots dict to keep). WORKER THREAD ONLY -- botstats may read
     Kalshi and the process list, seconds of work. Never raises.
@@ -2681,7 +3129,13 @@ RUNNING BUT QUIET (yellow)   alive, but nothing logged for 20+ minutes. Watchdog
 START   clears your stand-down, makes sure the watchdogs are up, starts the bot if it is down.
 PAUSE   no new bets; waits for any open bet to settle; then stops. Safe at any moment.
 STOP    stops right now. Asks first if a bet is open (the bet still settles on Kalshi by
-        itself, but there will be nobody to hedge it)."""),
+        itself, but there will be nobody to hedge it).
+
+ON THE LAPTOP (since Oct 27 the bots run on the Ohio server): the bottom line of the banner says
+so, and when the numbers were last fetched from the server (every 2 minutes while the app is
+open; Refresh fetches now). START, PAUSE and STOP act ON THE SERVER, and the lines the server
+sends back appear in the Log tab. CANNOT SEE THE SERVER (grey) means no news from it for 10
+minutes: the bots keep trading without this app; check this computer's internet."""),
     ("chips", "THE STRIP UNDER THE BUTTONS", """\
 BOT        alive or not, and how many seconds since it last wrote to its log.
 WATCHDOG   the helper that relaunches the bot when it dies. It checks every 30 seconds.
@@ -2853,9 +3307,13 @@ def run_gui():
 
     ledger = Ledger()
     ledger.refresh()
+    # REMOTE MODE: the bots run on the server; this window watches it (see the docstring)
+    rc = remote_config()
+    remote = rc is not None
+    sync_box = {"syncer": None, "reset_ledger": False}
 
     root = tk.Tk()
-    root.title("Pin Bot")
+    root.title("Pin Bot" + ("  (watching the Ohio server)" if remote else ""))
     root.configure(bg=C["bg"])
     root.geometry("1240x800")
     root.minsize(960, 640)
@@ -2903,13 +3361,36 @@ def run_gui():
                 self.top = None
 
     # ---- banner ----
-    banner = tk.Frame(root, bg=C["grey"], height=110)
+    banner = tk.Frame(root, bg=C["grey"], height=136 if remote else 110)
     banner.pack(fill="x", padx=12, pady=(12, 6))
     banner.pack_propagate(False)
     head = tk.Label(banner, text="...", bg=C["grey"], fg="white", font=("Segoe UI", 22, "bold"), anchor="w")
     head.pack(fill="x", padx=16, pady=(10, 0))
     sub = tk.Label(banner, text="", bg=C["grey"], fg="white", font=("Segoe UI", 11), anchor="w", justify="left")
     sub.pack(fill="x", padx=16)
+    # remote mode: where the bots are and how fresh this window's copy of their numbers is
+    srv = tk.Label(banner, text="", bg=C["grey"], fg="white", font=("Segoe UI", 10, "bold"), anchor="w",
+                   justify="left")
+    if remote:
+        srv.pack(fill="x", padx=16, pady=(2, 0))
+
+    def server_line():
+        """'Bots run on the Ohio server (host) -- data synced every 2 min, last sync 1:12 AM'."""
+        if rc.get("error"):
+            return "REMOTE MODE, BUT %s -- the buttons will not act until it is fixed" % rc["error"]
+        sy = sync_box["syncer"]
+        host = rc.get("host")
+        base = "Bots run on the Ohio server (%s) -- data synced every 2 min" % host
+        last = sy.last if sy else None
+        ok_at = sy.last_ok if sy else None
+        if last is None:
+            return base + ", first sync running..."
+        if last.get("ok"):
+            return base + ", last sync %s" % et_str(ok_at)
+        data_at = ok_at or (load_server_status() or {}).get("at")
+        return (base + ", last sync FAILED at %s (%s); showing data from %s"
+                % (et_str(last.get("at") or time.time()), str(last.get("err") or "?")[:70],
+                   et_str(float(data_at)) if data_at else "an earlier sync"))
 
     btns = tk.Frame(root, bg=C["bg"])
     btns.pack(fill="x", padx=12, pady=(0, 6))
@@ -2945,13 +3426,58 @@ def run_gui():
             threading.Thread(target=worker, daemon=True).start()
         return run
 
+    def on_server(action, yes=True):
+        """REMOTE MODE: press the button ON THE SERVER and stream its lines into the log here."""
+        console_log("%s: asking the server (%s) ..." % (action.upper(), rc.get("host")))
+
+        def line(l):
+            if l.startswith("PINDESK-OLD"):
+                root.after(0, lambda: messagebox.showerror(
+                    "The server needs the new app first",
+                    "The pindesk.py on the server cannot take orders from here yet.\n\n"
+                    "Bring C:\\kals-repo on the server up to date, then press the button again.\n"
+                    "Until then, use the phone (Telegram) buttons."))
+            elif "PAUSING" in l:
+                root.after(0, lambda: sub.configure(text=l.split("  ", 1)[-1]))
+        try:
+            code, _lines = run_remote(rc, action, yes=yes, log=lambda m: console_log("server: " + m), on_line=line)
+        except RemoteOnly as e:
+            console_log("REFUSED: %s" % e)
+            return
+        console_log("%s on the server finished (exit code %s)%s" % (
+            action.upper(), code, "" if code == 0 else " -- read the lines above"))
+        if sync_box["syncer"]:
+            sync_box["syncer"].now()                 # show the result without waiting 2 minutes
+
     def on_start():
+        if remote:
+            return on_server("start")
         do_start(console_log, health(ledger))
 
     def on_pause():
+        if remote:
+            return on_server("pause")
         do_pause(console_log, lambda s: root.after(0, lambda: sub.configure(text=s)))
 
     def on_stop():
+        if remote:
+            # ask the SERVER, now, whether a bet is open: the synced copy can be 2 minutes old
+            st_, why = remote_status(rc)
+            if st_ is None:
+                if not messagebox.askyesno("Stop now?", "Could not ask the server whether a bet is open (%s).\n\n"
+                                           "If one is, it still settles on Kalshi by itself, but nobody will "
+                                           "hedge it. PAUSE waits for open bets first. Stop anyway?" % str(why)[:120]):
+                    console_log("stop cancelled")
+                    return
+            elif st_.get("alive") and st_.get("open"):
+                n = len(st_["open"])
+                if not messagebox.askyesno("Stop now?",
+                                           "The bot on the server is holding %d open bet%s. They still settle on "
+                                           "Kalshi by themselves, but the bot will not be there to hedge them.\n\n"
+                                           "PAUSE waits for them to settle first. Stop anyway?" % (n, "" if n == 1 else "s")):
+                    console_log("stop cancelled")
+                    return
+            return on_server("stop")
         h = health(ledger)
         if h["alive"] and h.get("open"):
             n = len(h["open"])
@@ -2967,10 +3493,11 @@ def run_gui():
     b_start = big_button("▶  START", C["gain"], guarded(on_start))
     b_pause = big_button("⏸  PAUSE", C["watch"], guarded(on_pause))
     b_stop = big_button("■  STOP", C["loss"], guarded(on_stop))
+    _where = (" ON THE OHIO SERVER (%s), over ssh; its lines appear in the log below." % rc.get("host")) if remote else ""
     Tip(b_start, "Clears your stand-down, makes sure the watchdogs are running, starts the bot if it is down. "
-                 "After a 20% drawdown halt it also re-bases the high mark to the balance.")
-    Tip(b_pause, "No new bets. Waits for open bets to settle, then stops. Press START to resume.")
-    Tip(b_stop, "Stops right now. Asks first if a bet is open.")
+                 "After a 20% drawdown halt it also re-bases the high mark to the balance." + _where)
+    Tip(b_pause, "No new bets. Waits for open bets to settle, then stops. Press START to resume." + _where)
+    Tip(b_stop, "Stops right now. Asks first if a bet is open." + _where)
 
     def small_button(parent, txt, cmd, **kw):
         b = tk.Button(parent, text=txt, command=cmd, bg=C["panel2"], fg=C["text"], font=("Segoe UI", 10),
@@ -2978,12 +3505,18 @@ def run_gui():
         return b
 
     small_button(btns, "Open Deck (web view)", lambda: os.startfile(os.path.join(REPO, "open_deck.cmd"))).pack(side="left", padx=(20, 6))
-    b_refresh = small_button(btns, "Refresh", lambda: tick(force=True))
+    def on_refresh():
+        if sync_box["syncer"]:
+            sync_box["syncer"].now()             # remote mode: fetch from the server too
+        tick(force=True)
+
+    b_refresh = small_button(btns, "Refresh", on_refresh)
     b_refresh.pack(side="left")
     Tip(b_refresh, "Re-reads everything NOW -- the money, the health strip, "
                    "the Bots tab and the whole Lab -- instead of waiting for the next automatic "
                    "pass. The clock beside it says when the numbers on screen "
-                   "were last read.")
+                   "were last read." + (" It also fetches what changed on the server right away."
+                                        if remote else ""))
     asof = tk.Label(btns, text="", bg=C["bg"], fg=C["muted"], font=("Segoe UI", 9))
     asof.pack(side="left", padx=(8, 0))
     b_what = tk.Button(btns, text="?  What's this", command=lambda: start_explain(), bg=C["blue"], fg="white",
@@ -3325,7 +3858,10 @@ def run_gui():
         if not bots_lock.acquire(blocking=False):
             return
         try:
-            view, keep = bots_load(prev=bots_cache.get("a"), errlog=_bots_errlog)
+            # remote mode: botstats ran ON THE SERVER at the last sync (its processes, its flags,
+            # its Kalshi reads); here it would see the laptop's stopped bots and no Kalshi key
+            view, keep = bots_load(bs=ServerBotstats() if remote else None,
+                                   prev=bots_cache.get("a"), errlog=_bots_errlog)
             bots_cache["view"], bots_cache["a"] = view, keep
             bots_cache["done"] = time.time()
         finally:
@@ -3817,7 +4353,15 @@ def run_gui():
 
     def lab_buttons_refresh():
         st = selected_stats()
-        lab_selname.configure(text=(st["name"] if st else "(click an arm above)"))
+        lab_selname.configure(text=(st["name"] if st else "(click an arm above)")
+                              + ("   (arms run on the server: these buttons work only there)" if remote else ""))
+        if remote:
+            # the arms are processes ON THE SERVER; Play / Pause / Delete act on this computer's
+            # processes and its lab_control.json, so here they would act on nothing (or start an
+            # arm on the laptop). Off.
+            for b in (b_arm_play, b_arm_pause, b_arm_del):
+                b.configure(state="disabled")
+            return
         b_arm_play.configure(state=("normal" if (st and st["can_play"]) else "disabled"))
         b_arm_pause.configure(state=("normal" if (st and st["can_pause"]) else "disabled"))
         b_arm_del.configure(state=("normal" if st else "disabled"))
@@ -3867,7 +4411,7 @@ def run_gui():
 
     def on_arm_pause():
         st = selected_stats()
-        if not st or not st["can_pause"]:
+        if remote or not st or not st["can_pause"]:
             return
         if not messagebox.askyesno(
                 "Pause this arm?",
@@ -3897,7 +4441,7 @@ def run_gui():
 
     def on_arm_play():
         st = selected_stats()
-        if not st or not st["can_play"]:
+        if remote or not st or not st["can_play"]:
             return
         ctrl = lab_cache.get("control") or load_control()
         # the argv it was PAUSED with, else the one it was last SEEN running
@@ -3919,7 +4463,7 @@ def run_gui():
 
     def on_arm_delete():
         st = selected_stats()
-        if not st:
+        if remote or not st:
             return
         n = st["settled"] or 0
         if not messagebox.askyesno(
@@ -3979,13 +4523,18 @@ def run_gui():
         # of guessing, and guessing is how the 2026-09-14 double-bot happened.
         cmds, procs = [], []
         try:
-            out = subprocess.run(
-                ["powershell", "-NoProfile", "-Command",
-                 "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
-                 "ForEach-Object { \"$($_.ProcessId)`t$($_.CommandLine)\" }"],
-                capture_output=True, text=True, timeout=8,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-            for line in (out.stdout or "").splitlines():
+            if remote:
+                # the arms run ON THE SERVER: its python processes, as the last sync listed them
+                _ptxt = "\n".join("%s\t%s" % (p_, c_) for p_, c_ in
+                                  (load_server_status() or {}).get("procs") or [])
+            else:
+                _ptxt = subprocess.run(
+                    ["powershell", "-NoProfile", "-Command",
+                     "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
+                     "ForEach-Object { \"$($_.ProcessId)`t$($_.CommandLine)\" }"],
+                    capture_output=True, text=True, timeout=8,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
+            for line in (_ptxt or "").splitlines():
                 pid, _tab, cl = line.partition("\t")
                 if not cl.strip():
                     continue
@@ -4078,8 +4627,9 @@ def run_gui():
         lab_cache["names"], lab_cache["b0"] = names, b0s
         lab_cache["meta"] = meta
         # write the overlay only when a recorded argv actually changed, so a
-        # 45-second refresh does not rewrite the file for nothing
-        if json.dumps(_known.get("known") or {}, sort_keys=True) != _known_before:
+        # 45-second refresh does not rewrite the file for nothing. Remote mode never writes it:
+        # it is the SERVER's file, copied here by the sync.
+        if not remote and json.dumps(_known.get("known") or {}, sort_keys=True) != _known_before:
             try:
                 save_control(_known)
             except OSError:
@@ -4384,6 +4934,8 @@ def run_gui():
         banner.configure(bg=colour)
         head.configure(text=hl, bg=colour)
         sub.configure(text=det, bg=colour)
+        if remote:
+            srv.configure(text=server_line(), bg=colour)
         clock.configure(text=et_now_str())
         now = time.time()
         today = et_day(now)
@@ -4688,13 +5240,18 @@ def run_gui():
             (("Paper arms", "Copies of the bot with one setting changed, pretending to trade, so a change is judged before it touches money.",
               "%d pin + %d race" % (h["paper_arms"], h["race_arms"]), "logs written in the last 15 min"), "text"),
             (("Phone link", "Telegram bot you message for status and controls; sends alerts on state changes and losses. research\\pinphone.py",
-              "RUNNING" if (h.get("phone_s") is not None and h["phone_s"] < 120) else ("not set up" if not os.path.exists(os.path.join(KALS, "telegram.json")) else "DOWN"),
-              ("polled %ds ago" % h["phone_s"]) if h.get("phone_s") is not None else "needs C:\\kals\\telegram.json (see pinphone.py)"),
+              "RUNNING" if (h.get("phone_s") is not None and h["phone_s"] < 120) else ("not set up" if not remote and not os.path.exists(os.path.join(KALS, "telegram.json")) else "DOWN"),
+              ("polled %ds ago" % h["phone_s"]) if h.get("phone_s") is not None else
+              ("no heartbeat from it on the server" if remote else "needs C:\\kals\\telegram.json (see pinphone.py)")),
              "gain" if (h.get("phone_s") is not None and h["phone_s"] < 120) else "muted"),
         ]
         fill(tv_sys, rows)
         sys_foot.configure(text="Disk %.1f GB free (tape stops below 5).  RAM %.1f GB free.  Hours lost to outages today: %.1f."
-                           % (h.get("disk_gb") or 0, h.get("ram_gb") or 0, (lost_h or {}).get(today, 0.0)))
+                           % (h.get("disk_gb") or 0, h.get("ram_gb") or 0, (lost_h or {}).get(today, 0.0))
+                           + (("\nThe bot, its watchdog and the phone link run on the Ohio server (%s): its disk %.1f GB "
+                               "free, RAM %.1f GB free. The recorders, disk and RAM above are this computer's."
+                               % (rc.get("host"), h.get("server_disk_gb") or 0, h.get("server_ram_gb") or 0))
+                              if remote else ""))
 
         # tails
         try:
@@ -4736,6 +5293,13 @@ def run_gui():
 
         def worker():
             try:
+                if sync_box["reset_ledger"]:
+                    # the sync REPLACED a live log whole: the byte counts this ledger has read up to
+                    # belong to the old copy, so read everything again, then swap it in at once
+                    sync_box["reset_ledger"] = False
+                    fresh = Ledger(ledger.results)
+                    fresh.refresh()
+                    ledger.__dict__ = fresh.__dict__
                 ledger.refresh()
                 pending["h"] = health(ledger)
                 # `force` bypasses the cache; otherwise the Lab is expensive
@@ -4788,6 +5352,21 @@ def run_gui():
         root.after(REFRESH_MS, loop)
 
     console_log("Pin Bot opened")
+    if remote and not rc.get("error"):
+        import server_sync
+
+        def _synced(s):
+            if s.get("ok") and any(re.match(r"^(pinrun-live-|cmdlive-).*\.jsonl$", n) for n in s.get("replaced") or []):
+                sync_box["reset_ledger"] = True
+            if not s.get("ok") and not s.get("busy"):
+                console_log("sync with the server failed: %s (the numbers on screen are from the last good one)"
+                            % s.get("err"))
+            root.after(0, tick)
+        sync_box["syncer"] = server_sync.Syncer(rc, on_done=_synced).start()
+        console_log("watching the Ohio server %s: fetching its numbers now and every 2 minutes. "
+                    "START / PAUSE / STOP act on the server." % rc.get("host"))
+    elif remote:
+        console_log("REMOTE MODE, BUT %s. Nothing is synced and the buttons will not act." % rc["error"])
     try:                                   # PINDESK_TAB=n opens on a tab (used to screenshot each one)
         nb.select(int(os.environ.get("PINDESK_TAB", "0")))
     except (ValueError, tk.TclError):
@@ -4799,6 +5378,12 @@ def run_gui():
 # ===========================================================================
 def selftest():
     import tempfile
+    global SERVER_JSON
+    # EVERY CHECK UNTIL selftest_remote() IS LOCAL MODE -- the server's behaviour -- whichever
+    # computer runs it (the laptop has a real C:\kals\server.json). The remote checks at the end
+    # plant their own server.json in a temp folder.
+    _server_json_was = SERVER_JSON
+    SERVER_JSON = os.path.join(tempfile.gettempdir(), "pindesk-selftest-no-server-%d.json" % os.getpid())
 
     def ck(cond, msg):
         print(("  ok   " if cond else "  FAIL ") + msg)
@@ -5947,13 +6532,226 @@ def selftest():
     # selftest: OK" printed at IMPORT time, before a single check had run, and
     # it printed it just as loudly on the runs that then failed. Found
     # 2026-09-19. A pass message that cannot fail is not a pass message.
+    selftest_remote(ck)
+    SERVER_JSON = _server_json_was
     print("pindesk selftest: OK")
+
+
+def selftest_remote(ck):
+    """REMOTE MODE: a laptop with server.json acts on the server and never on itself; without the
+    file (the server) the buttons do what they always did. Nothing here runs ssh or a script:
+    every subprocess, script runner and process lookup is replaced by a recorder."""
+    import tempfile
+    global SERVER_JSON, SERVER_STATUS, SERVER_BOTS, STOP_FLAG, RESET_FLAG
+    g = globals()
+    saved = {k: g[k] for k in ("SERVER_JSON", "SERVER_STATUS", "SERVER_BOTS", "STOP_FLAG", "RESET_FLAG",
+                               "_ps", "_run_action", "_detach", "run_remote", "do_start")}
+    real_run, real_popen = subprocess.run, subprocess.Popen
+    real_live, real_alive, real_check = pinflat.live_pid, pinflat.pid_alive, pinflat.check
+    calls = []
+
+    def rec_run(*a, **k):
+        calls.append(("run", a, k))
+        raise AssertionError("a subprocess was started")
+
+    def rec_popen(*a, **k):
+        calls.append(("popen", a, k))
+        raise AssertionError("a subprocess was started")
+    td = tempfile.mkdtemp(prefix="pindesk_remote_test_")
+    try:
+        good = os.path.join(td, "server.json")
+        with open(good, "w", encoding="utf-8") as fh:
+            json.dump({"host": "18.216.240.218", "user": "Administrator",
+                       "key": r"C:\Users\Joe\.ssh\kals_server_ed25519",
+                       "python": r"C:\Python314\python.exe", "repo": r"C:\kals-repo"}, fh)
+        bad = os.path.join(td, "broken.json")
+        with open(bad, "w", encoding="utf-8") as fh:
+            fh.write("{not json")
+        STOP_FLAG = os.path.join(td, "pinrun-live.stop")
+        RESET_FLAG = os.path.join(td, "pinrun-hwm.reset")
+        SERVER_STATUS = os.path.join(td, "server_status.json")
+        SERVER_BOTS = os.path.join(td, "server_bots.json")
+
+        # ---- which mode -------------------------------------------------------------
+        SERVER_JSON = os.path.join(td, "absent.json")
+        ck(remote_config() is None, "REMOTE: no server.json (the server itself) -> local mode")
+        SERVER_JSON = good
+        rc = remote_config()
+        ck(rc and rc["host"] == "18.216.240.218" and not rc.get("error"), "REMOTE: server.json read")
+        SERVER_JSON = bad
+        ck(remote_config() is not None and remote_config().get("error"),
+           "REMOTE: a BROKEN server.json still means remote (never falls back to running bots here)")
+
+        # ---- the ssh command, built and never run ------------------------------------
+        for act in ("start", "pause", "stop"):
+            cmd = remote_cli_cmd(rc, act, yes=True)
+            flat = " ".join(cmd)
+            ck(os.path.basename(cmd[0]).lower() in ("ssh", "ssh.exe") and "Administrator@18.216.240.218" in cmd
+               and cmd[cmd.index("-i") + 1] == r"C:\Users\Joe\.ssh\kals_server_ed25519" and "BatchMode=yes" in cmd,
+               "REMOTE: %s goes over ssh with the key, to Administrator@18.216.240.218" % act.upper())
+            ck(("--action %s --from-desk --yes" % act) in cmd[-1]
+               and r"'C:\kals-repo\research\pindesk.py'" in cmd[-1] and r"& 'C:\Python314\python.exe' -u" in cmd[-1],
+               "REMOTE: ... and runs the SERVER's pindesk.py --action %s --yes there: %s" % (act, cmd[-1][-120:]))
+            ck("def cli_action" in cmd[-1] and "exit 3" in cmd[-1],
+               "REMOTE: ... after checking the server's pindesk.py has --action (an old one would open a window)")
+            ck("restart_bot" not in flat and "boot_all" not in flat and "taskkill" not in flat,
+               "REMOTE: the %s command names no script and no kill of its own" % act)
+        cs = remote_cli_cmd(rc, "status", json_out=True)
+        ck("--action status --from-desk --json" in cs[-1] and "--yes" not in cs[-1], "REMOTE: status asks nothing to change")
+        try:
+            remote_cli_cmd(rc, "start; rm")
+            ck(False, "an unknown action must not be built")
+        except ValueError:
+            pass
+        ck(remote_cli_cmd(dict(rc, desk=r"C:\Users\Administrator\pindesk_test\research\pindesk.py"), "status")[-1]
+           .count("pindesk_test") == 2, "REMOTE: a test copy on the server can be named instead of the repo's")
+
+        # ---- remote mode: every local control refuses, and nothing is started --------
+        subprocess.run, subprocess.Popen = rec_run, rec_popen
+        pinflat.live_pid = lambda *a, **k: (_ for _ in ()).throw(AssertionError("local pid read"))
+        for path in (good, bad):
+            SERVER_JSON = path
+            with open(STOP_FLAG, "w", encoding="utf-8") as fh:
+                fh.write("laptop handover")
+            said = []
+            for name, fn in (("do_start", lambda: do_start(said.append, {"alive": False})),
+                             ("do_pause", lambda: do_pause(said.append, said.append)),
+                             ("do_stop", lambda: do_stop(said.append)),
+                             ("_ps boot_all", lambda: _ps(os.path.join(REPO, "boot_all.ps1"), "-NoArms")),
+                             ("_ps restart_bot", lambda: _ps(os.path.join(REPO, "restart_bot.ps1"))),
+                             ("write_flag", lambda: write_flag("x")), ("clear_flag", clear_flag),
+                             ("terminate_live_bot", lambda: terminate_live_bot(said.append)),
+                             ("arm_hwm_reset", lambda: arm_hwm_reset({}, said.append)),
+                             ("terminate_arm", lambda: terminate_arm(1, "python pinrun.py", "x", said.append)),
+                             ("launch_arm", lambda: launch_arm(["research\\pinrun.py"], "x", said.append))):
+                try:
+                    fn()
+                    ck(False, "REMOTE: %s must refuse here" % name)
+                except RemoteOnly:
+                    pass
+            ck(not calls and not said, "REMOTE (%s): no subprocess, no script, no pid read, nothing logged as done: %r"
+               % (os.path.basename(path), calls[:2]))
+            with open(STOP_FLAG, encoding="utf-8") as fh:
+                ck(fh.read() == "laptop handover", "REMOTE: the laptop's own stand-down flag is left exactly as it was")
+            ck(not os.path.exists(RESET_FLAG), "REMOTE: no high-mark reset flag written here")
+        SERVER_JSON = good
+
+        # ---- the command line on the laptop goes to the server -------------------------
+        went = []
+        g["run_remote"] = lambda rc_, action, yes=False, log=print, json_out=False, **k: (
+            went.append((rc_["host"], action, yes)) or (0, []))
+        g["do_start"] = lambda *a, **k: (_ for _ in ()).throw(AssertionError("local START"))
+        g["_run_action"] = lambda *a, **k: (_ for _ in ()).throw(AssertionError("local action"))
+        ck(cli_action(["--action", "start", "--yes"]) == 0 and went == [("18.216.240.218", "start", True)],
+           "REMOTE CLI: --action start --yes runs on the server: %r" % went)
+        del went[:]
+        ck(cli_action(["--action", "stop"]) == 2 and not went, "REMOTE CLI: without --yes nothing is sent")
+        ck(cli_action(["--action", "stop", "--yes", "--from-desk"]) == 4 and not went,
+           "REMOTE CLI: an order FROM a desktop app on a computer with server.json is refused (no loop)")
+        ck(cli_action(["--action", "explode", "--yes"]) == 2 and not went, "REMOTE CLI: unknown actions refused")
+        ck(not calls, "REMOTE CLI: still no subprocess here")
+        g["run_remote"], g["do_start"], g["_run_action"] = saved["run_remote"], saved["do_start"], saved["_run_action"]
+
+        # ---- health and the banner from the server's snapshot ---------------------------
+        now = time.time()
+        with open(SERVER_STATUS, "w", encoding="utf-8") as fh:
+            json.dump({"at": now - 30, "pid": 5052, "alive": True, "flag": None, "watchdog_s": 4.0,
+                       "phone_s": 5.0, "quiet_s": 12.0, "flat": "FLAT", "open": {}, "blind": None,
+                       "disk_gb": 28.6, "ram_gb": 2.7, "procs": [[5052, "python pinrun.py --live"]]}, fh)
+        pinflat.check = lambda *a, **k: (_ for _ in ()).throw(AssertionError("local pinflat.check"))
+        h = health(Ledger(results=td))
+        ck(h["remote"] and h["alive"] and h["pid"] == 5052 and h["watchdog_s"] == 4.0 and not h["remote_stale"],
+           "REMOTE: health() is the server's process, watchdog and flag, not this computer's")
+        st_r = status_of(h)
+        ck(st_r[0] == "TRADING" and "Checked on the server at" in st_r[2], "REMOTE: banner TRADING, checked ON THE SERVER: %r"
+           % (st_r[2][-90:],))
+        ck(not calls, "REMOTE: health() started no process here")
+        with open(SERVER_STATUS, "w", encoding="utf-8") as fh:
+            json.dump({"at": now - 3600, "pid": 5052, "alive": True}, fh)
+        st_s = status_of(health(Ledger(results=td)))
+        ck(st_s[0] == "UNKNOWN" and "CANNOT SEE THE SERVER" in st_s[1],
+           "REMOTE: an hour-old snapshot is not called TRADING: %r" % (st_s[1],))
+        os.remove(SERVER_STATUS)
+        st_n = status_of(health(Ledger(results=td)))
+        ck(st_n[0] == "UNKNOWN" and "NO NEWS" in st_n[1] and "Nothing heard" in st_n[2],
+           "REMOTE: no snapshot yet -> 'no news', never NOT RUNNING")
+        # the Bots tab from the server's botstats
+        ck(bots_load(bs=ServerBotstats(SERVER_BOTS))[1] is None, "REMOTE: no server numbers yet -> nothing, not zeros")
+        with open(SERVER_BOTS, "w", encoding="utf-8") as fh:
+            json.dump({"at": now, "all": {"bots": {}, "total": {}}}, fh)
+        ck(ServerBotstats(SERVER_BOTS).all_bots() == {"bots": {}, "total": {}},
+           "REMOTE: the Bots tab reads what botstats said ON THE SERVER")
+        with open(SERVER_BOTS, "w", encoding="utf-8") as fh:
+            json.dump({"at": now, "error": "boom"}, fh)
+        try:
+            ServerBotstats(SERVER_BOTS).all_bots()
+            ck(False, "a botstats failure on the server must show as a failure")
+        except RuntimeError as e:
+            ck("on the server" in str(e), "REMOTE: botstats failing on the server says so")
+        subprocess.run, subprocess.Popen = real_run, real_popen
+        pinflat.live_pid, pinflat.check = real_live, real_check
+
+        # ---- LOCAL MODE (the server): exactly as before ---------------------------------
+        SERVER_JSON = os.path.join(td, "absent.json")
+        ran = []
+        g["_ps"] = lambda script, *a, **k: (ran.append((os.path.basename(script),) + a) or (0, "ok"))
+        pinflat.live_pid, pinflat.pid_alive = (lambda *a, **k: None), (lambda *a, **k: False)
+        with open(STOP_FLAG, "w", encoding="utf-8") as fh:
+            fh.write("operator STOP")
+        said = []
+        ck(do_start(said.append, {"alive": False, "flag": "operator STOP", "halt": None, "watchdog_s": 5,
+                                  "open": {}, "quiet_s": None, "blind": None}) is True
+           and ran == [("boot_all.ps1", "-NoArms"), ("restart_bot.ps1",)] and not os.path.exists(STOP_FLAG),
+           "LOCAL: START clears the flag, runs boot_all -NoArms, then restart_bot: %r" % ran)
+        ck(do_stop(said.append) is True and open(STOP_FLAG, encoding="utf-8").read().startswith("operator STOP"),
+           "LOCAL: STOP writes the flag (no bot running: nothing to kill)")
+        # the command line on the server: inside ssh it detaches, otherwise it runs here
+        det, here = [], []
+        g["_detach"] = lambda action, extra=(), log=print: det.append((action, tuple(extra))) or 0
+        g["_run_action"] = lambda action, log: here.append(action) or 0
+        old_env = os.environ.get("SSH_CONNECTION")
+        os.environ["SSH_CONNECTION"] = "1.2.3.4 5 6.7.8.9 22"
+        try:
+            ck(cli_action(["--action", "start", "--yes", "--from-desk"]) == 0 and det == [("start", ("--yes",))]
+               and not here, "LOCAL CLI inside ssh: the action is started OUTSIDE the session (WMI), not in it")
+        finally:
+            if old_env is None:
+                os.environ.pop("SSH_CONNECTION", None)
+            else:
+                os.environ["SSH_CONNECTION"] = old_env
+        if not _in_ssh_session():
+            ck(cli_action(["--action", "pause", "--yes"]) == 0 and here == ["pause"],
+               "LOCAL CLI at the server's own keyboard: runs right here")
+        ck(cli_action(["--action", "stop"]) == 2, "LOCAL CLI: --yes is needed to act")
+    finally:
+        subprocess.run, subprocess.Popen = real_run, real_popen
+        pinflat.live_pid, pinflat.pid_alive, pinflat.check = real_live, real_alive, real_check
+        for k, v in saved.items():
+            g[k] = v
+        shutil.rmtree(td, ignore_errors=True)
+    _src = open(os.path.abspath(__file__), encoding="utf-8").read()
+    _g = _src[_src.index("def run_gui():"):_src.index("def selftest():")]
+    ck('return on_server("start")' in _g and 'return on_server("pause")' in _g and 'return on_server("stop")' in _g
+       and _g.index('return on_server("start")') < _g.index("do_start(console_log"),
+       "REMOTE GUI: START / PAUSE / STOP go to the server before any local call")
+    ck("bs=ServerBotstats() if remote else None" in _g and "server_sync.Syncer(" in _g
+       and "Bots run on the Ohio server (%s) -- data synced every 2 min" in _g and ", last sync %s" in _g
+       and "last sync FAILED at" in _g,
+       "REMOTE GUI: the Bots tab is the server's, the sync runs in the background, the banner says when")
+    _lb = _g[_g.index("def lab_buttons_refresh():"):_g.index("def on_arm_select(")]
+    ck("if remote:" in _lb and _lb.index("if remote:") < _lb.index("b_arm_play.configure(state=(\"normal\""),
+       "REMOTE GUI: the Lab's Play / Pause / Delete are off")
+    ck(all(("def %s():\n        st = selected_stats()\n        if remote or" % f) in _g
+           for f in ("on_arm_pause", "on_arm_play", "on_arm_delete")),
+       "REMOTE GUI: and their handlers return before acting")
 
 
 def main():
     if "--selftest" in sys.argv:
         selftest()
         return 0
+    if "--action" in sys.argv:
+        return cli_action(sys.argv[1:])
     try:
         run_gui()
     except Exception:                                    # noqa: BLE001

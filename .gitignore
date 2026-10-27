@@ -134,3 +134,9 @@ results/tax/
 /results/fc-fast-paper*.jsonl
 /results/racev2-shadow*
 /results/ratehreward-paper*
+# 2026-10-27: the laptop's copy of the server (research/server_sync.py)
+results/server_sync.log
+results/server_status.json
+results/server_bots.json
+results/_laptop_before_sync/
+results/desk_actions/
