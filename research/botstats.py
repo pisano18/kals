@@ -642,6 +642,29 @@ def pot_settlements(now=None, getter=None):
     return rows, why
 
 
+def cached_pots():
+    """Every pot's money as this cache holds it from the LAST Kalshi read, with NO read of its own: a page that must
+    answer at once (the phone's /server, 2026-10-27) shows the cash /bots, /funds and the charts last saw, and when.
+    {"pots": {sub: {"cash": its trading pool's balance_dollars, "cash_t", "open": what its open bets cost (fees in),
+    "open_n", "value": _pot_now (cash in every pool + open bets, all from one read) or None, "why": why not, "t": when
+    the pot was last read}}, "total": every pot's value added (None unless every pot has one), "t": the newest read}."""
+    c = load_cache()
+    pots = {}
+    for sub in SUBS:
+        x = (c.get("subs") or {}).get(sub) or {}
+        ps = x.get("positions")
+        v, why = _pot_now(c, sub)
+        pots[sub] = {"cash": x.get("balance"), "cash_t": x.get("bal_t"),
+                     "open": (round(sum(float(p.get("at_risk") or 0.0) + float(p.get("fees") or 0.0) for p in ps), 4)
+                              if isinstance(ps, list) else None),
+                     "open_n": len(ps) if isinstance(ps, list) else None,
+                     "value": None if v is None else round(v, 4), "why": why, "t": x.get("tried")}
+    vals = [p["value"] for p in pots.values()]
+    ts = [float(p["t"]) for p in pots.values() if p["t"]]
+    return {"pots": pots, "total": round(sum(vals), 4) if all(v is not None for v in vals) else None,
+            "t": max(ts) if ts else None}
+
+
 # ---- the process table -------------------------------------------------------
 _PS = ("Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | ForEach-Object { "
        "$s = ''; if ($_.CreationDate) { $s = $_.CreationDate.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ') }; "
@@ -2612,6 +2635,20 @@ def selftest():
            "60 s of the last read it asks Kalshi nothing")
         ck(len(cj["ledgers"]["transfers"]) == 4 and len(cj["ledgers"]["deposits"]) == 3,
            "and the account's books, the transfer history walked across both its pages")
+        # 2026-10-27: the phone's /server shows every pot from this cache alone (cached_pots): no request of its own
+        n0 = len(asked)
+        cp_ = cached_pots()
+        c_ = load_cache()
+        nows_ = {s: _pot_now(c_, s)[0] for s in SUBS}
+        ck(len(asked) == n0 and sorted(cp_["pots"]) == sorted(SUBS)
+           and all(cp_["pots"][s]["cash"] == cj["subs"][s].get("balance") for s in SUBS)
+           and all(cp_["pots"][s]["value"] == (None if nows_[s] is None else round(nows_[s], 4)) for s in SUBS)
+           and cp_["pots"]["0"]["cash"] == a4["bots"]["pin"]["balance"]["dollars"]
+           and cp_["t"] == max(float(cj["subs"][s]["tried"]) for s in SUBS)
+           and ((cp_["total"] is None) if any(v is None for v in nows_.values())
+                else abs(cp_["total"] - sum(nows_.values())) < 1e-3),
+           "cached_pots: every pot's cash and value as /bots last read them, a total only when every pot has one, and "
+           "no Kalshi request")
 
         # 2b. FALLBACK (2026-10-23) -- a failed read uses the pots of the last pass where every pot read, and says so
         fail["ledgers"] = True

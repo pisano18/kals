@@ -37,6 +37,11 @@ COMMANDS
   /funds (/bank /accounts)   every Kalshi account's money: cash in each pool, open bets,
               total, what runs there, each bot's bet size now, its last 7 ET days of gains
               and losses from Kalshi's settlements, and the grand total
+  /speed      did the move to the AWS server (10-27) win orders the laptop lost: the pin bot's
+              order times and empty orders, home against server, and what speed added in $
+              (an estimate); a line for the FX taker, forecaster and coin race
+  /server     the server: CPU, memory, disk, uptime, a waiting Windows restart, the time to
+              Kalshi, every pot's money (botstats' cache), the AWS bill (/server help: connect it)
   /pause     no new bets, wait for open ones, stop     /start    trade again
   /stop yes   stop right now (the word 'yes' is required)
   /mute  /unmute   alerts off / on          /help
@@ -675,6 +680,10 @@ HELP_TEXT = Html("""📱 <b>Commands</b>
 /bars — the September tests against their pre-registered bars (all finished; kept for the record)
 /features — what each bot does and the settings it runs with now (read from boot_all.ps1), and the rules they run under
 
+🖥 <b>Server</b> (every bot runs on an AWS server in Ohio since 12:20 AM ET Oct 27)
+/speed: did the move win orders the laptop lost: the pin bot's order times and empty orders, home against server, and what speed added in $ (an estimate); a line for the other bots
+/server: the server's CPU, memory, disk, uptime and Windows restarts, the time to Kalshi, every pot's money, and the AWS bill this month (<code>/server help</code>: connect the AWS cost)
+
 🎛 <b>Controls</b>
 /pause — no new bets, wait for open ones, then stop
 /start — trade again
@@ -682,7 +691,7 @@ HELP_TEXT = Html("""📱 <b>Commands</b>
 /mute · /unmute — alerts off / on
 /update — load the newest phone code (self-tests it first; back within ~10 min)
 
-📈 Most commands send a chart right after the words (not /open, /help or the controls).
+📈 Most commands send a chart right after the words (not /open, /help, /speed, /server or the controls).
 
 <i>Alerts come by themselves: state changes, every losing close (with its % of the bank), low disk (under 8 GB, again under 6 GB), and yesterday's summary for every bot at 8 AM ET. Long details sit behind a tap on the quoted block.</i>""")
 
@@ -3491,6 +3500,1034 @@ def features_html(boot_path=None, ladder_path=None):
     return Html("\n".join(L))
 
 
+# ===========================================================================
+# /speed and /server (2026-10-27): the bots moved from the home laptop to an AWS server in Ohio.
+#
+# THE OPERATOR, 2026-10-27: "Yes add speed" (to: a /speed screen "that shows this, server against home, with the
+# dollars") and "Yes add server command. If possible add server funds and cost and spending too to that".
+#
+# /speed splits the bots' OWN order logs at SERVER_SINCE: home = the SPEED_HOME_DAYS days before it (the laptop),
+# server = since. The pin bot's orders are the Ledger's (every pinrun-live log, already in this process: read once,
+# then only the new bytes); its money per filled contract comes from the `settled` rows of the pin logs written
+# since the move; the FX taker, forecaster and coin race from their own logs, read once whole and then only what was
+# added (tail_rows). No Kalshi read anywhere, so it answers in well under a second.
+#
+# /server reads the machine through Windows itself (ctypes: kernel32; winreg for a waiting restart; psutil is not
+# installed and none is added), times a bare TCP connect to Kalshi (the handshake only: no request is sent, so no
+# Kalshi rate limit is touched), shows every pot's money from botstats' cache (the last read /bots, /funds or a chart
+# made: no read of its own) and the AWS bill from AWS's own Budgets and Cost Explorer APIs, signed here (SigV4 with
+# hashlib and hmac) with the short-lived keys of the instance's IAM role from the EC2 metadata service: no stored
+# keys, no boto3. Every reading is cached, has a short timeout, and none raises into the screen.
+# ===========================================================================
+# THE MOVE: the first live bot started on the server at this instant (00:20:52 ET, 10-27). Before it every bot and
+# this phone link ran on the operator's home laptop; from it on, on the EC2 server. /speed's "server" is at or after
+# it, "home" the SPEED_HOME_DAYS days before it.
+SERVER_SINCE = "2026-10-27T04:20:52Z"
+SERVER_SINCE_EPOCH = calendar.timegm(time.strptime(SERVER_SINCE, "%Y-%m-%dT%H:%M:%SZ"))
+SPEED_HOME_DAYS = 14
+SPEED_MIN_ORDERS = 50           # fewer pin orders than this on the server: "too early to tell"
+SPEED_MIN_OTHER = 20            # ... and for another bot's line
+# the other bots whose own logs say, per order, what was asked and what was got: (bot, log, the field that names a
+# record, the order record's name). Only orders Kalshi took count (a refusal, e.g. 'market not found', is no race).
+SPEED_OTHERS = (("fx", "fxtake-live-orders.jsonl", "kind", "placed"),
+                ("forecaster", "forecaster-live-orders.jsonl", "ev", "placed"),
+                ("race", "pinracepenny-live.jsonl", "kind", "live_order"))
+SPEED_SKIPPED = (("ladder", "skipped: its bids rest on the book until a seller hits them, so how fast it sends does "
+                            "not decide what it gets, and its log keeps no send-to-answer time"),)
+SPEED_LABEL = {"fx": "FX taker", "forecaster": "Forecaster", "race": "Coin race", "ladder": "Ladder"}
+
+# THE SERVER, as AWS shows it (the console, 10-27). The prices are AWS's on-demand list for us-east-2 and only feed the
+# ESTIMATE /server shows next to (or, until the billing role exists, instead of) AWS's own figures.
+AWS_REGION, AWS_AZ = "us-east-2", "us-east-2a"
+AWS_INSTANCE_TYPE = "t3.medium"                 # 2 vCPU, 4 GB, Windows Server 2022
+AWS_INSTANCE_ID = "i-0c9f332f93359f898"
+AWS_INSTANCE_NAME = "kals-bot"
+AWS_ELASTIC_IP = "18.216.240.218"
+AWS_ACCOUNT_ID = "001634075101"                 # "Building Things"; the metadata service's own answer wins when read
+AWS_DISK_GB = 50
+AWS_EC2_HOURLY = 0.0600                         # t3.medium with the Windows licence, an hour
+AWS_IPV4_HOURLY = 0.005                         # the public (Elastic) IPv4 address, an hour = $3.65 a month
+AWS_DISK_MONTH = 4.00                           # 50 GB gp3 at $0.08 a GB-month
+AWS_HOURS_MONTH = 730.0
+AWS_BUDGET_USD = 120.0                          # the monthly budget / spend alert the operator set in the console
+AWS_BILLED_FROM = "2026-10-27T03:05:44Z"        # the instance's first boot (Windows' install date there)
+AWS_BILLED_FROM_EPOCH = calendar.timegm(time.strptime(AWS_BILLED_FROM, "%Y-%m-%dT%H:%M:%SZ"))
+AWS_ROLE_NAME = "kals-server-billing"
+AWS_IMDS = "http://169.254.169.254"             # the EC2 instance metadata service (IMDSv2: a token first)
+AWS_IMDS_TIMEOUT_S = 0.6
+AWS_API_TIMEOUT_S = 5.0
+AWS_CREDS_SKEW_S = 300                          # a role key is renewed this long before AWS says it expires
+AWS_NOT_CONNECTED_TTL_S = 300                   # no role yet: asked again after this long (a new role shows in 5 min)
+AWS_BUDGET_TTL_S = 3600                         # DescribeBudgets is free; AWS refreshes a budget a few times a day
+AWS_CE_TTL_S = 6 * 3600                         # Cost Explorer charges $0.01 a request: at most every 6 hours
+AWS_ERR_TTL_S = 900                             # a failed Budgets / Cost Explorer read is tried again after this long
+AWS_BUDGETS_HOST = "budgets.amazonaws.com"      # both are global APIs, signed for us-east-1
+AWS_CE_HOST = "ce.us-east-1.amazonaws.com"
+AWS_SERVICE_SHORT = {"Amazon Elastic Compute Cloud - Compute": "EC2 instance", "EC2 - Other": "EC2 other (disk, data)",
+                     "Amazon Virtual Private Cloud": "public IPv4", "AWS Cost Explorer": "Cost Explorer reads",
+                     "Tax": "tax", "AWS Budgets": "Budgets"}
+KALSHI_HOST = "api.elections.kalshi.com"
+KALSHI_PING_TTL_S = 60
+KALSHI_PING_TRIES = 3
+SERVER_WARN_CPU, SERVER_WARN_MEM, SERVER_WARN_DISK_GB = 90.0, 90, 8.0
+
+
+def _et_at(epoch, with_day=True):
+    """'Oct 27 12:20 AM ET' (or '12:20 AM ET') -- botstats.et_clock's style, kept here so a broken botstats costs only
+    the pages that need it."""
+    if epoch is None:
+        return "?"
+    tm = time.gmtime(float(epoch) + pinday.et_offset(float(epoch)))
+    hm_ = "%d:%02d %s" % (tm.tm_hour % 12 or 12, tm.tm_min, "AM" if tm.tm_hour < 12 else "PM")
+    return ("%s %d %s ET" % (time.strftime("%b", tm), tm.tm_mday, hm_)) if with_day else hm_ + " ET"
+
+
+def _span_words(s):
+    """'3 days 4 h' / '1 h 42 min' / '12 min' / '40 s'."""
+    s = max(0.0, _f(s))
+    if s < 60:
+        return "%d s" % s
+    if s < 3600:
+        return "%d min" % (s // 60)
+    if s < 86400:
+        return "%d h %d min" % (s // 3600, (s % 3600) // 60)
+    d = int(s // 86400)
+    return "%d day%s %d h" % (d, "" if d == 1 else "s", (s % 86400) // 3600)
+
+
+def _gb(x, digits=1):
+    return "?" if x is None else ("%." + str(digits) + "f GB") % (x / 1e9)
+
+
+def _ms(x):
+    return "?" if x is None else ("%.0f ms" % x if x >= 10 else "%.1f ms" % x)
+
+
+def _usd4(x):
+    """A small amount to the hundredth of a cent, signed: +$0.0167 a contract."""
+    if x is None:
+        return "?"
+    return ("+$" if x > 0 else ("-$" if x < 0 else "$")) + "%.4f" % abs(x)
+
+
+def _pct0(x):
+    return "-" if x is None else "%.0f%%" % x
+
+
+# ---- an append-only log, read once and then only what was added ----------------------------------------------------
+_TAILS = {}
+
+
+def tail_rows(path, field, value):
+    """Every record of an append-only jsonl log whose `field` is `value`, read ONCE whole and after that only the bytes
+    added since the last call (a file that shrank was replaced: it is read again from the start). Lines are screened
+    by substring before json.loads, and a cut last line waits for its end. [] when the file cannot be read."""
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        return []
+    key = (path, field, value)
+    hit = _TAILS.get(key)
+    if hit is None or size < hit["off"]:
+        hit = _TAILS[key] = {"off": 0, "rows": []}
+    if size > hit["off"]:
+        try:
+            with open(path, "rb") as fh:
+                fh.seek(hit["off"])
+                chunk = fh.read(size - hit["off"])
+        except OSError:
+            return hit["rows"]
+        cut = chunk.rfind(b"\n")
+        if cut >= 0:
+            needle = ('"%s"' % value).encode("utf-8")
+            for line in chunk[:cut + 1].split(b"\n"):
+                if needle not in line:
+                    continue
+                try:
+                    r = json.loads(line.decode("utf-8", "replace"))
+                except ValueError:
+                    continue
+                if isinstance(r, dict) and r.get(field) == value:
+                    hit["rows"].append(r)
+            hit["off"] += cut + 1
+    return hit["rows"]
+
+
+# ---- /speed --------------------------------------------------------------------------------------------------------
+def _median(xs):
+    n = len(xs)
+    if not n:
+        return None
+    return xs[n // 2] if n % 2 else (xs[n // 2 - 1] + xs[n // 2]) / 2.0
+
+
+def _rank(xs, q):
+    """The nearest-rank q-th quantile of a sorted list (q=0.9: the 90th percentile), None when empty."""
+    if not xs:
+        return None
+    k = int(q * len(xs))
+    k = k if k == q * len(xs) else k + 1
+    return xs[max(0, k - 1)]
+
+
+def _speed_win(rows, t0, t1):
+    return [o for o in rows if o.get("t") is not None and t0 <= o["t"] < t1]
+
+
+def pin_speed_orders(orders):
+    """The Ledger's order rows (pindesk) of the pin bot's own logs, as /speed counts them: t, ticker, got, asked, ms."""
+    return [{"t": o.get("t"), "tk": o.get("tk"), "got": _f(o.get("filled")), "asked": _fnum(o.get("asked")),
+             "ms": o.get("latency_ms")}
+            for o in orders if str(o.get("file") or "").startswith("pinrun-live-")]
+
+
+def speed_stats(rows):
+    """One window's orders, worked out: n, zero (orders that got nothing) and its share, contracts got and asked, got
+    of asked (over the orders whose ask is known), and the send-to-answer time: how many have one, median, p90."""
+    lat = sorted(float(o["ms"]) for o in rows if isinstance(o.get("ms"), (int, float)) and o["ms"] >= 0)
+    known = [o for o in rows if o.get("asked")]
+    n = len(rows)
+    zero = sum(1 for o in rows if _f(o.get("got")) <= 0)
+    asked = sum(_f(o["asked"]) for o in known)
+    return {"n": n, "zero": zero, "zero_share": (float(zero) / n) if n else None,
+            "got": sum(_f(o.get("got")) for o in rows), "asked": asked,
+            "got_share": (sum(_f(o.get("got")) for o in known) / asked) if asked > 0 else None,
+            "lat_n": len(lat), "med_ms": _median(lat), "p90_ms": _rank(lat, 0.9)}
+
+
+def _other_order(bot, r):
+    """One other bot's order record as /speed counts it, or None when Kalshi did not take it."""
+    t = pindesk.parse_t(r.get("t"))
+    if bot == "race":
+        code = r.get("status_code")
+        took = code in (200, 201) if code is not None else r.get("status") in (
+            "executed", "canceled", "partially_filled_then_canceled")
+        return {"t": t, "tk": r.get("ticker"), "got": _f(r.get("filled")), "asked": _fnum(r.get("count_asked")),
+                "ms": None} if took else None
+    if r.get("status") not in (200, 201):
+        return None
+    body = r.get("body") if isinstance(r.get("body"), dict) else {}
+    rtt = _fnum(r.get("rtt"))
+    return {"t": t, "tk": body.get("ticker"), "got": _f(r.get("filled")), "asked": _fnum(body.get("count")),
+            "ms": rtt * 1000.0 if rtt is not None else None}
+
+
+def speed_pin_money(results, server_rows, since):
+    """What the pin bot made on the server, per filled contract: the `settled` rows' pnl_c (each leg, a hedge's
+    included, fees in) of the pin logs written since `since`, on the markets it got contracts in on the server, over those
+    contracts. Markets not settled yet are left out (their contracts are `open_contracts`)."""
+    import glob
+    got = {}
+    for o in server_rows:
+        if o.get("tk") and _f(o.get("got")) > 0:
+            got[o["tk"]] = got.get(o["tk"], 0.0) + _f(o["got"])
+    made = {}
+    for p in sorted(glob.glob(os.path.join(results, "pinrun-live-*.jsonl"))):
+        try:
+            if os.path.getmtime(p) < since:
+                continue
+        except OSError:
+            continue
+        for r in tail_rows(p, "kind", "settled"):
+            t, tk = pindesk.parse_t(r.get("t")), r.get("ticker")
+            if t is None or t < since or tk not in got:
+                continue
+            v = _fnum(r.get("pnl_c"))              # this leg's money in cents; `realised` is the RUN's running total
+            if v is not None:
+                made[tk] = made.get(tk, 0.0) + v / 100.0
+    contracts = sum(got[tk] for tk in made)
+    usd_ = sum(made.values())
+    return {"usd": usd_, "contracts": contracts, "markets": len(made),
+            "per": (usd_ / contracts) if contracts > 0 else None,
+            "open_contracts": sum(v for tk, v in got.items() if tk not in made)}
+
+
+def speed_estimate(home, srv, money, span_s):
+    """What speed added, an ESTIMATE: (server got/asked - home got/asked) x contracts asked on the server = the extra
+    contracts; x the $ the server's filled contracts made each. None-valued with `why` when a part is missing."""
+    out = {"d_share": None, "extra": None, "usd": None, "per_day": None, "days": span_s / 86400.0, "why": None}
+    if home["got_share"] is None:
+        out["why"] = "no pin orders at home to compare with"
+    elif srv["got_share"] is None:
+        out["why"] = "no pin orders on the server yet"
+    elif money["per"] is None:
+        out["why"] = "none of the server's filled pin markets has settled yet"
+    else:
+        out["d_share"] = srv["got_share"] - home["got_share"]
+        out["extra"] = out["d_share"] * srv["asked"]
+        out["usd"] = out["extra"] * money["per"]
+        if out["days"] >= 1.0:
+            out["per_day"] = out["usd"] / out["days"]
+    return out
+
+
+def speed_gather(results, orders, now, since=None, home_days=None):
+    """Everything /speed shows, worked from the logs (see the section's head). `orders` = the Ledger's order rows."""
+    since = SERVER_SINCE_EPOCH if since is None else since
+    h0 = since - (SPEED_HOME_DAYS if home_days is None else home_days) * 86400
+    pins = pin_speed_orders(orders)
+    home, srv = _speed_win(pins, h0, since), _speed_win(pins, since, now + 1)
+    d = {"since": since, "home_from": h0, "now": now, "others": [], "skipped": list(SPEED_SKIPPED),
+         "pin": {"home": speed_stats(home), "server": speed_stats(srv)}}
+    d["pin"]["money"] = speed_pin_money(results, srv, since)
+    d["pin"]["est"] = speed_estimate(d["pin"]["home"], d["pin"]["server"], d["pin"]["money"], now - since)
+    for bot, name, field, value in SPEED_OTHERS:
+        p = os.path.join(results, name)
+        if not os.path.exists(p):
+            d["others"].append({"bot": bot, "missing": name})
+            continue
+        rows = [x for x in (_other_order(bot, r) for r in tail_rows(p, field, value)) if x and x["t"] is not None]
+        d["others"].append({"bot": bot, "home": speed_stats(_speed_win(rows, h0, since)),
+                            "server": speed_stats(_speed_win(rows, since, now + 1)),
+                            "has_ms": any(x["ms"] is not None for x in rows)})
+    return d
+
+
+def _speed_other_line(x, min_other):
+    name = SPEED_LABEL.get(x["bot"], x["bot"])
+    if x.get("missing"):
+        return "<b>%s</b>: skipped: no log here (%s)" % (esc(name), esc(x["missing"]))
+    h, s = x["home"], x["server"]
+
+    def part(st, where):
+        if not st["n"]:
+            return "%s: no orders" % where
+        got = 100.0 * (1.0 - st["zero_share"])
+        return "%s %s got something (%s of %s%s)" % (
+            where, _pct0(got), _cnt(st["n"] - st["zero"]), _nof(st["n"], "order"),
+            (", %s" % _ms(st["med_ms"])) if st["med_ms"] is not None else "")
+    tail = []
+    if s["n"] and s["n"] < min_other:
+        tail.append("too few on the server to tell")
+    if not x.get("has_ms"):
+        tail.append("its log keeps no send time")
+    return "<b>%s</b>: %s · %s%s" % (esc(name), esc(part(h, "home")), esc(part(s, "server")),
+                                     (" · " + esc("; ".join(tail))) if tail else "")
+
+
+def speed_html(d, bank=None, min_orders=None, min_other=None):
+    """/speed's screen from speed_gather's numbers. `bank` = the main account's bank (the pin bot's), for the %."""
+    min_orders = SPEED_MIN_ORDERS if min_orders is None else min_orders
+    min_other = SPEED_MIN_OTHER if min_other is None else min_other
+    pin = d["pin"]
+    h, s, mo, est = pin["home"], pin["server"], pin["money"], pin["est"]
+    early = s["n"] < min_orders
+    bank_pct = (" (%s of the main account's %s bank)" % (ret(est["usd"], bank, 2), dollars(bank))
+                if est["usd"] is not None and bank and ret(est["usd"], bank, 2) else "")
+    L = []
+    if not s["n"]:
+        L.append("⏳ <b>SPEED: too early to tell, no pin orders on the server yet</b>")
+    elif early:
+        L.append("⏳ <b>SPEED: too early to tell, %s so far</b> on the server (the bar is %d)"
+                 % (esc(_nof(s["n"], "order")), min_orders))
+    else:
+        L.append("⚡ <b>SPEED: %s on the server, was %s at home</b> (median, send to answer)"
+                 % (esc(_ms(s["med_ms"])), esc(_ms(h["med_ms"]))))
+    if s["n"]:
+        L.append("Pin orders that got nothing: <b>%s</b> on the server, %s at home · contracts got of those asked: "
+                 "<b>%s</b>, was %s" % (pct1(s["zero"], s["n"]), pct1(h["zero"], h["n"]),
+                                        _of100(s["got_share"]) + "%" if s["got_share"] is not None else "-",
+                                        _of100(h["got_share"]) + "%" if h["got_share"] is not None else "-"))
+    if est["usd"] is not None:
+        L.append("%s What speed added: about <b>%s</b>%s since the move%s · an estimate, not a proof" % (
+            dot(est["usd"]), esc(usd(est["usd"])), esc(bank_pct),
+            (" (too early: %s)" % esc(_nof(s["n"], "order"))) if early else ""))
+    L.append(i_("Pin bot · home = %s to %s (%d days, the laptop) · server = since %s (%s so far, AWS Ohio)" % (
+        _et_at(d["home_from"]), _et_at(d["since"]), round((d["since"] - d["home_from"]) / 86400.0),
+        _et_at(d["since"]), _span_words(d["now"] - d["since"]))))
+    L.append("")
+    rows = [("Pin bot", "Home", "Server"),
+            ("Orders", _cnt(h["n"]), _cnt(s["n"])),
+            ("Median", _ms(h["med_ms"]) if h["lat_n"] else "-", _ms(s["med_ms"]) if s["lat_n"] else "-"),
+            ("90% under", _ms(h["p90_ms"]) if h["lat_n"] else "-", _ms(s["p90_ms"]) if s["lat_n"] else "-"),
+            ("Got nothing", pct1(h["zero"], h["n"]), pct1(s["zero"], s["n"])),
+            ("Got / asked", (_of100(h["got_share"]) + "%") if h["got_share"] is not None else "-",
+             (_of100(s["got_share"]) + "%") if s["got_share"] is not None else "-"),
+            ("Contracts got", _cnt(h["got"]), _cnt(s["got"])),
+            ("  asked", _cnt(h["asked"]), _cnt(s["asked"]))]
+    L.append(pre(table(rows)))
+    L.append("")
+    L.append("💵 <b>What speed added (an estimate, not a proof)</b>")
+    L.append(i_("extra contracts = (server got/asked - home got/asked) x contracts asked on the server; "
+                "$ = extra contracts x the $ made per filled contract on the server"))
+    if est["d_share"] is not None:
+        L.append("(%s%% - %s%%) x %s asked on the server = <b>%s%s extra contracts</b>" % (
+            _of100(s["got_share"]), _of100(h["got_share"]), _cnt(s["asked"]), "+" if est["extra"] > 0 else "",
+            esc(_cnt(est["extra"]) if est["extra"] >= 0 else "-" + _cnt(-est["extra"]))))
+        L.append("x %s a filled contract (%s on %s contracts in %s settled on the server) = <b>%s</b>%s" % (
+            esc(_usd4(mo["per"])), esc(usd(mo["usd"])), esc(_cnt(mo["contracts"])), esc(_nof(mo["markets"], "market")),
+            esc(usd(est["usd"])), esc(bank_pct)))
+        if est["per_day"] is not None:
+            L.append("About <b>%s a day</b> at this pace%s." % (
+                esc(usd(est["per_day"])), (" (%s of the bank a day)" % esc(ret(est["per_day"], bank, 2)))
+                if bank and ret(est["per_day"], bank, 2) else ""))
+        if early:
+            L.append("⏳ Too early to tell: %s so far (the bar is %d); a few orders swing this a lot."
+                     % (esc(_nof(s["n"], "order")), min_orders))
+    else:
+        L.append("Not yet: %s." % esc(est["why"]))
+    L.append("")
+    L.append("🤖 <b>Other bots</b> (orders Kalshi took: how many got something, median send to answer)")
+    for x in d["others"]:
+        L.append(_speed_other_line(x, min_other))
+    for bot, why in d["skipped"]:
+        L.append("<b>%s</b>: %s" % (esc(SPEED_LABEL.get(bot, bot)), esc(why)))
+    L.append(details(elines([
+        "Send to answer = the pin bot's own latency_ms on each order: from sending it to Kalshi's reply. 90% under = "
+        "the time 90% of the orders beat.",
+        "Got nothing = an order Kalshi answered with no contracts: someone faster took them, or the price moved first.",
+        "Got / asked = contracts filled over contracts asked, every order in the window.",
+        "$ per filled contract = what the pin bot's markets settled on the server made (its own settled rows: both "
+        "legs, a hedge's included, fees in), over the contracts it got in them. Markets still open are left out "
+        "(%s contracts now)." % _cnt(mo["open_contracts"]),
+        "Why only an estimate: it assumes the extra contracts made what the server's filled ones made, and that the "
+        "markets of the two windows were alike. Neither is proven; the gap in got/asked is the measured part.",
+        "Other bots: only orders Kalshi took count (a refusal such as 'market not found' is no race); their time is the "
+        "bot's own send-to-answer time (rtt). The coin race keeps none.",
+        "Home = the %d days before the move (SERVER_SINCE = %s, a constant in pinphone.py); server = since. Read from "
+        "the bots' own logs; nothing is asked of Kalshi." % (SPEED_HOME_DAYS, SERVER_SINCE)]),
+        "🔎 How each figure is worked (tap)"))
+    L.append(i_("/server: the machine, the time to Kalshi, the funds and the AWS bill"))
+    return Html("\n".join(L))
+
+
+# ---- /server: the machine, from Windows itself --------------------------------------------------------------------
+_W32 = {}
+
+
+def _w32():
+    """kernel32 through ctypes, set up once in a private handle (its argtypes never touch ctypes.windll's shared one)."""
+    if "k32" not in _W32:
+        import ctypes
+        from ctypes import wintypes
+        k = ctypes.WinDLL("kernel32", use_last_error=True)
+        ft = ctypes.POINTER(wintypes.FILETIME)
+        k.GetSystemTimes.argtypes = (ft, ft, ft)
+        k.GetSystemTimes.restype = wintypes.BOOL
+        k.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+        k.OpenProcess.restype = wintypes.HANDLE
+        k.CloseHandle.argtypes = (wintypes.HANDLE,)
+        k.CloseHandle.restype = wintypes.BOOL
+        k.GetProcessTimes.argtypes = (wintypes.HANDLE, ft, ft, ft, ft)
+        k.GetProcessTimes.restype = wintypes.BOOL
+        k.QueryFullProcessImageNameW.argtypes = (wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR,
+                                                 ctypes.POINTER(wintypes.DWORD))
+        k.QueryFullProcessImageNameW.restype = wintypes.BOOL
+        k.K32EnumProcesses.argtypes = (ctypes.POINTER(wintypes.DWORD), wintypes.DWORD, ctypes.POINTER(wintypes.DWORD))
+        k.K32EnumProcesses.restype = wintypes.BOOL
+        k.K32GetProcessMemoryInfo.argtypes = (wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD)
+        k.K32GetProcessMemoryInfo.restype = wintypes.BOOL
+        k.GlobalMemoryStatusEx.argtypes = (ctypes.c_void_p,)
+        k.GlobalMemoryStatusEx.restype = wintypes.BOOL
+        k.GetTickCount64.argtypes = ()
+        k.GetTickCount64.restype = ctypes.c_ulonglong
+        _W32.update(k32=k, ct=ctypes, wt=wintypes)
+    return _W32["k32"], _W32["ct"], _W32["wt"]
+
+
+def _ft(f):
+    return (f.dwHighDateTime << 32) | f.dwLowDateTime          # 100-ns units
+
+
+def _python_handles(k, ct, wt):
+    """{pid: open handle} for every python.exe / pythonw.exe this account may query (the caller closes them)."""
+    n = 4096
+    while True:
+        arr = (wt.DWORD * n)()
+        got = wt.DWORD()
+        if not k.K32EnumProcesses(arr, ct.sizeof(arr), ct.byref(got)):
+            raise OSError("EnumProcesses failed (%d)" % ct.get_last_error())
+        if got.value < ct.sizeof(arr):
+            break
+        n *= 2
+    out = {}
+    buf = ct.create_unicode_buffer(1024)
+    for pid in arr[:got.value // ct.sizeof(wt.DWORD)]:
+        if not pid:
+            continue
+        h = k.OpenProcess(0x1000 | 0x0010, False, pid)            # QUERY_LIMITED_INFORMATION | VM_READ
+        if not h:
+            h = k.OpenProcess(0x1000, False, pid)
+        if not h:
+            continue
+        size = wt.DWORD(len(buf))
+        if k.QueryFullProcessImageNameW(h, 0, buf, ct.byref(size)) \
+                and os.path.basename(buf.value).lower() in ("python.exe", "pythonw.exe"):
+            out[pid] = h
+        else:
+            k.CloseHandle(h)
+    return out
+
+
+REBOOT_KEYS = (r"SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired",
+               r"SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending")
+
+
+def reboot_pending():
+    """(True, by what) when Windows Update or a Windows component update waits for a restart (either key is there),
+    (False, None) when neither is, (None, why) when the registry could not be read."""
+    import winreg
+    for path in REBOOT_KEYS:
+        try:
+            winreg.CloseKey(winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, path))
+            return True, ("Windows Update" if "WindowsUpdate" in path else "a Windows component update")
+        except FileNotFoundError:
+            continue
+        except OSError as e:
+            return None, str(e)[:80]
+    return False, None
+
+
+def machine_read(sample_s=0.5):
+    """This machine now, from Windows itself. Every figure is None when its call fails, and why goes in `errs`.
+    cpu = % busy over `sample_s` seconds, every core; py_cpu = the python processes' (the bots, the recorders, this
+    phone link) share of the whole machine over the same seconds; py_mem = the RAM they hold (working sets, bytes)."""
+    out = {"host": os.environ.get("COMPUTERNAME"), "ncpu": os.cpu_count(), "cpu": None, "py_cpu": None, "py_n": None,
+           "py_mem": None, "mem_total": None, "mem_avail": None, "mem_load": None, "commit": None, "commit_limit": None,
+           "disk_free": None, "disk_total": None, "uptime_s": None, "reboot": None, "reboot_why": None,
+           "sample_s": sample_s, "errs": []}
+    try:
+        import shutil
+        du = shutil.disk_usage(os.environ.get("SystemDrive", "C:") + "\\")
+        out["disk_free"], out["disk_total"] = float(du.free), float(du.total)
+    except Exception as e:                                      # noqa: BLE001
+        out["errs"].append("disk: %s" % str(e)[:80])
+    try:
+        out["reboot"], out["reboot_why"] = reboot_pending()
+    except Exception as e:                                      # noqa: BLE001
+        out["errs"].append("restart check: %s" % str(e)[:80])
+    try:
+        k, ct, wt = _w32()
+    except Exception as e:                                      # noqa: BLE001
+        out["errs"].append("Windows calls: %s" % str(e)[:80])
+        return out
+    try:
+        class _MS(ct.Structure):
+            _fields_ = [("dwLength", wt.DWORD), ("dwMemoryLoad", wt.DWORD), ("ullTotalPhys", ct.c_ulonglong),
+                        ("ullAvailPhys", ct.c_ulonglong), ("ullTotalPageFile", ct.c_ulonglong),
+                        ("ullAvailPageFile", ct.c_ulonglong), ("ullTotalVirtual", ct.c_ulonglong),
+                        ("ullAvailVirtual", ct.c_ulonglong), ("ullAvailExtendedVirtual", ct.c_ulonglong)]
+        ms = _MS()
+        ms.dwLength = ct.sizeof(_MS)
+        if not k.GlobalMemoryStatusEx(ct.byref(ms)):
+            raise OSError("GlobalMemoryStatusEx failed (%d)" % ct.get_last_error())
+        out.update(mem_total=float(ms.ullTotalPhys), mem_avail=float(ms.ullAvailPhys), mem_load=int(ms.dwMemoryLoad),
+                   commit=float(ms.ullTotalPageFile - ms.ullAvailPageFile), commit_limit=float(ms.ullTotalPageFile))
+    except Exception as e:                                      # noqa: BLE001
+        out["errs"].append("memory: %s" % str(e)[:80])
+    try:
+        out["uptime_s"] = k.GetTickCount64() / 1000.0
+    except Exception as e:                                      # noqa: BLE001
+        out["errs"].append("uptime: %s" % str(e)[:80])
+
+    def sys_times():
+        i, kk, u = wt.FILETIME(), wt.FILETIME(), wt.FILETIME()
+        if not k.GetSystemTimes(ct.byref(i), ct.byref(kk), ct.byref(u)):
+            raise OSError("GetSystemTimes failed (%d)" % ct.get_last_error())
+        return _ft(i), _ft(kk) + _ft(u)                         # kernel time includes the idle time
+
+    def proc_times(hs):
+        tot = {}
+        for pid, h in hs.items():
+            c, e, kk, u = wt.FILETIME(), wt.FILETIME(), wt.FILETIME(), wt.FILETIME()
+            if k.GetProcessTimes(h, ct.byref(c), ct.byref(e), ct.byref(kk), ct.byref(u)):
+                tot[pid] = _ft(kk) + _ft(u)
+        return tot
+    hs = {}
+    try:
+        try:
+            hs = _python_handles(k, ct, wt)
+        except Exception as e:                                  # noqa: BLE001
+            out["errs"].append("process list: %s" % str(e)[:80])
+        idle0, all0 = sys_times()
+        p0 = proc_times(hs)
+        time.sleep(max(0.05, float(sample_s)))
+        idle1, all1 = sys_times()
+        p1 = proc_times(hs)
+        d_all = all1 - all0
+        if d_all > 0:
+            out["cpu"] = max(0.0, min(100.0, 100.0 * (d_all - (idle1 - idle0)) / d_all))
+            if hs:
+                out["py_cpu"] = max(0.0, min(100.0, 100.0 * sum(p1[p] - p0[p] for p in p1 if p in p0) / d_all))
+        if hs:
+            class _PMC(ct.Structure):
+                _fields_ = [("cb", wt.DWORD), ("PageFaultCount", wt.DWORD), ("PeakWorkingSetSize", ct.c_size_t),
+                            ("WorkingSetSize", ct.c_size_t), ("QuotaPeakPagedPoolUsage", ct.c_size_t),
+                            ("QuotaPagedPoolUsage", ct.c_size_t), ("QuotaPeakNonPagedPoolUsage", ct.c_size_t),
+                            ("QuotaNonPagedPoolUsage", ct.c_size_t), ("PagefileUsage", ct.c_size_t),
+                            ("PeakPagefileUsage", ct.c_size_t)]
+            mem, seen = 0, 0
+            for h in hs.values():
+                pm = _PMC()
+                pm.cb = ct.sizeof(_PMC)
+                if k.K32GetProcessMemoryInfo(h, ct.byref(pm), pm.cb):
+                    mem += pm.WorkingSetSize
+                    seen += 1
+            out["py_n"] = len(hs)
+            out["py_mem"] = float(mem) if seen else None
+        elif not out["errs"]:
+            out["py_n"] = 0
+    except Exception as e:                                      # noqa: BLE001
+        out["errs"].append("CPU: %s" % str(e)[:80])
+    finally:
+        for h in hs.values():
+            try:
+                k.CloseHandle(h)
+            except Exception:                                   # noqa: BLE001
+                pass
+    return out
+
+
+# ---- /server: the time to Kalshi -----------------------------------------------------------------------------------
+_PING = {}
+
+
+def kalshi_connect(host=KALSHI_HOST, port=443, tries=KALSHI_PING_TRIES, timeout=2.0):
+    """A bare TCP connect to Kalshi's API, `tries` times: the handshake only (no TLS, no request), so it costs no
+    Kalshi rate limit. {"ms": [each connect], "ip", "dns_ms", "err", "t"}."""
+    import socket
+    out = {"host": host, "ms": [], "ip": None, "dns_ms": None, "err": None, "t": time.time()}
+    try:
+        t0 = time.perf_counter()
+        ai = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
+        out["dns_ms"] = (time.perf_counter() - t0) * 1000.0
+        addr = ai[0][4]
+        out["ip"] = addr[0]
+    except Exception as e:                                      # noqa: BLE001
+        out["err"] = "name lookup failed (%s)" % (str(e)[:60] or type(e).__name__)
+        return out
+    for _ in range(tries):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(timeout)
+        try:
+            t0 = time.perf_counter()
+            s.connect(addr)
+            out["ms"].append((time.perf_counter() - t0) * 1000.0)
+        except Exception as e:                                  # noqa: BLE001
+            out["err"] = "connect failed (%s)" % (str(e)[:60] or type(e).__name__)
+        finally:
+            s.close()
+    return out
+
+
+def kalshi_ping(max_age_s=KALSHI_PING_TTL_S):
+    """kalshi_connect, at most once every `max_age_s` seconds (the last answer in between)."""
+    hit = _PING.get("res")
+    if hit and time.time() - hit["t"] < max_age_s:
+        return hit
+    _PING["res"] = kalshi_connect()
+    return _PING["res"]
+
+
+# ---- /server: the AWS bill, signed here --------------------------------------------------------------------------
+def sigv4_sign(method, url, region, service, key_id, secret, body=b"", headers=None, token=None, amz_date=None,
+               sign_body=False):
+    """AWS Signature Version 4 with hashlib and hmac only (no boto3 on the server). Returns (the headers to send,
+    the signature): every header given, plus host, x-amz-date, x-amz-security-token (a role's session token) and,
+    with sign_body, x-amz-content-sha256 -- all of them signed -- and Authorization. The self-test checks it against
+    AWS's own published test vectors."""
+    import hashlib
+    import hmac
+    u = urllib.parse.urlsplit(url)
+    amz_date = amz_date or time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    day = amz_date[:8]
+    body = body or b""
+    h = {}
+    for k, v in (headers or {}).items():
+        h[str(k).lower().strip()] = " ".join(str(v).split())
+    h.setdefault("host", u.netloc)
+    h["x-amz-date"] = amz_date
+    if token:
+        h["x-amz-security-token"] = token
+    payload = hashlib.sha256(body).hexdigest()
+    if sign_body:
+        h["x-amz-content-sha256"] = payload
+    q = sorted((urllib.parse.quote(k, safe="-_.~"), urllib.parse.quote(v, safe="-_.~"))
+               for k, v in urllib.parse.parse_qsl(u.query, keep_blank_values=True))
+    names = sorted(h)
+    creq = "\n".join([method.upper(), urllib.parse.quote(u.path or "/", safe="/-_.~"),
+                      "&".join("%s=%s" % kv for kv in q), "".join("%s:%s\n" % (n, h[n]) for n in names),
+                      ";".join(names), payload])
+    scope = "%s/%s/%s/aws4_request" % (day, region, service)
+    sts = "\n".join(["AWS4-HMAC-SHA256", amz_date, scope, hashlib.sha256(creq.encode("utf-8")).hexdigest()])
+    key = ("AWS4" + secret).encode("utf-8")
+    for part in (day, region, service, "aws4_request"):
+        key = hmac.new(key, part.encode("utf-8"), hashlib.sha256).digest()
+    sig = hmac.new(key, sts.encode("utf-8"), hashlib.sha256).hexdigest()
+    h["authorization"] = "AWS4-HMAC-SHA256 Credential=%s/%s, SignedHeaders=%s, Signature=%s" % (
+        key_id, scope, ";".join(names), sig)
+    return h, sig
+
+
+def _aws_http(method, url, headers=None, body=None, timeout=AWS_API_TIMEOUT_S):
+    """(status, bytes) of one HTTP request, never through a proxy (the metadata address must not leave the machine).
+    An HTTP error status is returned, not raised; a network failure raises."""
+    req = urllib.request.Request(url, data=body, headers=headers or {}, method=method)
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(req, timeout=timeout) as r:
+            return r.status, r.read()
+    except urllib.error.HTTPError as e:
+        try:
+            return e.code, e.read()
+        except Exception:                                       # noqa: BLE001
+            return e.code, b""
+
+
+_AWS = {}
+
+
+def aws_role_creds(http=None, now=None):
+    """(keys, None) or (None, why in plain words): the IAM role's short-lived keys from the EC2 metadata service
+    (IMDSv2: a token, the role's name, its keys; the account from the instance's identity document), kept until
+    AWS_CREDS_SKEW_S before they expire. No role / no metadata service is remembered for AWS_NOT_CONNECTED_TTL_S."""
+    http = http or _aws_http
+    now = time.time() if now is None else float(now)
+    c = _AWS.get("creds")
+    if c and c["exp"] - AWS_CREDS_SKEW_S > now:
+        return c["keys"], None
+    nc = _AWS.get("nocreds")
+    if nc and 0 <= now - nc["t"] < AWS_NOT_CONNECTED_TTL_S:
+        return None, nc["why"]
+    why = None
+    try:
+        st, tok = http("PUT", AWS_IMDS + "/latest/api/token", {"X-aws-ec2-metadata-token-ttl-seconds": "300"}, b"",
+                       AWS_IMDS_TIMEOUT_S)
+        if st != 200 or not tok:
+            why = "no EC2 metadata service answered (HTTP %s)" % st
+        else:
+            hd = {"X-aws-ec2-metadata-token": tok.decode("ascii", "replace").strip()}
+            st, names = http("GET", AWS_IMDS + "/latest/meta-data/iam/security-credentials/", hd, None,
+                             AWS_IMDS_TIMEOUT_S)
+            role = (names or b"").decode("utf-8", "replace").split()[0] if st == 200 and (names or b"").strip() else None
+            if st == 404 or (st == 200 and not role):
+                why = "no IAM role on the server yet"
+            elif st != 200:
+                why = "the metadata service gave HTTP %s for the role" % st
+            else:
+                st, raw = http("GET", AWS_IMDS + "/latest/meta-data/iam/security-credentials/" + role, hd, None,
+                               AWS_IMDS_TIMEOUT_S)
+                d = json.loads((raw or b"{}").decode("utf-8", "replace")) if st == 200 else {}
+                if not isinstance(d, dict) or d.get("Code") != "Success" or not d.get("AccessKeyId"):
+                    why = "the role %s gave no keys (HTTP %s, %s)" % (role, st, (d or {}).get("Code") if isinstance(
+                        d, dict) else "unreadable")
+                else:
+                    acct = None
+                    try:
+                        st2, doc = http("GET", AWS_IMDS + "/latest/dynamic/instance-identity/document", hd, None,
+                                        AWS_IMDS_TIMEOUT_S)
+                        if st2 == 200:
+                            acct = (json.loads(doc.decode("utf-8", "replace")) or {}).get("accountId")
+                    except Exception:                           # noqa: BLE001
+                        acct = None
+                    keys = {"key": d["AccessKeyId"], "secret": d.get("SecretAccessKey") or "", "token": d.get("Token"),
+                            "role": role, "account": acct or AWS_ACCOUNT_ID}
+                    exp = pindesk.parse_t(d.get("Expiration"))
+                    _AWS["creds"] = {"keys": keys, "exp": exp if exp else now + 600}
+                    _AWS.pop("nocreds", None)
+                    return keys, None
+    except Exception as e:                                      # noqa: BLE001
+        why = "no EC2 metadata service reachable (%s)" % (type(e).__name__)
+    _AWS["nocreds"] = {"t": now, "why": why}
+    return None, why
+
+
+def _aws_call(host, service, target, payload, keys, http):
+    """One signed AWS JSON 1.1 call: (the reply dict, None) or (None, why)."""
+    body = json.dumps(payload).encode("utf-8")
+    url = "https://%s/" % host
+    hd, _sig = sigv4_sign("POST", url, "us-east-1", service, keys["key"], keys["secret"], body,
+                          {"Content-Type": "application/x-amz-json-1.1", "X-Amz-Target": target}, keys.get("token"))
+    try:
+        st, raw = http("POST", url, hd, body, AWS_API_TIMEOUT_S)
+    except Exception as e:                                      # noqa: BLE001
+        return None, "could not reach AWS (%s)" % (str(e)[:60] or type(e).__name__)
+    try:
+        d = json.loads((raw or b"{}").decode("utf-8", "replace") or "{}")
+    except ValueError:
+        d = None
+    if st == 200 and isinstance(d, dict):
+        return d, None
+    kind = str((d or {}).get("__type") or "").split("#")[-1] if isinstance(d, dict) else ""
+    msg = str((d or {}).get("Message") or (d or {}).get("message") or "") if isinstance(d, dict) else ""
+    if kind in ("ExpiredTokenException", "UnrecognizedClientException", "InvalidClientTokenId"):
+        _AWS.pop("creds", None)                                 # the next read fetches new role keys
+    return None, ("%s (HTTP %s)%s" % (kind or "error", st, (": " + msg[:110]) if msg else "")).strip()
+
+
+def _aws_budget_rows(d):
+    out = []
+    for b in (d or {}).get("Budgets") or []:
+        if not isinstance(b, dict):
+            continue
+        cs = b.get("CalculatedSpend") or {}
+        lim = b.get("BudgetLimit") or {}
+        out.append({"name": b.get("BudgetName"), "type": b.get("BudgetType"), "period": b.get("TimeUnit"),
+                    "limit": _fnum(lim.get("Amount")), "unit": lim.get("Unit") or "USD",
+                    "actual": _fnum((cs.get("ActualSpend") or {}).get("Amount")),
+                    "forecast": _fnum((cs.get("ForecastedSpend") or {}).get("Amount")),
+                    "updated": _fnum(b.get("LastUpdatedTime"))})
+    return out
+
+
+def _aws_ce_rows(d):
+    days, svc, est = {}, {}, False
+    for r in (d or {}).get("ResultsByTime") or []:
+        day = (r.get("TimePeriod") or {}).get("Start")
+        est = est or bool(r.get("Estimated"))
+        groups = r.get("Groups") or []
+        for g in groups:
+            name = (g.get("Keys") or ["?"])[0]
+            v = _fnum(((g.get("Metrics") or {}).get("UnblendedCost") or {}).get("Amount")) or 0.0
+            days[day] = days.get(day, 0.0) + v
+            svc[name] = svc.get(name, 0.0) + v
+        if not groups:
+            v = _fnum(((r.get("Total") or {}).get("UnblendedCost") or {}).get("Amount"))
+            if v is not None:
+                days[day] = days.get(day, 0.0) + v
+    return {"days": days, "services": svc, "month": sum(days.values()), "estimated": est,
+            "more": bool((d or {}).get("NextPageToken"))}
+
+
+def _aws_cached(name, now, ttl, read):
+    """One AWS read through its cache: re-read after `ttl` (AWS_ERR_TTL_S after a failure); a failed read keeps the last
+    good answer, and says it failed. {"res", "res_t" (when that answer was read), "err", "t"}."""
+    c = _AWS.get(name)
+    if c is None or not (0 <= now - c["t"] < (ttl if c["err"] is None else AWS_ERR_TTL_S)):
+        res, err = read()
+        prev = c or {}
+        c = _AWS[name] = {"t": now, "err": err, "res": res if res is not None else prev.get("res"),
+                          "res_t": now if res is not None else prev.get("res_t")}
+    return c
+
+
+def aws_cost(now=None, http=None):
+    """Everything /server says about the AWS bill. Never raises: {"connected", "why" (when not), "role", "budget"
+    (DescribeBudgets' rows), "budget_err", "budget_t", "ce" (Cost Explorer: this month by day and by service),
+    "ce_err", "ce_t"}."""
+    now = time.time() if now is None else float(now)
+    http = http or _aws_http
+    out = {"connected": False, "why": None, "role": None, "budget": None, "budget_err": None, "budget_t": None,
+           "ce": None, "ce_err": None, "ce_t": None}
+    try:
+        keys, why = aws_role_creds(http, now)
+        if keys is None:
+            out["why"] = why
+            return out
+        out.update(connected=True, role=keys.get("role"))
+
+        def budgets():
+            d, err = _aws_call(AWS_BUDGETS_HOST, "budgets", "AWSBudgetServiceGateway.DescribeBudgets",
+                               {"AccountId": keys["account"], "MaxResults": 20}, keys, http)
+            return (_aws_budget_rows(d) if d is not None else None), err
+
+        def ce():
+            t = time.gmtime(now)
+            d, err = _aws_call(AWS_CE_HOST, "ce", "AWSInsightsIndexService.GetCostAndUsage", {
+                "TimePeriod": {"Start": "%04d-%02d-01" % (t.tm_year, t.tm_mon),
+                               "End": time.strftime("%Y-%m-%d", time.gmtime(now + 86400))},
+                "Granularity": "DAILY", "Metrics": ["UnblendedCost"],
+                "GroupBy": [{"Type": "DIMENSION", "Key": "SERVICE"}]}, keys, http)
+            return (_aws_ce_rows(d) if d is not None else None), err
+        b = _aws_cached("budget", now, AWS_BUDGET_TTL_S, budgets)
+        out.update(budget=b["res"], budget_err=b["err"], budget_t=b["res_t"])
+        c = _aws_cached("ce", now, AWS_CE_TTL_S, ce)
+        out.update(ce=c["res"], ce_err=c["err"], ce_t=c["res_t"])
+    except Exception as e:                                      # noqa: BLE001
+        log(traceback.format_exc())
+        out["why"] = out["why"] or "the AWS read failed (%s)" % str(e)[:80]
+    return out
+
+
+def aws_estimate(now):
+    """The bill worked from the price list (the AWS_* constants), shown as an ESTIMATE wherever it appears: a month, a
+    day, this month so far (since the server started, or the month began) and the whole of this month."""
+    hourly = AWS_EC2_HOURLY + AWS_IPV4_HOURLY + AWS_DISK_MONTH / AWS_HOURS_MONTH
+    t = time.gmtime(now)
+    m0 = calendar.timegm((t.tm_year, t.tm_mon, 1, 0, 0, 0))
+    m1 = calendar.timegm((t.tm_year + (1 if t.tm_mon == 12 else 0), t.tm_mon % 12 + 1, 1, 0, 0, 0))
+    start = max(m0, AWS_BILLED_FROM_EPOCH)
+    so_far = hourly * max(0.0, now - start) / 3600.0
+    return {"hourly": hourly, "month": hourly * AWS_HOURS_MONTH, "day": hourly * 24.0, "since": start,
+            "so_far": so_far, "this_month": so_far + hourly * max(0.0, m1 - max(now, start)) / 3600.0,
+            "month_name": time.strftime("%B", t), "ec2_month": AWS_EC2_HOURLY * AWS_HOURS_MONTH,
+            "ipv4_month": AWS_IPV4_HOURLY * AWS_HOURS_MONTH, "disk_month": AWS_DISK_MONTH}
+
+
+SERVER_HELP = Html("""🖥 <b>/server help: connect the AWS cost</b> (once, about 3 minutes, in the AWS console)
+
+/server reads this month's spending from AWS itself, with no stored keys: the server gets a read-only role, and the phone link asks the server's own metadata service for short-lived keys. Until then it shows the price-list estimate.
+
+<b>1. The policy</b>: IAM → Policies → Create policy → JSON, replace everything with:
+<code>{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["budgets:ViewBudget","ce:GetCostAndUsage"],"Resource":"*"}]}</code>
+→ Next → Policy name <code>kals-server-billing-read</code> → Create policy.
+<b>2. The role</b>: IAM → Roles → Create role → Trusted entity type: AWS service, Use case: EC2 → Next → tick <code>kals-server-billing-read</code> → Next → Role name <code>kals-server-billing</code> → Create role.
+<b>3. Give it to the server</b>: EC2 → Instances → tick <code>kals-bot</code> → Actions → Security → Modify IAM role → pick <code>kals-server-billing</code> → Update IAM role.
+
+Within 5 minutes /server shows "This month so far" from AWS. Nothing restarts.
+If it says access denied: sign in as the root user → your name (top right) → Account → "IAM user and role access to Billing information" → Edit → Activate. If Cost Explorer says it is not enabled: open Billing → Cost Explorer once (AWS turns it on; its numbers show within a day).
+
+What the role can do: read the budget and the cost totals, nothing else. It cannot start, stop or change anything, and the server holds no AWS key on disk.
+<i>budgets:ViewBudget is the permission behind AWS's DescribeBudgets call (there is no separate budgets:DescribeBudgets permission). DescribeBudgets is free and is read at most once an hour; Cost Explorer costs $0.01 a read, so it is read at most every 6 hours and only when /server is asked (at most about $1.20 a month).</i>""")
+
+
+def _server_pots_lines(pots, now):
+    """/server's funds: every pot from botstats' cache (cached_pots: the last read /bots, /funds or a chart made)."""
+    if not isinstance(pots, dict) or pots.get("err") or not pots.get("pots"):
+        return ["💰 <b>Funds</b>: botstats' cache could not be read%s. /funds reads every account."
+                % ((" (%s)" % esc(pots.get("err"))) if isinstance(pots, dict) and pots.get("err") else "")], None
+    ps = pots["pots"]
+    total = pots.get("total")
+    L = ["💰 <b>Funds: all pots %s</b> <i>(Kalshi, as of %s, %s ago: the last read /bots, /funds or a chart made; "
+         "nothing is read here)</i>" % (esc(dollars(total)) if total is not None else "?", esc(_et_at(pots.get("t"))),
+                                        esc(_span_words(now - pots["t"])) if pots.get("t") else "?")]
+    rows = [("Pot", "Total", "Share", "Bets")]
+    notes = []
+    for sub in sorted(ps, key=lambda s: int(s) if str(s).isdigit() else 99):
+        p = ps[sub]
+        name = FUNDS_SHORT.get(int(sub), "pot %s" % sub) if str(sub).isdigit() else str(sub)
+        v = p.get("value")
+        if v is None:
+            notes.append("%s: %s%s" % (name, p.get("why") or "not read",
+                                       ("; its cash alone %s" % dollars(p["cash"])) if p.get("cash") is not None else ""))
+        rows.append((name, "{:,.2f}".format(v) if v is not None else "?",
+                     pct_of(v, total) if v is not None and total else "-",
+                     "{:,.2f}".format(p["open"]) if p.get("open") else ("0" if p.get("open") == 0 else "?")))
+    L.append(pre(table(rows)))
+    for x in notes:
+        L.append("⚠️ " + esc(x))
+    L.append(i_("Total = cash in every pool + what the open bets cost; Share = of all pots. /funds reads them fresh, "
+                "with each pool, bet sizes and the last 7 days."))
+    return L, total
+
+
+def _server_aws_lines(aws, est, total, now):
+    L = ["☁️ <b>AWS cost</b>"]
+
+    def of_pots(x):
+        r = ret(x, total, 2) if total else ""
+        return (" = %s of all pots" % r.lstrip("+")) if r else ""
+    b = None
+    if aws.get("connected") and aws.get("budget"):
+        rows = aws["budget"]
+        b = next((r for r in rows if r["type"] == "COST" and r["period"] == "MONTHLY"), rows[0])
+    if not aws.get("connected"):
+        L.append("AWS cost: <b>not connected yet</b> (needs the read-only billing role on the server, see "
+                 "<code>/server help</code>)")
+        if aws.get("why"):
+            L.append(i_("(%s)" % aws["why"]))
+    else:
+        if b is not None:
+            lim = b["limit"]
+            L.append("This month so far: <b>%s</b>%s%s" % (
+                esc(dollars(b["actual"])), (" of the %s budget (%s)" % (esc(dollars(lim)), pct_of(b["actual"], lim)))
+                if lim and b["actual"] is not None else "", esc(of_pots(b["actual"])) if b["actual"] is not None else ""))
+            L.append("AWS's forecast for %s: %s" % (
+                esc(est["month_name"]), ("<b>%s</b>%s" % (esc(dollars(b["forecast"])), esc(of_pots(b["forecast"]))))
+                if b["forecast"] is not None else "none yet (AWS needs some weeks of history first)"))
+            L.append(i_("AWS Budgets, budget '%s'%s; AWS updates it a few times a day%s" % (
+                b["name"] or "?", (", as of %s" % _et_at(b["updated"])) if b["updated"] else "",
+                (" · %d budgets on the account" % len(aws["budget"])) if len(aws["budget"]) > 1 else "")))
+        elif aws.get("budget") == []:
+            L.append("AWS Budgets: no budget on the account yet.")
+        if aws.get("budget_err"):
+            L.append("⚠️ Budgets read: %s" % esc(aws["budget_err"]))
+        ce = aws.get("ce")
+        if ce:
+            yday = time.strftime("%Y-%m-%d", time.gmtime(now - 86400))
+            top = sorted(ce["services"].items(), key=lambda kv: -kv[1])
+            L.append("Cost Explorer: this month <b>%s</b>%s · yesterday (UTC) %s%s" % (
+                esc(dollars(ce["month"])), esc(of_pots(ce["month"])), esc(dollars(ce["days"].get(yday, 0.0))),
+                " · AWS's figures are still estimated" if ce.get("estimated") else ""))
+            if top:
+                L.append("By service: %s" % esc(", ".join("%s %s" % (AWS_SERVICE_SHORT.get(k, k), dollars(v))
+                                                         for k, v in top[:5] if abs(v) >= 0.005) or "nothing yet"))
+            if aws.get("ce_t"):
+                L.append(i_("Cost Explorer read %s ($0.01 a read: at most every 6 hours)" % _et_at(aws["ce_t"])))
+        if aws.get("ce_err"):
+            L.append("⚠️ Cost Explorer read: %s" % esc(aws["ce_err"]))
+    L.append("Estimate from the price list: about <b>%s a month</b> (%s a day)%s: Windows %s %s an hour (%s), %d GB "
+             "disk %s, public IPv4 %s; data out not counted (small; the first 100 GB a month are free)." % (
+                 esc(dollars(est["month"])), esc(dollars(est["day"])), esc(of_pots(est["month"])), AWS_INSTANCE_TYPE,
+                 esc(dollars(AWS_EC2_HOURLY)), esc(dollars(est["ec2_month"])), AWS_DISK_GB, esc(dollars(est["disk_month"])),
+                 esc(dollars(est["ipv4_month"]))))
+    L.append("%s so far, since %s: about %s · all of %s: about %s (estimates) · budget %s a month." % (
+        esc(est["month_name"]), esc(_et_at(est["since"])) + (" (the server started)" if est["since"] == AWS_BILLED_FROM_EPOCH
+                                                            else ""),
+        esc(dollars(est["so_far"])), esc(est["month_name"]), esc(dollars(est["this_month"])),
+        esc(dollars(b["limit"] if b is not None and b.get("limit") else AWS_BUDGET_USD))))
+    return L
+
+
+def server_html(m, ping, pots, aws, est, now, pin_home=None, pin_srv=None):
+    """/server's screen: the machine (machine_read), the time to Kalshi (kalshi_ping), every pot's money (botstats'
+    cache), the AWS bill (aws_cost, aws_estimate). Each part says what it could not read; none stops the others."""
+    best = min(ping["ms"]) if ping and ping.get("ms") else None
+    used = (m["mem_total"] - m["mem_avail"]) if m.get("mem_total") is not None and m.get("mem_avail") is not None else None
+    head = ["CPU %s" % _pct0(m.get("cpu")), "memory %s used" % _pct0(m.get("mem_load")),
+            "disk %s free" % _gb(m.get("disk_free")), "Kalshi %s" % (_ms(best) if best is not None else "?")]
+    L = ["🖥 <b>SERVER: %s</b>" % esc(" · ".join(head)),
+         i_("AWS EC2 in Ohio (%s) · %s: 2 vCPU, 4 GB, Windows Server 2022, %d GB disk · %s, %s · this machine: %s · %s"
+            % (AWS_AZ, AWS_INSTANCE_TYPE, AWS_DISK_GB, AWS_INSTANCE_NAME, AWS_ELASTIC_IP, m.get("host") or "?",
+               _et_at(now)))]
+    warn = []
+    if m.get("cpu") is not None and m["cpu"] >= SERVER_WARN_CPU:
+        warn.append("CPU is busy: %s" % _pct0(m["cpu"]))
+    if m.get("mem_load") is not None and m["mem_load"] >= SERVER_WARN_MEM:
+        warn.append("memory nearly full: %d%% used" % m["mem_load"])
+    if m.get("disk_free") is not None and m["disk_free"] / 1e9 < SERVER_WARN_DISK_GB:
+        warn.append("disk under %d GB free" % SERVER_WARN_DISK_GB)
+    if m.get("reboot"):
+        warn.append("%s waits for a restart" % (m.get("reboot_why") or "Windows"))
+    if ping and ping.get("err"):
+        warn.append("Kalshi: %s" % ping["err"])
+    for w in warn:
+        L.append("⚠️ <b>%s</b>" % esc(w))
+    L.append("")
+    L.append("⚙️ <b>Machine</b>")
+    rows = [("CPU now", "%s (%s cores, %.1f s)" % (_pct0(m.get("cpu")), m.get("ncpu") or "?", _f(m.get("sample_s")))),
+            ("  python", "%s · %s" % (_pct0(m.get("py_cpu")), ("%d process%s" % (m["py_n"], "" if m["py_n"] == 1 else "es"))
+                                      if m.get("py_n") is not None else "? processes")),
+            ("Memory", "%s of %s (%s)" % (_gb(used), _gb(m.get("mem_total")), _pct0(m.get("mem_load")))),
+            ("  free", _gb(m.get("mem_avail"))),
+            ("  python", _gb(m.get("py_mem"))),
+            ("Committed", "%s of %s" % (_gb(m.get("commit")), _gb(m.get("commit_limit")))),
+            ("Disk C:", "%s free of %s" % (_gb(m.get("disk_free")), _gb(m.get("disk_total"), 0))),
+            ("Up", _span_words(m["uptime_s"]) if m.get("uptime_s") is not None else "?")]
+    L.append(pre(table(rows, "ll")))
+    boot = (now - m["uptime_s"]) if m.get("uptime_s") is not None else None
+    L.append("Last boot: %s · Windows Update: %s" % (
+        esc(_et_at(boot)), "<b>a restart is waiting</b> (%s)" % esc(m.get("reboot_why") or "?") if m.get("reboot")
+        else ("no restart waiting" if m.get("reboot") is False else "could not tell (%s)" % esc(m.get("reboot_why") or "?"))))
+    if m.get("errs"):
+        L.append(i_("Could not read: %s" % "; ".join(m["errs"])))
+    L.append(i_("python = every python process (the bots, the recorders and this phone link): its share of the whole "
+                "machine and the memory it holds."))
+    L.append("")
+    if ping and ping.get("ms"):
+        L.append("⚡ <b>Kalshi: %s</b> to connect (best of %d: %s; name lookup %s), checked %s" % (
+            esc(_ms(best)), len(ping["ms"]), esc(", ".join(_ms(x) for x in ping["ms"])), esc(_ms(ping.get("dns_ms"))),
+            esc(_et_at(ping.get("t"), False))))
+    else:
+        L.append("⚡ <b>Kalshi: could not connect</b> (%s)" % esc((ping or {}).get("err") or "not checked"))
+    if pin_srv and pin_srv.get("lat_n"):
+        L.append("The pin bot's own orders here: median <b>%s</b> send to answer, %s got nothing%s · /speed" % (
+            esc(_ms(pin_srv["med_ms"])), pct1(pin_srv["zero"], pin_srv["n"]),
+            (" (home: %s, %s)" % (esc(_ms(pin_home["med_ms"])), pct1(pin_home["zero"], pin_home["n"])))
+            if pin_home and pin_home.get("lat_n") else ""))
+    L.append(i_("A bare TCP connect to %s:443 (no request is sent, so no Kalshi limit is used), at most once a minute."
+                % KALSHI_HOST))
+    L.append("")
+    fl, total = _server_pots_lines(pots, now)
+    L += fl
+    L.append("")
+    L += _server_aws_lines(aws or {}, est, total, now)
+    L.append("")
+    L.append(i_("/speed: the bots' orders, server against home · /funds: every account read fresh · /server help: "
+                "connect the AWS cost"))
+    return Html("\n".join(L))
+
+
 class Phone:
     def __init__(self, cfg, transport, ledger=None, health_fn=None, cfg_path=CONFIG, now_fn=None,
                  procs_fn=None, versions_path=None, race30_epoch=None):
@@ -3533,6 +4570,12 @@ class Phone:
         self._bars_d = None                     # /bars' gathered numbers, for its picture
         self._resend = []                       # sends the connection dropped (say -> resend_tick)
         self._resend_lock = threading.Lock()
+        # /server's readings (2026-10-27); None = the real ones: machine_read, kalshi_ping, botstats.cached_pots, and
+        # _aws_http for the metadata service and AWS. The self-test plants all four.
+        self.machine_fn = None
+        self.ping_fn = None
+        self.pots_fn = None
+        self.aws_http = None
 
     # ---- helpers ----
     @property
@@ -4784,6 +5827,46 @@ class Phone:
             return ("Could not build /funds: %s\nEverything else still works -- /bots shows each bot pot's "
                     "cash." % str(e)[:200])
 
+    # ---- /speed and /server (2026-10-27: the move to the AWS server) ----
+    def text_speed(self):
+        """/speed (operator 10-27: "Yes add speed"): did the move to the server win orders the laptop used to lose? The
+        pin bot's orders home against server, what speed added in $ (an estimate), and a line for each other bot whose
+        log allows it (speed_gather). No Kalshi read: the pin orders are the Ledger's, already in memory."""
+        try:
+            d = speed_gather(self.ledger.results, self.ledger.orders, self.now())
+            return speed_html(d, (self.ledger.bank() or {}).get("bank"))
+        except Exception as e:                                  # noqa: BLE001
+            log(traceback.format_exc())
+            return ("Could not build /speed: %s\nEverything else still works -- /fills has today's pin orders."
+                    % str(e)[:200])
+
+    def text_server(self, arg=""):
+        """/server (operator 10-27: "add server command ... add server funds and cost and spending too"): the machine,
+        the time to Kalshi, every pot's money (botstats' cache, no Kalshi read) and the AWS bill. `/server help` gives
+        the console steps that connect the AWS cost. The self-test plants every reading (machine_fn, ping_fn, pots_fn,
+        aws_http)."""
+        if arg.strip().lower() in ("help", "?", "aws", "setup"):
+            return SERVER_HELP
+        try:
+            now = self.now()
+            m = (self.machine_fn or machine_read)()
+            ping = (self.ping_fn or kalshi_ping)()
+            try:
+                pots = (self.pots_fn or _bs().cached_pots)()
+            except Exception as e:                              # noqa: BLE001
+                log(traceback.format_exc())
+                pots = {"err": str(e)[:120]}
+            aws = aws_cost(now, http=self.aws_http)
+            pins = pin_speed_orders(self.ledger.orders)
+            return server_html(m, ping, pots, aws, aws_estimate(now), now,
+                               speed_stats(_speed_win(pins, SERVER_SINCE_EPOCH - SPEED_HOME_DAYS * 86400,
+                                                      SERVER_SINCE_EPOCH)),
+                               speed_stats(_speed_win(pins, SERVER_SINCE_EPOCH, now + 1)))
+        except Exception as e:                                  # noqa: BLE001
+            log(traceback.format_exc())
+            return ("Could not build /server: %s\nEverything else still works -- /funds has every account's money."
+                    % str(e)[:200])
+
     # ---- /bars ----
     def text_bars(self):
         """Every running test against its pre-registered bar: research/bars.py's
@@ -4881,6 +5964,10 @@ class Phone:
             return self.text_bars()
         if cmd in ("/funds", "/bank", "/accounts"):
             return self.text_funds()
+        if cmd == "/speed":
+            return self.text_speed()
+        if cmd == "/server":
+            return self.text_server(arg)
         if cmd == "/pause":
             return self.control("pause")
         if cmd == "/start":
@@ -6488,7 +7575,9 @@ def selftest():
         with tempfile.TemporaryDirectory() as _tdf:
             _bp, _lp = os.path.join(_tdf, "boot_all.ps1"), os.path.join(_tdf, "ladder_live.py")
             with open(_bp, "w", encoding="utf-8") as _fh:
-                _fh.write(_ps)
+                # this temp folder's stop file, not the real results\ one (2026-10-27: since the bots moved to the
+                # server the laptop keeps real stop files, and this check read them and failed there)
+                _fh.write(_ps.replace('stop = "$res\\ladder-live.stop"', 'stop = "%s"' % os.path.join(_tdf, "ladder-live.stop")))
             with open(_lp, "w", encoding="utf-8") as _fh:
                 _fh.write("SIZE = Decimal('1')\nMAX_CONTRACTS = 10\nDAY_STOP_FRAC, COMMIT_FRAC = 0.20, 0.70\n")
             _sv_paths = globals()["BOOT_ALL"], globals()["LADDER_PY"]
@@ -7275,6 +8364,299 @@ def selftest():
        and halt_words("stop_file", "") .startswith("its stop file") and halt_words("exit", "stop file") == "it exited (stop file)"
        and halt_words("odd", "x" * 300) == ("odd " + "x" * 300)[:140],
        "a logged stop reads in plain words; an unknown one keeps its own text, one line")
+
+    # ---- /speed and /server (2026-10-27: every bot moved to the AWS server in Ohio) ----------------------------------
+    # SigV4 against AWS's own published test vectors (the aws-sig-v4 test suite, as kept in awslabs/aws-c-auth:
+    # get-vanilla, get-vanilla-query-order-key-case, and post-x-www-form-urlencoded with the body hash signed)
+    _ak, _sk, _adt = "AKIDEXAMPLE", "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY", "20150830T123600Z"
+    _sh1, _sg1 = sigv4_sign("GET", "https://example.amazonaws.com/", "us-east-1", "service", _ak, _sk, amz_date=_adt)
+    _sh2, _sg2 = sigv4_sign("GET", "https://example.amazonaws.com/?Param2=value2&Param1=value1", "us-east-1", "service",
+                            _ak, _sk, amz_date=_adt)
+    _sh3, _sg3 = sigv4_sign("POST", "https://example.amazonaws.com/", "us-east-1", "service", _ak, _sk, b"Param1=value1",
+                            {"Content-Type": "application/x-www-form-urlencoded", "Content-Length": "13"},
+                            amz_date=_adt, sign_body=True)
+    ck(_sg1 == "5fa00fa31553b73ebf1942676e86291e8372ff2a2260956d9b8aae1d763fbf31"
+       and _sh1["authorization"] == ("AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20150830/us-east-1/service/aws4_request, "
+                                     "SignedHeaders=host;x-amz-date, Signature=" + _sg1)
+       and _sg2 == "b97d918cfa904a5beff61c982a1b6f458b799221646efd99d3219ec94cdf2500"
+       and _sg3 == "d3875051da38690788ef43de4db0d8f280229d82040bfac253562e56c3f20e0b"
+       and _sh3["x-amz-content-sha256"] == "9095672bbd1f56dfc5b65f3e153adc8731a4a654192329106275f4c7b24d0b6e",
+       "SigV4 signer (hashlib + hmac, no boto3) matches AWS's published test vectors: get-vanilla, the query sorted by "
+       "key, and a signed POST body")
+    ck(SERVER_SINCE == "2026-10-27T04:20:52Z" and SERVER_SINCE_EPOCH == 1793074852 and SPEED_HOME_DAYS == 14,
+       "the move's moment is one constant (SERVER_SINCE, 00:20:52 ET 10-27); home = the 14 days before it")
+
+    _lg_sv, _aws_sv, _tails_sv = globals()["LOG"], dict(_AWS), dict(_TAILS)
+    with tempfile.TemporaryDirectory() as _tds:
+        globals()["LOG"] = os.path.join(_tds, "pinphone.log")
+        _sv = SERVER_SINCE_EPOCH
+        _srvf, _homef = "pinrun-live-20261027T042114Z.jsonl", "pinrun-live-20261018T110121Z.jsonl"
+
+        def _iso(e):
+            return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(e))
+
+        def _po(dt, tk, asked, got, ms, f=_homef):
+            return {"t": _sv + dt, "tk": tk, "filled": got, "asked": asked, "latency_ms": ms, "file": f,
+                    "status": "executed" if got else "canceled"}
+        # home (the 14 days before the move): 4 orders, 1 got nothing, 30 of 50 contracts, 40/45/50/70 ms
+        # server (from the move on): 3 orders, none empty, 35 of 40 contracts, 12/15/18 ms; the one AT the move is the
+        # server's, the one a second before it home's; 15 days back and another bot's log are left out
+        _pord = [_po(-15 * 86400, "OLD", 10, 0, 500), _po(-13 * 86400, "H4", 10, 10, 70), _po(-5 * 86400, "H3", 20, 10, 45),
+                 _po(-3 * 86400, "H2", 10, 0, 50), _po(-1, "H1", 10, 10, 40),
+                 dict(_po(-2, "CMD", 10, 0, 999), file="cmdlive-20260917T000000Z.jsonl"),
+                 _po(0, "KXA15M-X", 10, 10, 15, _srvf), _po(120, "KXB15M-X", 10, 5, 12, _srvf),
+                 _po(180, "KXC15M-X", 20, 20, 18, _srvf)]
+
+        def _wj(name, rows, mtime):
+            p_ = os.path.join(_tds, name)
+            with open(p_, "w", encoding="utf-8") as fh:
+                for r in rows:
+                    fh.write(json.dumps(r) + "\n")
+            os.utime(p_, (mtime, mtime))
+            return p_
+        # the server log's settled legs: A +20c, B +10c and its hedge -5c (= +$0.25 on the 15 contracts got in A and B);
+        # `realised` is the run's running total and must NOT be read; a leg before the move, a market not ordered on
+        # the server, and the home log's rows (written before the move) are left out; C is still open
+        _srvp = _wj(_srvf, [
+            {"kind": "start", "t": _iso(_sv + 22)},
+            {"kind": "order", "t": _iso(_sv), "ticker": "KXA15M-X", "filled": 10.0},
+            {"kind": "settled", "t": _iso(_sv - 10), "ticker": "KXA15M-X", "pnl_c": 1000.0, "realised": 10.0},
+            {"kind": "settled", "t": _iso(_sv + 900), "ticker": "KXA15M-X", "pnl_c": 20.0, "realised": 99.0},
+            {"kind": "settled", "t": _iso(_sv + 900), "ticker": "KXB15M-X", "want": "no", "pnl_c": 10.0, "realised": 99.1},
+            {"kind": "settled", "t": _iso(_sv + 915), "ticker": "KXB15M-X", "want": "yes", "pnl_c": -5.0, "realised": 99.05},
+            {"kind": "settled", "t": _iso(_sv + 930), "ticker": "KXZZZ15M-X", "pnl_c": 500.0}], _sv + 3600)
+        _wj(_homef, [{"kind": "settled", "t": _iso(_sv + 5), "ticker": "KXA15M-X", "pnl_c": 777.0}], _sv - 86400)
+        # the FX taker: home 2 orders Kalshi took (one empty), a refusal (404) left out; server 1 order at 15 ms.
+        # The coin race: one home order; no forecaster log here at all.
+        _wj("fxtake-live-orders.jsonl", [
+            {"t": _iso(_sv - 2 * 86400) + "", "kind": "placed", "status": 201, "filled": 10.0, "rtt": 0.140,
+             "body": {"ticker": "KXGOLD15M-X", "count": "10.00"}},
+            {"t": _iso(_sv - 2 * 86400 + 900), "kind": "placed", "status": 201, "filled": 0.0, "rtt": 0.150,
+             "body": {"ticker": "KXWTI15M-X", "count": "10.00"}},
+            {"t": _iso(_sv - 86400), "kind": "placed", "status": 404, "filled": 0.0, "rtt": 0.142,
+             "body": {"ticker": "KXEURUSD15M-X", "count": "10.00"}},
+            {"t": _iso(_sv - 86400), "kind": "fill", "ticker": "KXGOLD15M-X", "n": 10.0},
+            {"t": _iso(_sv + 600), "kind": "placed", "status": 201, "filled": 10.0, "rtt": 0.015,
+             "body": {"ticker": "KXGOLD15M-Y", "count": "10.00"}}], _sv + 600)
+        _wj("pinracepenny-live.jsonl", [{"kind": "live_order", "t": _iso(_sv - 86400), "ticker": "KXCRYPTOLEAD15M-X",
+                                         "count_asked": 1.0, "filled": 1.0, "status": "executed", "status_code": 201}],
+            _sv - 86400)
+        _snow = _sv + 3 * 86400                                   # the phone's clock: 3 days after the move
+        _TAILS.clear()
+        _sd = speed_gather(_tds, _pord, _snow)
+        _hs, _ss, _sm, _se = _sd["pin"]["home"], _sd["pin"]["server"], _sd["pin"]["money"], _sd["pin"]["est"]
+        ck(_hs["n"] == 4 and _hs["zero"] == 1 and _hs["got"] == 30 and _hs["asked"] == 50
+           and abs(_hs["got_share"] - 0.6) < 1e-9 and _hs["med_ms"] == 47.5 and _hs["p90_ms"] == 70
+           and _ss["n"] == 3 and _ss["zero"] == 0 and _ss["got"] == 35 and _ss["asked"] == 40
+           and abs(_ss["got_share"] - 0.875) < 1e-9 and _ss["med_ms"] == 15 and _ss["p90_ms"] == 18,
+           "/speed: home vs server split at SERVER_SINCE (an order AT the move is the server's, one a second before it "
+           "home's; 15 days back and another bot's log left out): home 4 orders, 47.5 ms median, 1 empty, 30/50 "
+           "contracts; server 3 orders, 15 ms, none empty, 35/40")
+        ck(abs(_sm["usd"] - 0.25) < 1e-9 and _sm["contracts"] == 15 and _sm["markets"] == 2 and _sm["open_contracts"] == 20
+           and abs(_sm["per"] - 0.25 / 15) < 1e-12,
+           "/speed: $ per filled contract on the server = the settled legs' pnl_c (+20c, +10c, a -5c hedge = +$0.25) "
+           "over the 15 contracts got in those markets; `realised` (the run's running total), a leg before the move, a "
+           "market not ordered there and the home log are left out; the open market's 20 contracts wait")
+        ck(abs(_se["d_share"] - 0.275) < 1e-9 and abs(_se["extra"] - 11.0) < 1e-9
+           and abs(_se["usd"] - 11.0 * 0.25 / 15) < 1e-9 and abs(_se["per_day"] - _se["usd"] / 3.0) < 1e-9,
+           "/speed's $ estimate on the planted case: (87.5% - 60%) x 40 asked on the server = 11 extra contracts, x "
+           "$0.25/15 a filled contract = +$0.1833 (+$0.0611 a day over 3 days)")
+        _st1 = speed_html(_sd, 1000.0)
+        _pt1 = P(_st1)
+        ck(_pt1.startswith("⏳ SPEED: too early to tell, 3 orders so far on the server (the bar is 50)")
+           and "(87.5% - 60.0%) x 40 asked on the server = +11 extra contracts" in _pt1
+           and "x +$0.0167 a filled contract (+$0.25 on 15 contracts in 2 markets settled on the server) = +$0.18 "
+               "(+0.02% of the main account's $1,000.00 bank)" in _pt1
+           and "extra contracts = (server got/asked - home got/asked) x contracts asked on the server; $ = extra "
+               "contracts x the $ made per filled contract on the server" in _pt1
+           and "an estimate, not a proof" in _pt1 and "⏳ Too early to tell: 3 orders so far" in _pt1
+           and "Median        48 ms  15 ms" in _pt1 and "Got nothing   25.0%     0%" in _pt1,
+           "/speed under 50 server orders says 'too early to tell, 3 orders so far', and still shows the formula, worked, "
+           "with the bank's %%: %r" % _pt1[:120])
+        ck("FX taker: home 50% got something (1 of 2 orders, 145 ms) · server 100% got something (1 of 1 order, 15 ms) "
+           "· too few on the server to tell" in _pt1
+           and "Forecaster: skipped: no log here (forecaster-live-orders.jsonl)" in _pt1
+           and "Coin race: home 100% got something (1 of 1 order) · server: no orders · its log keeps no send time" in _pt1
+           and "Ladder: skipped: its bids rest on the book" in _pt1,
+           "/speed's other bots: the FX taker home vs server (a 404 refusal left out), a missing log says so, the coin "
+           "race has no send time, the ladder is skipped and says why")
+        ck(not tg_html_problems(_st1) and fits(_st1) and len(split_html(_st1)) == 1 and "\u2014" not in _pt1,
+           "/speed: Telegram-valid, one message, no em-dash")
+        _st2 = P(speed_html(_sd, 1000.0, min_orders=3))
+        ck(_st2.startswith("⚡ SPEED: 15 ms on the server, was 48 ms at home (median, send to answer)")
+           and "Too early" not in _st2 and "About +$0.06 a day at this pace" in _st2,
+           "/speed past the bar: the headline is the two medians, and the $ a day shows")
+        _st3 = P(speed_html(speed_gather(_tds, [o for o in _pord if o["t"] < _sv], _snow), 1000.0))
+        ck(_st3.startswith("⏳ SPEED: too early to tell, no pin orders on the server yet")
+           and "Not yet: no pin orders on the server yet." in _st3,
+           "/speed with no server orders: too early, and no $ guessed")
+        # read once, then only what was added: a second gather reads no byte; a leg appended is picked up
+        _off0 = _TAILS[(_srvp, "kind", "settled")]["off"]
+        speed_gather(_tds, _pord, _snow)
+        _off1 = _TAILS[(_srvp, "kind", "settled")]["off"]
+        _sz0 = os.path.getsize(_srvp)
+        with open(_srvp, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"kind": "settled", "t": _iso(_sv + 1900), "ticker": "KXC15M-X", "pnl_c": 30.0}) + "\n")
+        os.utime(_srvp, (_sv + 3700, _sv + 3700))
+        _sd4 = speed_gather(_tds, _pord, _snow)
+        ck(_off0 == _off1 == _sz0 and _TAILS[(_srvp, "kind", "settled")]["off"] == os.path.getsize(_srvp)
+           and abs(_sd4["pin"]["money"]["usd"] - 0.55) < 1e-9 and _sd4["pin"]["money"]["contracts"] == 35,
+           "/speed reads each log once, then only the bytes added (a new settled leg: +$0.30 on C's 20 contracts)")
+        # through the phone: the paired chat, the Ledger's own orders and bank
+        _sL = Ledger(results=_tds)
+        _sL.refresh = lambda: False
+        _sL.orders = list(_pord)
+        _sL.bank = lambda: {"bank": 1000.0, "t": _snow}
+        _sclk = {"t": _snow}
+        _sph = Phone({"chat_id": 111}, FakeTelegram(), ledger=_sL, now_fn=lambda: _sclk["t"])
+        _t0 = time.time()
+        _hsp = _sph.handle(111, "/speed")
+        ck(P(_hsp).startswith("⏳ SPEED: too early to tell, 3 orders so far") and str(_hsp) == str(speed_html(
+            speed_gather(_tds, _pord, _snow), 1000.0)) and _sph.handle(333, "/speed") is None
+           and time.time() - _t0 < 2.0,
+           "/speed through handle(): the paired chat gets the page in under 2 s; a stranger gets nothing")
+
+        # ---- /server: planted machine, Kalshi, pots and AWS
+        _AWS.clear()
+        _mach = {"host": "EC2AMAZ-TEST", "ncpu": 2, "cpu": 23.4, "py_cpu": 18.2, "py_n": 14, "py_mem": 1.6e9,
+                 "mem_total": 4.0e9, "mem_avail": 1.1e9, "mem_load": 72, "commit": 3.1e9, "commit_limit": 5.2e9,
+                 "disk_free": 31.2e9, "disk_total": 53.7e9, "uptime_s": 6120.0, "reboot": False, "reboot_why": None,
+                 "sample_s": 0.5, "errs": []}
+        _pots = {"pots": {"0": {"value": 1246.86, "open": 12.30, "cash": 1234.56, "why": None, "t": _snow - 600},
+                          "1": {"value": 683.54, "open": 0, "cash": 683.54, "why": None, "t": _snow - 600},
+                          "2": {"value": None, "open": None, "cash": 129.49, "why": "the last cash read failed",
+                                "t": _snow - 600}},
+                 "total": None, "t": _snow - 600}
+        _sph.machine_fn = lambda: dict(_mach)
+        _sph.ping_fn = lambda: {"ms": [4.1, 5.2, 6.3], "dns_ms": 1.2, "ip": "1.2.3.4", "err": None, "t": _snow}
+        _sph.pots_fn = lambda: _pots
+        _awsq = []
+
+        def _no_imds(method, url, headers=None, body=None, timeout=None):
+            _awsq.append((method, url))
+            raise urllib.error.URLError("timed out")
+        _sph.aws_http = _no_imds
+        _sv1 = _sph.handle(111, "/server")
+        _pv1 = P(_sv1)
+        ck(_pv1.startswith("🖥 SERVER: CPU 23% · memory 72% used · disk 31.2 GB free · Kalshi 4.1 ms")
+           and "this machine: EC2AMAZ-TEST" in _pv1 and "CPU now   23% (2 cores, 0.5 s)" in _pv1
+           and "  python  18% · 14 processes" in _pv1 and "Memory    2.9 GB of 4.0 GB (72%)" in _pv1
+           and "Disk C:   31.2 GB free of 54 GB" in _pv1 and "Up        1 h 42 min" in _pv1
+           and "Windows Update: no restart waiting" in _pv1
+           and "Kalshi: 4.1 ms to connect (best of 3: 4.1 ms, 5.2 ms, 6.3 ms; name lookup 1.2 ms)" in _pv1
+           and "The pin bot's own orders here: median 15 ms send to answer, 0% got nothing (home: 48 ms, 25.0%)" in _pv1,
+           "/server's machine section from planted readings: CPU and the python share, memory, disk, uptime, Windows "
+           "Update, the time to Kalshi, the pin bot's own order times: %r" % _pv1[:100])
+        ck("AWS cost: not connected yet (needs the read-only billing role on the server, see /server help)" in _pv1
+           and "Estimate from the price list: about $51.45 a month ($1.69 a day)" in _pv1
+           and "Windows t3.medium $0.06 an hour ($43.80), 50 GB disk $4.00, public IPv4 $3.65" in _pv1
+           and "budget $120.00 a month" in _pv1 and _awsq == [("PUT", AWS_IMDS + "/latest/api/token")],
+           "/server with no metadata service (the call fails): AWS cost says not connected, points to /server help, and "
+           "the price-list estimate shows, labelled; one metadata call, nothing else")
+        ck("Funds: all pots ?" in _pv1 and "main+race  1,246.86" in _pv1 and "forecaster        ?" in _pv1
+           and "⚠️ forecaster: the last cash read failed; its cash alone $129.49" in _pv1,
+           "/server's funds from botstats' cache: a pot whose last read failed shows '?' and why, and no total is made up")
+        _sph.handle(111, "/server")
+        ck(len(_awsq) == 1, "/server: a missing metadata service is remembered for 5 minutes (no second call)")
+        ck(not tg_html_problems(_sv1) and fits(_sv1) and len(split_html(_sv1)) == 1 and "\u2014" not in _pv1,
+           "/server: Telegram-valid, one message, no em-dash")
+        # the role exists: IMDSv2 token -> role -> keys -> identity; then Budgets and Cost Explorer, signed
+        _AWS.clear()
+        _awsq[:] = []
+
+        def _aws_world(method, url, headers=None, body=None, timeout=None):
+            _awsq.append((method, url, dict(headers or {}), body))
+            if url == AWS_IMDS + "/latest/api/token":
+                return (200, b"TOKEN123") if method == "PUT" and headers.get(
+                    "X-aws-ec2-metadata-token-ttl-seconds") else (400, b"")
+            if url.startswith(AWS_IMDS) and (headers or {}).get("X-aws-ec2-metadata-token") != "TOKEN123":
+                return 401, b""
+            if url == AWS_IMDS + "/latest/meta-data/iam/security-credentials/":
+                return 200, b"kals-server-billing"
+            if url == AWS_IMDS + "/latest/meta-data/iam/security-credentials/kals-server-billing":
+                return 200, json.dumps({"Code": "Success", "AccessKeyId": "ASIATEST", "SecretAccessKey": "SECRETTEST",
+                                        "Token": "SESSIONTOKEN", "Expiration": _iso(_snow + 6 * 3600)}).encode()
+            if url == AWS_IMDS + "/latest/dynamic/instance-identity/document":
+                return 200, json.dumps({"accountId": "001634075101", "region": "us-east-2"}).encode()
+            tgt = (headers or {}).get("x-amz-target")
+            if url == "https://budgets.amazonaws.com/" and tgt == "AWSBudgetServiceGateway.DescribeBudgets":
+                return 200, json.dumps({"Budgets": [{"BudgetName": "kals-monthly", "BudgetType": "COST",
+                                                     "TimeUnit": "MONTHLY",
+                                                     "BudgetLimit": {"Amount": "120.0", "Unit": "USD"},
+                                                     "CalculatedSpend": {"ActualSpend": {"Amount": "1.234", "Unit": "USD"},
+                                                                         "ForecastedSpend": {"Amount": "8.4",
+                                                                                             "Unit": "USD"}},
+                                                     "LastUpdatedTime": _snow - 7200}]}).encode()
+            if url == "https://ce.us-east-1.amazonaws.com/" and tgt == "AWSInsightsIndexService.GetCostAndUsage":
+                yd = time.strftime("%Y-%m-%d", time.gmtime(_snow - 86400))
+                return 200, json.dumps({"ResultsByTime": [
+                    {"TimePeriod": {"Start": yd}, "Estimated": True, "Groups": [
+                        {"Keys": ["Amazon Elastic Compute Cloud - Compute"],
+                         "Metrics": {"UnblendedCost": {"Amount": "1.00", "Unit": "USD"}}},
+                        {"Keys": ["EC2 - Other"], "Metrics": {"UnblendedCost": {"Amount": "0.20", "Unit": "USD"}}}]}]}
+                ).encode()
+            return 404, b"{}"
+        _sph.aws_http = _aws_world
+        _pots2 = {"pots": {"0": {"value": 2000.0, "open": 0, "cash": 2000.0, "why": None, "t": _snow - 60}},
+                  "total": 2000.0, "t": _snow - 60}
+        _sph.pots_fn = lambda: _pots2
+        _mach["reboot"], _mach["reboot_why"] = True, "Windows Update"
+        _pv2 = P(_sph.handle(111, "/server"))
+        _bq = [x for x in _awsq if x[1] == "https://budgets.amazonaws.com/"]
+        _bh = _bq[0][2] if _bq else {}
+        _rh, _rsig = sigv4_sign("POST", "https://budgets.amazonaws.com/", "us-east-1", "budgets", "ASIATEST",
+                                "SECRETTEST", _bq[0][3] if _bq else b"",
+                                {"Content-Type": "application/x-amz-json-1.1",
+                                 "X-Amz-Target": "AWSBudgetServiceGateway.DescribeBudgets"}, "SESSIONTOKEN",
+                                amz_date=_bh.get("x-amz-date"))
+        ck(len(_bq) == 1 and _bh.get("authorization") == _rh["authorization"] and _bh.get("x-amz-security-token")
+           == "SESSIONTOKEN" and json.loads(_bq[0][3].decode()) == {"AccountId": "001634075101", "MaxResults": 20}
+           and "SignedHeaders=content-type;host;x-amz-date;x-amz-security-token;x-amz-target," in _bh["authorization"],
+           "/server's Budgets call: the role's short-lived keys from IMDSv2, the account from the instance's identity, "
+           "the request signed (SigV4, the session token signed too)")
+        ck("This month so far: $1.23 of the $120.00 budget (1%) = 0.06% of all pots" in _pv2
+           and "AWS's forecast for October: $8.40 = 0.42% of all pots" in _pv2
+           and "Cost Explorer: this month $1.20 = 0.06% of all pots · yesterday (UTC) $1.20" in _pv2
+           and "By service: EC2 instance $1.00, EC2 other (disk, data) $0.20" in _pv2
+           and "⚠️ Windows Update waits for a restart" in _pv2 and "a restart is waiting (Windows Update)" in _pv2
+           and "not connected" not in _pv2,
+           "/server connected: this month's spend against the budget, AWS's forecast, Cost Explorer by service, each "
+           "with its share of all pots; a waiting Windows restart is said loudly")
+        _n0 = len(_awsq)
+        _sclk["t"] = _snow + 1800
+        _sph.handle(111, "/server")
+        _n1 = len(_awsq)
+        _sclk["t"] = _snow + 3601
+        _sph.handle(111, "/server")
+        _new = [x[1] for x in _awsq[_n1:]]
+        ck(_n1 == _n0 and _new == ["https://budgets.amazonaws.com/"],
+           "/server's AWS reads are cached: nothing again inside an hour; after an hour the free Budgets read only "
+           "(Cost Explorer, $0.01 a read, waits 6 hours); the role's keys are kept until they near expiry")
+        _hl = P(_sph.handle(111, "/server help"))
+        ck(_hl.startswith("🖥 /server help: connect the AWS cost") and "IAM → Roles → Create role" in _hl
+           and "Use case: EC2" in _hl and "Role name kals-server-billing" in _hl
+           and "EC2 → Instances → tick kals-bot → Actions → Security → Modify IAM role → pick kals-server-billing" in _hl
+           and '"budgets:ViewBudget","ce:GetCostAndUsage"' in _hl and not tg_html_problems(SERVER_HELP)
+           and fits(SERVER_HELP) and "\u2014" not in _hl,
+           "/server help: the console steps (the read-only policy, the role for EC2, attaching it to kals-bot)")
+        ck("/speed" in HELP_TEXT and "/server" in HELP_TEXT and "<code>/server help</code>" in HELP_TEXT
+           and not tg_html_problems(HELP_TEXT) and fits(HELP_TEXT),
+           "/speed and /server are in /help")
+        ck(_tgc().kind_of("/speed") is None and _tgc().kind_of("/server") is None,
+           "/speed and /server send words only (no chart; /help says so)")
+    globals()["LOG"] = _lg_sv
+    _AWS.clear()
+    _AWS.update(_aws_sv)
+    _TAILS.clear()
+    _TAILS.update(_tails_sv)
+    # the real readers on this machine: Windows answers, nothing raises, and a waiting restart is a yes / no / unknown
+    _mr = machine_read(0.1)
+    _rb = reboot_pending()
+    ck(_mr["mem_total"] and _mr["disk_free"] and _mr["uptime_s"] and _mr["cpu"] is not None and 0 <= _mr["cpu"] <= 100
+       and _mr["py_n"] and _mr["py_n"] >= 1 and _mr["mem_load"] is not None and _rb[0] in (True, False, None),
+       "machine_read on this machine (ctypes, no psutil): CPU %.0f%%, memory %s%%, %s free on C:, %d python "
+       "process(es), up %s; errors: %s" % (_mr["cpu"] or -1, _mr["mem_load"], _gb(_mr["disk_free"]), _mr["py_n"] or 0,
+                                          _span_words(_mr["uptime_s"] or 0), _mr["errs"] or "none"))
     print("pinphone selftest: OK")
 
 
@@ -7302,7 +8684,7 @@ def main():
                          ("/bots", ph.text_bots), ("/pin", lambda: ph.text_bot("pin")),
                          ("/forecaster", lambda: ph.text_bot("forecaster")), ("/ladder", lambda: ph.text_bot("ladder")),
                          ("/weather", lambda: ph.text_bot("weather")), ("/fx", lambda: ph.text_bot("fx")),
-                         ("/funds", ph.text_funds)):
+                         ("/funds", ph.text_funds), ("/speed", ph.text_speed), ("/server", ph.text_server)):
             t0 = time.time()
             out = fn()
             parts = split_html(out) if getattr(out, "is_html", False) else split_text(out)
