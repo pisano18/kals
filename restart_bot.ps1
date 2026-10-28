@@ -142,8 +142,8 @@ $py = "C:\Python314\python.exe"
 # with this full argv: SELF-TEST PASSED (.sweep\q-2026-10-23\clockbug\pinrun_0925m_selftest.out).
 # REVERT: copy results\restart_bot.before-etclock.ps1 over restart_bot.ps1
 # (= v-ladderboost, C:\kals-live-0925k, 32639cccc7f1) and rerun while flat.
-$code = "C:\kals-live-0925m"
-$codeSha = "f36c427f99a5"
+$code = "C:\kals-live-0925n"
+$codeSha = "e51a465d8b5c"
 # pinrun's code_sha cannot see ordercli / pintake (0925e and 0925g shared
 # it), so the launcher checks both of them as well, before anything stops.
 $ordercliSha = "467782077a23"
@@ -208,6 +208,12 @@ $botArgs = @(
     # over all alarms, fragile (older half -$58). STOP RULE: if the first 10 jump-fired hedges net below -$50 vs what the
     # 0.40 line would have bought, remove this line. Revert: delete this line pair and rerun while flat.
     "--hedge-jump", "6",
+    # v-wrongside (2026-10-27, operator: "Implement it"; IDEA_LEDGER LS20): a FIRST buy in a 15-minute market with
+    # the index already across the strike from our side needs our side's market mid UP >= 1c over the last 5 s, or the
+    # market is skipped for that close. Record 09-08..10-27: 22 such buys lost 6 (-$247.06); with the mid rising, 47 lost
+    # 0 (+$101.60). Later legs, right-side buys, the hourly ladder and the hedge are untouched.
+    # Revert: delete this line pair and rerun while flat (or $code back to 0925m / f36c427f99a5).
+    "--wrongside-rise-c", "1.0",
     # v-skiphype (2026-10-05..10-13): HYPE was out of the universe
     # ("--skip-coin", "KXHYPE15M"; live fills 09-20..10-04: HYPE 81 markets,
     # 4 lost, -$103.12). WITHDRAWN 2026-10-13 by v-coinfrac below: HYPE is
