@@ -87,6 +87,32 @@ MAX_PER_CLOSE = 6           # per POOL (pot) and close: 10-25 the FX pairs got t
 MAX_HELD = 70.0             # never crowd out a commodity buy; both caps count each pot on its own
 DAY_STOP = -25.0
 WRITES_PER_S = 2
+STOP_LINE = -10.0            # v-fx-stopline (2026-10-27, IDEA_LEDGER LS23; operator: "do whatever needs to be done with fx.
+STOP_LINE_SINCE = "2026-10-26T06:20:27Z"   # do whatever is best"): the bot's OWN settled money since hold5 went live
+                             # (summed from its log at start, then every settle) at or under STOP_LINE writes the stop file
+                             # and stands the bot down for good -- boot_all will not relaunch it. Why: at hold5's live loss
+                             # rate (1 in ~190) it expects ~+$4/day, but the record cannot yet tell that from breakeven
+                             # (1 in 107); -$10 is ~2 losses' worth of slide from +$8.19 (197 markets, 1 lost, at 10-27
+                             # 22:4x ET), and a bot that really earns +$4/day reaches it by bad luck ~7% of the time.
+
+
+def line_pnl_from_log(path, since=None):
+    """Settled money since `since` (STOP_LINE_SINCE) in the bot's own log: the LAST settle per ticker, so a market a
+    restart books twice counts once. Unreadable lines are skipped; a missing log is 0.0."""
+    since = STOP_LINE_SINCE if since is None else since
+    last = {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    r = json.loads(line)
+                    if r.get("kind") == "settle" and str(r.get("t", "")) >= since:
+                        last[r["ticker"]] = float(r["pnl"])
+                except Exception:
+                    continue
+    except FileNotFoundError:
+        return 0.0
+    return round(sum(last.values()), 4)
 
 
 # ---------------------------------------------------------------------------------------------------- time
@@ -267,6 +293,8 @@ class Trader:
         self.inflight = {}         # ticker -> dollars committed by an unanswered order
         self.per_close = {}        # (close_s, pool) -> orders sent
         self.day, self.day_pnl, self.run_pnl = None, 0.0, 0.0
+        self.line_pnl = None       # v-fx-stopline: settled money since STOP_LINE_SINCE; None = not tracked. Only main()
+                                   # seeds it (from the log), so no test world can ever write the real stop file
         self.halt_day = None
         self.halted = None
         self.stopped = False
@@ -457,6 +485,24 @@ class Trader:
             if self.day_pnl <= DAY_STOP + 1e-9 and self.halt_day != d:
                 self.halt_day = d
                 self.log.write("day_stop", day=d, day_pnl=round(self.day_pnl, 4))
+            if self.line_pnl is None:
+                return
+            self.line_pnl += pnl
+            if STOP_LINE is not None and self.line_pnl <= STOP_LINE + 1e-9 and not self.stopped:
+                self.stand_down("stop line: $%.2f settled since %s is at or under $%.2f"
+                                % (self.line_pnl, STOP_LINE_SINCE, STOP_LINE))
+
+    def stand_down(self, why):
+        """v-fx-stopline: refuse every new order from now (the run exits once flat) and write the stop file, so neither
+        boot_all nor a restart brings the bot back until a person deletes it."""
+        self.stopped = True
+        self.log.write("stop_line", line_pnl=round(self.line_pnl, 4), stop_line=STOP_LINE, since=STOP_LINE_SINCE)
+        try:
+            with open(STOP_FILE, "w", encoding="utf-8") as f:
+                f.write("%s -- written by fxtake_live %s. Delete this file to resume.\n"
+                        % (why, datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")))
+        except Exception as e:
+            self.log.write("stop_file_write_failed", err=str(e)[:200])
 
     def forget(self, now):
         """Drop markets closed more than 20 min ago that hold nothing."""
@@ -793,6 +839,44 @@ def selftest():
     finally:
         os.remove(STOP_FILE)
         STOP_FILE = real
+    # v-fx-stopline: the log sum, then the line itself
+    tmpl = os.path.join(tempfile.gettempdir(), "fxtake-live-selftest-line-%d.jsonl" % os.getpid())
+    with open(tmpl, "w", encoding="utf-8") as f:
+        for t_, tk_, p_ in (("2026-10-25T10:00:00Z", "OLD-1", -9.91), ("2026-10-26T07:00:00Z", "A-1", 0.093),
+                            ("2026-10-26T08:00:00Z", "A-1", 0.093), ("2026-10-27T08:00:00Z", "B-1", -9.91)):
+            f.write(json.dumps({"t": t_, "kind": "settle", "ticker": tk_, "pnl": p_}) + "\n")
+        f.write("not json\n")
+        f.write(json.dumps({"t": "2026-10-27T09:00:00Z", "kind": "placed", "ticker": "C-1", "pnl": -50}) + "\n")
+    try:
+        ck(abs(line_pnl_from_log(tmpl) - (0.093 - 9.91)) < 1e-9 and line_pnl_from_log(tmpl + ".missing") == 0.0,
+           "stop line: the log sum counts settles since hold5 only, each market once, skips garbage and non-settles; "
+           "a missing log is 0 (%.4f)" % line_pnl_from_log(tmpl))
+    finally:
+        os.remove(tmpl)
+    real = STOP_FILE
+    STOP_FILE = os.path.join(tempfile.gettempdir(), "fxtake-live-selftest-line-%d.flag" % os.getpid())
+    try:
+        tr8 = Trader(log, 4, False, filled_at_cap, now=lambda: T[0])
+        tr8.line_pnl = 0.0
+        tr8.markets["L-1"] = {"close_s": now + 100, "series": "L"}; tr8.inflight["L-1"] = SIZE * CAP
+        tr8.place("L-1", "no", SIZE, {"bid": 0.98, "ask": 0.99, "offered": 50.0, "tau": 20}); tr8.settle("L-1", "yes")
+        ck(not tr8.stopped and not os.path.exists(STOP_FILE) and -9.92 < tr8.line_pnl < -9.9,
+           "stop line: from $0 one loss (%.2f) stays above -$10 and trades on" % tr8.line_pnl)
+        tr8.line_pnl = -0.5
+        tr8.markets["L-2"] = {"close_s": now + 100, "series": "L"}; tr8.inflight["L-2"] = SIZE * CAP
+        tr8.place("L-2", "no", SIZE, {"bid": 0.98, "ask": 0.99, "offered": 50.0, "tau": 20}); tr8.settle("L-2", "yes")
+        tr8.markets["L-3"] = {"close_s": T[0] + 20, "series": "L"}; tr8.books["L-3"] = tr.books["KXS015M-26OCT261015-15"]
+        ck(tr8.stopped and os.path.exists(STOP_FILE) and tr8.decide(T[0]) == []
+           and any(r["kind"] == "stop_line" for r in sent) and tr8.stop_reason(T[0]) == "stopped",
+           "stop line: at -$0.50 a loss crosses -$10 -> stands down, writes the stop file, refuses new orders")
+    finally:
+        if os.path.exists(STOP_FILE):
+            os.remove(STOP_FILE)
+        STOP_FILE = real
+    ck(STOP_LINE == -10.0 and STOP_LINE_SINCE == "2026-10-26T06:20:27Z", "stop line ships at -$10 since hold5 went live")
+    ck(Trader(log, 4, False, lambda *a: (201, {})).line_pnl is None and tr3.line_pnl is None and not tr3.stopped,
+       "stop line: a Trader main() did not seed tracks nothing (tr3 lost $39.64 and was NOT stood down), so a "
+       "self-test can never write the real stop file")
     ck(et_day(1792800000) == "2026-10-23" and et_offset_s(1792800000) == -4 * 3600 and et_offset_s(1793600000) == -5 * 3600,
        "ET day and the Nov 1 2026 clock change")
     ck(fee(10, 0.99) == 0.01 and fee(1, 0.99) == 0.01 and fee(200, 0.99) == 0.14, "fee rounds up to the cent per order")
@@ -873,13 +957,21 @@ def main():
     sub_bal = sum(v for v in cash.values() if v is not None)
     if a.live and max(v for v in cash.values() if v is not None) < SIZE * CAP:
         raise SystemExit("subaccount holds %s, under one order ($%.2f) in every pool; fund it first (ordercli --sub-fund [--sub-pool 0])" % (cash, SIZE * CAP))
+    line = line_pnl_from_log(LOG)
+    if a.live and STOP_LINE is not None and line <= STOP_LINE + 1e-9:
+        with open(STOP_FILE, "w", encoding="utf-8") as f:
+            f.write("stop line: $%.2f settled since %s is at or under $%.2f -- written at start. Delete to resume.\n"
+                    % (line, STOP_LINE_SINCE, STOP_LINE))
+        raise SystemExit("stop line: $%.2f settled since %s; stop file written" % (line, STOP_LINE_SINCE))
     log = Logger(LOG)
     tr = Trader(log, a.subaccount, a.dry_run, sender, subs=subs)
+    tr.line_pnl = line
     if a.live:
         tr.pool_cash = cash
     log.write("start", pid=os.getpid(), subaccount=a.subaccount, subs={str(p): s for p, s in sorted(subs.items())}, live=a.live, dry=a.dry_run,
               sub_balance=sub_bal, pool_cash=cash, size=SIZE, fav=FAV, cap=CAP, hold_s=HOLD_S, fast_s95=FAST_S95,
               entry_from=ENTRY_FROM, entry_to=ENTRY_TO, max_per_close=MAX_PER_CLOSE, max_held=MAX_HELD, day_stop=DAY_STOP,
+              stop_line=STOP_LINE, stop_line_since=STOP_LINE_SINCE, line_pnl=line,
               minutes=a.minutes, series=list(SERIES), argv=sys.argv)
     print("fxtake %s: subaccount %d (%s), size %d, window T-%g..T-%g s, %g minutes; log %s" % (
         "LIVE" if a.live else "dry run", a.subaccount,
