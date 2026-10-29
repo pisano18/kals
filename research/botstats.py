@@ -357,6 +357,38 @@ def window(ms, label, days=None):
             "days_down": sum(1 for v in by_day.values() if v < -0.004)}
 
 
+LONG_DAYS = 30                  # the long average day (2026-10-29): the 30 full ET days before today
+
+
+def avg_day(rows):
+    """The average FULL day over `rows` (a block's days_30 or all_bots' total_days_30; days_7[1:] works too):
+    {"days": days counted, "money": mean $ a day, "pot_pct": mean of each day's % of what its pot held THAT day (days
+    whose pot is unknown are left out of this mean only), "pct_days": days in that mean, "first": the oldest day
+    counted, "young": True when the bot's first market falls inside the span (so this is every day it has)}, or None
+    when no day counts.
+    WHICH DAYS COUNT -- the 7-day line's rule, kept the same so the two can be read side by side: every day from the
+    bot's first settled market on counts, a day with nothing settled as $0 and 0%; a day before its first market is
+    left out. Kalshi's books cannot tell a paused day from a quiet one, so a paused bot's days after its pause count as
+    $0 days here exactly as they do in its 7-day line (a pot emptied when it stopped has no known % those days, so
+    they drop out of its % mean)."""
+    ds = [r for r in rows or [] if not r.get("before_first")]
+    if not ds:
+        return None
+    pc = [r["pot_pct"] for r in ds if r.get("pot_pct") is not None]
+    return {"days": len(ds), "money": round(sum(r["money"] for r in ds) / len(ds), 4),
+            "pot_pct": round(sum(pc) / len(pc), 4) if pc else None, "pct_days": len(pc),
+            "first": min(r["day"] for r in ds), "young": any(r.get("before_first") for r in rows)}
+
+
+def avg_words(a, n=LONG_DAYS):
+    """'last 30 full days' -- or, for a bot younger than that, 'since Oct 25, 4 days' (its every full day)."""
+    if a is None:
+        return None
+    if a["young"]:
+        return "since %s, %d day%s" % (day_label(a["first"]), a["days"], "" if a["days"] == 1 else "s")
+    return "last %d full days" % n
+
+
 def windows(ms, today):
     """today / yesterday / last 7 days / this month / all time, plus the per-day lists."""
     yday = shift_day(today, -1)
@@ -379,6 +411,24 @@ def windows(ms, today):
         out["days_7"].append({"day": d, "label": day_label(d), "markets": w["markets"], "won": w["won"],
                               "lost": w["lost"], "money": w["money"], "put_in": w["put_in"],
                               "return_pct": w["return_pct"], "before_first": first is None or d < first})
+    # 2026-10-29, the operator: "For bots with 7 day average can we also add a lifetime or month average whichever is
+    # better". A 30-day one (ET days), not lifetime: the rules and bet sizes changed a lot since August, so a lifetime
+    # average describes old versions. The LONG_DAYS FULL ET days before today, newest first (today, still running,
+    # never averages itself); a day before the bot's first settled market is before_first and left out of every
+    # average, as days_7's is. attach_pots gives each its pot_pct; avg_day averages them.
+    by_day = {}
+    for m in ms:
+        if m["day"]:
+            x = by_day.setdefault(m["day"], [0, 0.0, 0.0])
+            x[0] += 1
+            x[1] += m["money"]
+            x[2] += m["put_in"]
+    out["days_30"] = []
+    for k in range(1, LONG_DAYS + 1):
+        d = shift_day(today, -k)
+        n, mo, pi = by_day.get(d, (0, 0.0, 0.0))
+        out["days_30"].append({"day": d, "markets": n, "money": round(mo, 4), "put_in": round(pi, 4),
+                               "before_first": first is None or d < first})
     out["all_days"] = []
     for d in reversed(days):
         w = window([m for m in ms if m["day"] == d], day_label(d), [d])
@@ -1149,7 +1199,8 @@ def version_of(name):
             continue
         # 2026-10-23: a heading for something that was STOPPED for good is no bot's running version (the coin race
         # showed 'v-racev2-live-test', the killed reward test); nor is a phone / PC / recorder change (INFRA_VER)
-        if re.match(r"(KILLED|STOPPED|REVERTED|DEAD)\b", rest.strip()) or re.match(INFRA_VER, vname):
+        # 2026-10-29: WITHDRAWN too (v-wrongside2 was built and withdrawn before it ran; /pin named it live)
+        if re.match(r"(KILLED|STOPPED|REVERTED|DEAD|WITHDRAWN)\b", rest.strip()) or re.match(INFRA_VER, vname):
             continue
         low = (vname + " " + rest).lower()
         # 2026-10-01: a heading that ships several bots at once ("v-race40 + v-forecaster-scale + v-ladder-size
@@ -1725,7 +1776,7 @@ def attach_pots(block, ctx, sub):
         w["pot_as_of"] = ctx.get("as_of") if pot is not None and kind == "start" else None
     # 2026-10-22: each of the 7 days as a % of what the pot held THAT day (+ money moved in that day), so an
     # average day is not divided by a later deposit (the ladder's $550 on 10-22 made its week read 0.14%/day)
-    for d in block.get("days_7") or []:
+    for d in (block.get("days_7") or []) + (block.get("days_30") or []):
         pot = day_pot(ctx, sub, d["day"])
         d["pot"] = None if pot is None else round(pot, 2)
         d["pot_pct"] = round(100.0 * d["money"] / pot, 2) if pot is not None else None
@@ -1793,7 +1844,7 @@ def _money_block(c, name, today, ctx=None):
     if not have:
         for k in ("today", "yesterday", "last_7_days", "this_month", "all_time", "first_day"):
             base[k] = None
-        base["days_7"], base["all_days"], base["markets"] = [], [], []
+        base["days_7"], base["days_30"], base["all_days"], base["markets"] = [], [], [], []
         base["error"] = base["error"] or "Kalshi has not been read yet"
         return base
     ms = [market(s) for sb, y in xs for s in (y.get("rows") or {}).values() if owner(s.get("ticker"), sb) == name]
@@ -1925,6 +1976,17 @@ def all_bots(now=None, getter=None, procs=None):
                        "pot_pct": round(100.0 * mo / pot, 2) if pot else None,
                        "by_bot": {b: x["money"] for b, x in by.items()},
                        "by_bot_pot_pct": {b: x.get("pot_pct") for b, x in by.items()}})
+    # the LONG_DAYS full days before today, every bot together (avg_day's rule: a day before the first market on ANY
+    # pot's books is left out); each day's % is of what all the pots held when it began (day_pot, the days_7 base)
+    firsts = [m.get("first_day") for _b, m in parts if m.get("first_day")]
+    days_30 = []
+    for k in range(1, LONG_DAYS + 1):
+        d = shift_day(today, -k)
+        mo = round(sum(x["money"] for _b, m in parts for x in m.get("days_30") or [] if x["day"] == d), 4)
+        pot = None if missing else day_pot(ctx, None, d)
+        days_30.append({"day": d, "money": mo, "pot": None if pot is None else round(pot, 2),
+                        "pot_pct": round(100.0 * mo / pot, 2) if pot else None,
+                        "before_first": not firsts or d < min(firsts)})
     bal = {"main": bots["pin"]["balance"]["dollars"], "forecaster": bots["forecaster"]["balance"]["dollars"],
            "ladder": bots["ladder"]["balance"]["dollars"], "weather": bots["weather"]["balance"]["dollars"],
            "fx": bots["fx"]["balance"]["dollars"]}
@@ -1938,6 +2000,7 @@ def all_bots(now=None, getter=None, procs=None):
     errors = [("%s: %s" % (b, e)) for b in BOTS for e in bots[b]["errors"]]
     return {"as_of_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)), "as_of_et": et_clock(now),
             "today_et": today, "bots": bots, "other": other, "total": total, "total_days_7": days_7,
+            "total_days_30": days_30,
             "balances": bal, "note": note, "errors": sorted(set(errors)), "pot_check": pot_check(ctx),
             "pots_as_of": ctx.get("as_of")}
 
@@ -2441,6 +2504,28 @@ def selftest():
         ck(len(pm["days_7"]) == 7 and pm["days_7"][0]["day"] == "2026-09-30" and pm["days_7"][6]["day"] == "2026-09-24"
            and abs(pm["days_7"][6]["money"] - 0.18) < 1e-6 and pm["days_7"][3]["markets"] == 0,
            "the per-day list is 7 ET days newest first, empty days kept as empty (not dropped)")
+        _a30 = avg_day(pm["days_30"])
+        ck(len(pm["days_30"]) == LONG_DAYS and pm["days_30"][0]["day"] == "2026-09-29"
+           and pm["days_30"][-1]["day"] == "2026-08-31" and not any(d["before_first"] for d in pm["days_30"])
+           and abs(sum(d["money"] for d in pm["days_30"]) - (pm["all_time"]["money"] - pm["today"]["money"])) < 1e-6
+           and _a30["days"] == 30 and not _a30["young"] and abs(_a30["money"] - (-7.82 / 30)) < 1e-4
+           and avg_words(_a30) == "last 30 full days" and len(a["total_days_30"]) == LONG_DAYS
+           and abs(sum(d["money"] for d in a["total_days_30"]) - sum(d["money"] for b_ in BOTS
+                                                                    for d in a["bots"][b_]["money"]["days_30"])
+                   - sum(d["money"] for d in a["other"]["days_30"])) < 1e-6,
+           "2026-10-29, the 30-day average day: days_30 = the 30 FULL ET days before today (Sep 29 back to Aug 31, today "
+           "left out), together every market but today's (-$7.82, so %s a day); all_bots' total_days_30 adds every "
+           "bot and other day by day" % usd(_a30["money"]))
+        _ym = [{"ticker": "KXGOLD15M-X-%d" % k, "what": "x", "day": d_, "t": 0, "side": "yes", "contracts": 1.0,
+                "money": v_, "put_in": 1.0, "fees": 0.0} for k, (d_, v_) in enumerate(
+                    (("2026-09-26", 0.5), ("2026-09-28", 0.25), ("2026-09-30", 9.0)))]
+        _yw = windows(_ym, "2026-09-30")
+        _y30 = avg_day(_yw["days_30"])
+        ck(_y30 == {"days": 4, "money": 0.1875, "pot_pct": None, "pct_days": 0, "first": "2026-09-26", "young": True}
+           and avg_words(_y30) == "since Sep 26, 4 days" and _yw["days_30"][0]["day"] == "2026-09-29"
+           and _yw["days_30"][0]["markets"] == 0 and _yw["days_30"][3]["money"] == 0.5,
+           "a bot younger than 30 days (first market Sep 26) averages its 4 full days, the quiet Sep 27 and 29 at $0 "
+           "and today's $9 left out, and says so: '%s' (%s a day)" % (avg_words(_y30), usd(_y30["money"])))
         ck(race["money"]["today"]["markets"] == 2 and abs(race["money"]["today"]["money"] - (-4.44)) < 1e-6
            and race["money"]["today"]["lost"] == 1,
            "race today -$4.44: the tie pays 50c a contract ($5 on 10 NO), a -$4.81 loss, not -$9.81")

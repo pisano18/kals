@@ -2247,6 +2247,9 @@ def bs_money_html(m, unit="market", goal=None):
     avg = bs_avg_day_line(m, goal)
     if avg:
         L.append(avg)
+    avg30 = bs_avg30_line(m, goal)
+    if avg30:
+        L.append(avg30)
     if not any(m[k] and m[k]["pot_pct"] is not None for k in BS_WINDOWS if m[k] and m[k]["markets"]):
         note = _bs()._pot_note(m)
         if note:
@@ -2277,6 +2280,66 @@ def bs_avg_day_line(m, goal=None):
                                                     sum(d["pot_pct"] >= goal for d in ds), len(ds),
                                                     esc(bs.pot_pct_txt(goal).lstrip("+")))
     return txt
+
+
+def bs_avg30_line(m, goal=None):
+    """'📈 Average day, last 30 full days: +2.1% of its bank (+$27.40 a day)' -- the 7-day line's long twin (2026-10-29,
+    operator: "can we also add a lifetime or month average whichever is better"): botstats.avg_day over its days_30,
+    the 30 FULL ET days before today, each day's money as a % of what the bank held that day. Same day rule as the
+    7-day line: days from its first market on count, a quiet (or paused) day as 0; a bot younger than 30 days averages
+    every day it has and says so ('since Oct 25, 4 days'). None when no day counts."""
+    bs = _bs()
+    if not hasattr(bs, "avg_day"):
+        return None
+    a = bs.avg_day(m.get("days_30"))
+    if a is None:
+        return None
+    pc = a["pot_pct"]
+    txt = "📈 <b>Average day, %s: %s</b>" % (
+        esc(bs.avg_words(a)), esc("%s of its bank" % bs.pot_pct_txt(pc)) if pc is not None else "% of its bank unknown")
+    txt += " (%s a day)" % esc(usd(a["money"]))
+    if pc is not None and a["pct_days"] < a["days"]:
+        txt += " · %% over the %d days its bank is known" % a["pct_days"]
+    if goal is not None and pc is not None:
+        ds = [d for d in m["days_30"] if not d.get("before_first") and d.get("pot_pct") is not None]
+        txt += " · %d of %d days at %s+" % (sum(d["pot_pct"] >= goal for d in ds), len(ds),
+                                           esc(bs.pot_pct_txt(goal).lstrip("+")))
+    return txt
+
+
+def bots_avg_table(a):
+    """/days and /bots: the average FULL day of the last 30 (botstats.avg_day over each bot's days_30 and over
+    total_days_30 for ALL), bot by bot: $ a day and the mean of its days' % of its own pot (ALL: of every pot). A bot
+    younger than 30 days averages every day it has and is starred. A stopped bot with nothing settled in the 30 days,
+    and 'other' without a market in them, are left out. Html lines; [] when no day counts."""
+    bs = _bs()
+    if not hasattr(bs, "avg_day") or not a.get("total_days_30"):
+        return []
+    rows, young = [("Bot", "a day", "of bank", "Days")], []
+
+    def cells(name, x):
+        if x["young"]:
+            young.append("%s since %s" % (name, bs.day_label(x["first"])))
+        return (name, usd(x["money"]), bs.pot_pct_txt(x["pot_pct"]) if x["pot_pct"] is not None else "-",
+                "%d%s" % (x["days"], "*" if x["young"] else ""))
+    for nm in tuple(bs.BOTS) + ("other",):
+        m = a["other"] if nm == "other" else a["bots"][nm]["money"]
+        if not m.get("ok"):
+            continue
+        busy = any(d["markets"] for d in m.get("days_30") or [])
+        if not busy and (nm == "other" or _bot_parked(a["bots"].get(nm))):
+            continue
+        x = bs.avg_day(m.get("days_30"))
+        if x is not None:
+            rows.append(cells(nm, x))
+    t = bs.avg_day(a["total_days_30"])
+    if t is None or len(rows) < 2:
+        return []
+    rows.append(cells("ALL", t))
+    return ["", "📈 <b>Average day, %s</b>" % esc(bs.avg_words(dict(t, young=False))), pre(table(rows, "lrrr")),
+            i_("a day = its money on an average full ET day (today left out; a day with nothing settled counts $0) · "
+               "of bank = the average of each day's share of its pot that day (ALL = every pot) · Days = days counted"
+               + ("; * every day it has: %s" % ", ".join(young) if young else ""))]
 
 
 def bs_headline(w, whose="of its bank", who="", goal=None, when="today"):
@@ -2450,6 +2513,7 @@ def bs_all_html(a):
         L.append("")
         L.append("📊 <b>Last 7 days, by bot</b>")
         L.append(pre(table(rows, "lrrrl")))
+    L += bots_avg_table(a)
     L.append("")
     parked = []
     for name in bs.BOTS:
@@ -4832,6 +4896,16 @@ class Phone:
                 gap = w["money"] - avg
                 more.append("the %d days before averaged %s a day%s, so this day was %s %s average" % (
                     n, usd(avg), share(avg), dollars(abs(gap)), "above" if gap >= 0 else "below"))
+        # 2026-10-29: the 30-day average beside the 7-day one, the same rule (all_bots_avg_before: a quiet day counts $0,
+        # days before the first market on any pot are left out -- so fewer than 30 only while the books are younger)
+        avg30, n30 = all_bots_avg_before(a, day, bs.LONG_DAYS) if hasattr(bs, "LONG_DAYS") else (None, 0)
+        if avg30 is not None and n30 > n:
+            if key == "today":
+                more.append("%d-day average %s a day%s" % (n30, usd(avg30), share(avg30)))
+            elif w["markets"]:
+                gap = w["money"] - avg30
+                more.append("the %d days before averaged %s a day%s, %s %s that" % (
+                    n30, usd(avg30), share(avg30), dollars(abs(gap)), "above" if gap >= 0 else "below"))
         if more:
             L.append("")
             L.append("📈 " + esc(" · ".join(more)))
@@ -4856,10 +4930,13 @@ class Phone:
 
             def sh(x):
                 return (" (%s)" % b_.pot_pct_txt(100.0 * x / base)) if base else ""
-            return "%s <b>%s</b>: %s%s so far vs %s%s by %s on an average day (last %d)" % (
+            # 2026-10-29: the 30-day average day at the same clock after the 7-day one (ahead / behind stays the 7-day's)
+            _sf30, avg30, n30 = T.by_now(rows, b_, day, now, getattr(b_, "LONG_DAYS", 0))
+            more = (" · last %d: %s%s" % (n30, usd(avg30), sh(avg30))) if avg30 is not None and n30 > n else ""
+            return "%s <b>%s</b>: %s%s so far vs %s%s by %s on an average day (last %d)%s" % (
                 "📈" if ahead else "📉", "Ahead of pace" if ahead else "Behind pace", esc(usd(so_far)), esc(sh(so_far)),
                 esc(usd(avg)), esc(sh(avg)),
-                esc(et_str(b_.day_start(day) + (max(0.0, now - b_.day_start(day)) // 900) * 900)), n)
+                esc(et_str(b_.day_start(day) + (max(0.0, now - b_.day_start(day)) // 900) * 900)), n, esc(more))
         except Exception:                                       # noqa: BLE001
             log(traceback.format_exc())
             return None
@@ -4952,6 +5029,7 @@ class Phone:
             tbl = bots_window_table(a, "last_7_days", "7 days")
             if tbl:
                 out += ["", "📊 <b>Last 7 days, by bot</b>"] + tbl
+            out += bots_avg_table(a)
             det = ["%s: <b>%s</b> (%s of the bank) · %d of %d closes lost" % (
                 esc(bs.day_label(d)), esc(usd(v)), esc(pct(r)), lost, closes) for d, v, r, lost, closes in main]
             if det:
@@ -6336,6 +6414,56 @@ def selftest():
        and tg_html_problems("&nbsp;") and tg_html_problems("<b>x</i>"),
        "tg_html_problems(): Telegram's rules -- a raw <, pre/code inside a quote or a bold, an unclosed or "
        "unknown tag, an unknown entity, a tag closed out of order")
+    # ---- the 30-day average day (2026-10-29), beside the 7-day one, which must not move -----------------------------
+    _bsx = _bs()
+    _td = "2026-10-29"
+    _d7 = [{"day": _bsx.shift_day(_td, -k), "money": 9.0 if k == 0 else 1.0, "pot_pct": p_, "before_first": False}
+           for k, p_ in enumerate((9.0, 1.0, 2.0, 0.0, 1.5, 0.5, 1.0))]
+    _d30 = [{"day": _bsx.shift_day(_td, -k), "markets": 1, "money": 5.0 if k <= 10 else 2.0,
+             "pot_pct": 2.5 if k <= 10 else 1.0, "before_first": False} for k in range(1, 31)]
+    _m30 = {"days_7": _d7, "days_30": _d30}
+    ck(bs_avg_day_line(_m30) == "📈 <b>Average day, last 6 full days: +1.0% of its bank</b>"
+       and bs_avg_day_line(_m30, 1.0) == ("📈 <b>Average day, last 6 full days: +1.0% of its bank</b> (goal 1.0%) · "
+                                          "4 of 6 days at 1.0%+"),
+       "the 7-day line is unchanged by the 30-day one: today left out, 6 full days, mean of each day's %% (%s)"
+       % bs_avg_day_line(_m30))
+    _a30 = _bsx.avg_day(_d30)
+    ck(_a30 == {"days": 30, "money": 3.0, "pot_pct": 1.5, "pct_days": 30, "first": "2026-09-29", "young": False}
+       and bs_avg30_line(_m30) == "📈 <b>Average day, last 30 full days: +1.5% of its bank</b> (+$3.00 a day)"
+       and bs_avg30_line(_m30, 1.0).endswith(" · 30 of 30 days at 1.0%+"),
+       "the 30-day line: the 30 full days before today, $ a day = (10 x 5 + 20 x 2) / 30, %% = the mean of each "
+       "day's %% of its bank (10 x 2.5 + 20 x 1.0) / 30; the ladder's goal count over the same days: %s"
+       % bs_avg30_line(_m30, 1.0))
+    _young = [dict(d, before_first=k >= 4, markets=0 if k >= 4 else 1, money=0.0 if k >= 4 else d["money"])
+              for k, d in enumerate(_d30)]
+    _young[2] = dict(_young[2], markets=0, money=0.0, pot_pct=0.0)                 # a quiet day after its first: $0, 0%
+    _young[3] = dict(_young[3], pot_pct=None)                                      # its first day's bank unknown
+    _ay = _bsx.avg_day(_young)
+    ck(_ay["days"] == 4 and _ay["young"] and _ay["first"] == "2026-10-25" and abs(_ay["money"] - 15.0 / 4) < 1e-9
+       and abs(_ay["pot_pct"] - 5.0 / 3) < 1e-3 and _ay["pct_days"] == 3
+       and bs_avg30_line({"days_30": _young}) == ("📈 <b>Average day, since Oct 25, 4 days: +1.7% of its bank</b> "
+                                                  "(+$3.75 a day) · % over the 3 days its bank is known"),
+       "a bot younger than 30 days (first market Oct 25): every day it has, labelled 'since Oct 25, 4 days'; a quiet "
+       "day after its first counts $0 and 0%%; a day whose bank is unknown leaves only the %% mean: %s"
+       % bs_avg30_line({"days_30": _young}))
+    ck(_bsx.avg_day([dict(d, before_first=True) for d in _d30]) is None and bs_avg30_line({"days_30": []}) is None,
+       "no day on its books in the 30 -> no 30-day line")
+    _run = {"alive": True, "stop_flag": False}
+    _opn = {"ok": True, "count": 0}
+    _aa = {"bots": {b_: {"running": _run, "open": _opn, "money": {"ok": True, "days_30": _young if b_ == "fx" else _d30,
+                                                                    "last_7_days": {"markets": 1}}}
+                    for b_ in _bsx.BOTS},
+           "other": {"ok": True, "days_30": [dict(d, markets=0, money=0.0) for d in _d30]},
+           "total_days_30": _d30}
+    _tb = bots_avg_table(_aa)
+    _tl = html_to_plain(Html("\n".join(_tb))).split("\n")
+    ck(_tl[1] == "📈 Average day, last 30 full days" and _tl[2].split() == ["Bot", "a", "day", "of", "bank", "Days"]
+       and _tl[3].split() == ["pin", "+$3.00", "+1.5%", "30"] and _tl[-2].split() == ["ALL", "+$3.00", "+1.5%", "30"]
+       and any(x_.split() == ["fx", "+$3.75", "+1.7%", "4*"] for x_ in _tl) and not any(x_.startswith("other") for x_ in _tl)
+       and "* every day it has: fx since Oct 25" in _tl[-1] and max(len(x_) for x_ in _tl[2:-1]) <= 40
+       and not tg_html_problems(Html("\n".join(_tb))),
+       "/days and /bots: the 30-day table, a row a bot and ALL, the young FX taker starred with its first day, "
+       "'other' with nothing in the 30 days left out, <= 40 characters wide, Telegram-valid")
     # log() NEVER RAISES: boot_all redirects stdout to a file, which on this box is cp1252 and cannot hold an
     # emoji. Before 2026-10-18 the raise came out of say() after the send and out of poll_once() before
     # Telegram heard the update was handled -- the process died and its restart answered the command again.

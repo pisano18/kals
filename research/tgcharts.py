@@ -8,9 +8,10 @@ WHAT EACH COMMAND GETS (one PNG, sent by pinphone with sendPhoto after the text)
   /today /yesterday        every bot's running total market by market on the ET clock (each losing market marked
                            and named by its bot and $; the title line gives each bot's money that day; /today has
                            yesterday beside it in grey); orange dashes = the average day of the 7 days before
-                           (10-23); right axis = the same dollars as % of all pots at the start of the day
-  /days /brief /summary    every ET day: $ bars, % of the bank bars (each with its 7-day average line), the
-                           running total ($ and % of money put in)
+                           (10-23), slate dash-dots = of the 30 days before (10-29); right axis = the same dollars as
+                           % of all pots at the start of the day
+  /days /brief /summary    every ET day: $ bars, % of the bank bars (each with its 7-day and 30-day average
+                           lines), the running total ($ and % of money put in)
   /stats                   every bot, one colour a bot (10-26): $ each day stacked by bot, the day's net as % of all
                            pots, each bot's running total (the small bots again on their own scale). The main
                            account's old picture (with won % against break-even) when botstats cannot be read
@@ -65,6 +66,9 @@ WINDOW_DAYS = 45                        # day-by-day pictures show this many day
 # colours (the dataviz reference palette, light surface)
 SURF, INK, INK2, MUTED, GRID, AXIS = "#fcfcfb", "#0b0b0b", "#52514e", "#898781", "#e1e0d9", "#c3c2b7"
 BLUE, ORANGE, GREY = "#2a78d6", "#eb6834", "#b4b2a9"
+# the 30-day average line (2026-10-29): a cool slate, muted (saturation under 0.25, so it reads as a grey, never as the
+# pin bot's blue), drawn dash-dot; not red or green (money) and not a BOT_COLOUR
+AVG30 = "#6e7f8d"
 UP, DOWN = "#0ca30c", "#d03b3b"
 UP_T, DOWN_T, MID_T = "#d7efd7", "#f6d9d9", "#efeee9"
 
@@ -354,20 +358,29 @@ def ledger_days(led):
 # a calendar day inside that span with nothing settled counts as $0; days before the first day on the books are
 # left out (so the first week averages the days there are) ------------------------------------------------------
 AVG_DAYS = 7
+# 2026-10-29, the operator: "For bots with 7 day average can we also add a lifetime or month average whichever is better.
+# And I think more charts may benefit from history averages too". 30 ET days, not lifetime: the bots' rules and sizes
+# changed a lot since August. Every chart with a 7-day line gets a 30-day one beside it, by the SAME rule (the days
+# BEFORE the day drawn, a quiet day $0, days before the first on the books left out -- so a young bot's '30-day' is
+# every day it has, and the key says how many). botstats.LONG_DAYS is the words' copy of this number.
+LONG_DAYS = 30
 
 
 def prev_day(day):
-    return et_day(et_day_start(day) - 3600)
+    """The ET day before `day`, by the calendar. 2026-10-29: it was et_day(et_day_start(day) - 3600), which never left
+    2026-11-01 (the 25-hour day the clocks go back: et_day_start puts its midnight an hour late), so from Nov 2 every
+    7-day line would have counted Nov 1 over and over instead of the days before it."""
+    return (_dt.date.fromisoformat(day) - _dt.timedelta(days=1)).isoformat()
 
 
-def day_avg(led, day):
-    """The average day of the AVG_DAYS ET days before `day`, close by close on the ET clock:
+def day_avg(led, day, n=AVG_DAYS):
+    """The average day of the n (AVG_DAYS) ET days before `day`, close by close on the ET clock:
     ([(seconds after midnight ET, mean running $)] on a 15-minute grid, days averaged) -- ([], 0) when none."""
     listed = led.days()
     if not listed:
         return [], 0
     ds, d = [], day
-    for _ in range(AVG_DAYS):
+    for _ in range(n):
         d = prev_day(d)
         if d >= listed[0]:
             ds.append(d)
@@ -389,16 +402,16 @@ def day_avg(led, day):
     return [(g, sum(at(c, g) for c in curves) / len(curves)) for g in grid], len(ds)
 
 
-def avg_by_day(vals, days):
-    """{day: mean of `vals` (a {day: number} dict) over that day and the AVG_DAYS-1 calendar days before it}, for
-    each of `days` (sorted ET days); a day missing from `vals` counts as 0; days before min(vals) are left out."""
+def avg_by_day(vals, days, n=AVG_DAYS):
+    """{day: mean of `vals` (a {day: number} dict) over that day and the n-1 (AVG_DAYS-1) calendar days before it},
+    for each of `days` (sorted ET days); a day missing from `vals` counts as 0; days before min(vals) are left out."""
     if not vals:
         return {}
     first = min(vals)
     out = {}
     for day in days:
         span, d = [], day
-        for _ in range(AVG_DAYS):
+        for _ in range(n):
             if d < first:
                 break
             span.append(vals.get(d, 0.0))
@@ -589,29 +602,32 @@ def chart_day(ctx, which):
             ax.step([etdt(d0)] + [etdt(d0 + s) for s, _c in ypts] + [etdt(d0 + 86400)],
                     [0.0] + [c for _s, c in ypts] + [ypts[-1][1]], where="post", color=GREY, lw=1.6,
                     label="Yesterday %s" % usd(ypts[-1][1]), zorder=2)
-    ds, d = [], day
-    for _ in range(AVG_DAYS):
-        d = bs.shift_day(d, -1)
-        if first is not None and d >= first:
-            ds.append(d)
-    if ds:
+    def at(c, g):
+        v = 0.0
+        for s, y in c:
+            if s > g:
+                break
+            v = y
+        return v
+    n7 = 0
+    for n_, col, ls in ((AVG_DAYS, ORANGE, "--"), (LONG_DAYS, AVG30, "-.")):
+        ds, d = [], day
+        for _ in range(n_):
+            d = bs.shift_day(d, -1)
+            if first is not None and d >= first:
+                ds.append(d)
+        if not ds or len(ds) <= n7:                     # the 30-day line only when it counts more days than the 7
+            continue
+        n7 = n7 or len(ds)
         cs = [curve(x)[0] for x in ds]
-
-        def at(c, g):
-            v = 0.0
-            for s, y in c:
-                if s > g:
-                    break
-                v = y
-            return v
         avg = [(g, sum(at(c, g) for c in cs) / len(cs)) for g in range(0, 86400 + 1, 900)]
         if day == today:
             by_now = at(avg, now - d0)
             alab = "Average of the last %d days %s (%s by now)" % (len(ds), usd(avg[-1][1]), usd(by_now))
         else:
             alab = "Average of the %d days before %s" % (len(ds), usd(avg[-1][1]))
-        ax.plot([etdt(d0 + g) for g, _v in avg], [v for _g, v in avg], color=ORANGE, lw=1.8, ls="--",
-                label=alab, zorder=2)
+        ax.plot([etdt(d0 + g) for g, _v in avg], [v for _g, v in avg], color=col, lw=1.8 if col == ORANGE else 1.6,
+                ls=ls, label=alab, zorder=2)
     # every bot together is the dark line (/stats' 'all bots'); blue is the pin bot's own colour now (10-26)
     ax.step(X, Y, where="post", color=INK, lw=2.2, label="%s %s" % (label, usd(net)), zorder=3)
     named = sorted(sorted(lost, key=lambda x: x[2])[:LOSS_NAMES], key=lambda x: x[0])
@@ -642,9 +658,9 @@ def chart_day(ctx, which):
                                                     won, len(ms)))
     cap = ("%s: every bot's money market by market (pin, coin race, forecaster, ladder, FX taker; Kalshi's books, every pot; "
            "a market counts on the ET day it closed). By bot: %s. Red dots: a losing market, named by its bot. Orange "
-           "dashes: the average day of the %d days before, on the same clock. Right axis: the same dollars as %% of all "
-           "pots at the start of the ET day.%s" % (
-               label, by_bot, AVG_DAYS, (" PARTIAL: leaves out %s (Kalshi could not be read)." % ", ".join(missing)) if missing else ""))
+           "dashes: the average day of the %d days before, on the same clock; slate dash-dots: of the %d days before. "
+           "Right axis: the same dollars as %% of all pots at the start of the ET day.%s" % (
+               label, by_bot, AVG_DAYS, LONG_DAYS, (" PARTIAL: leaves out %s (Kalshi could not be read)." % ", ".join(missing)) if missing else ""))
     return png(fig), cap
 
 
@@ -672,8 +688,12 @@ def chart_day_main(ctx, which):
             ax.step([etdt(d0)] + [etdt(k + sh) for k, _c, _v in ypts] + [etdt(d0 + 86400)],
                     [0.0] + [c for _k, c, _v in ypts] + [ypts[-1][1]], where="post", color=GREY, lw=1.6,
                     label="Yesterday %s" % usd(ypts[-1][1]), zorder=2)
-    avg, navg = day_avg(led, day)
-    if avg:
+    n7 = 0
+    for n_, col, ls in ((AVG_DAYS, ORANGE, "--"), (LONG_DAYS, AVG30, "-.")):
+        avg, navg = day_avg(led, day, n_)
+        if not avg or navg <= n7:                       # the 30-day line only when it counts more days than the 7
+            continue
+        n7 = n7 or navg
         if day == today:
             by_now = avg[0][1]
             for g, v in avg:
@@ -683,8 +703,8 @@ def chart_day_main(ctx, which):
             alab = "Average of the last %d days %s (%s by now)" % (navg, usd(avg[-1][1]), usd(by_now))
         else:
             alab = "Average of the %d days before %s" % (navg, usd(avg[-1][1]))
-        ax.plot([etdt(d0 + g) for g, _v in avg], [v for _g, v in avg], color=ORANGE, lw=1.8, ls="--",
-                label=alab, zorder=2)
+        ax.plot([etdt(d0 + g) for g, _v in avg], [v for _g, v in avg], color=col, lw=1.8 if col == ORANGE else 1.6,
+                ls=ls, label=alab, zorder=2)
     ax.step(X, Y, where="post", color=BLUE, lw=2.2, label="%s %s" % (label, usd(s["net"])), zorder=3)
     lost = [(k, c) for k, c, v in pts if v < 0]
     if lost:
@@ -702,8 +722,8 @@ def chart_day_main(ctx, which):
     headline(fig, "%s %s%s · %d of %d closes won" % (label, usd(s["net"]), (" (%s of the bank)" % pctx(r, 2)) if r is not None else "",
                                                    s["won"], s["closes"]))
     cap = ("%s: the day's money close by close, Kalshi's books, main account (pin + coin race). Orange dashes: the "
-           "average day of the %d days before, on the same clock. Right axis: the same dollars as %% of the bank at "
-           "the start of the ET day." % (label, AVG_DAYS))
+           "average day of the %d days before, on the same clock; slate dash-dots: of the %d days before. Right axis: "
+           "the same dollars as %% of the bank at the start of the ET day." % (label, AVG_DAYS, LONG_DAYS))
     return png(fig), cap
 
 
@@ -791,14 +811,16 @@ def chart_days(ctx, src):
     days = [rows[i][0] for i in keep]
     nets = [rows[i][1] for i in keep]
     run = [runs[i] for i in keep]
-    lo = days[0]                                        # the % average reaches AVG_DAYS-1 days left of the picture
-    for _ in range(AVG_DAYS - 1):
+    lo = days[0]                                        # the % averages reach LONG_DAYS-1 days left of the picture
+    for _ in range(LONG_DAYS - 1):
         lo = prev_day(lo)
     b0 = {d: bank(d) for d, _v in rows if d >= lo}
     b0s = [b0[d] for d in days]
     pct_by = {d: ((100.0 * v / b0[d]) if b0[d] else 0.0) for d, v in rows if d >= lo}
     avg_net = avg_by_day(dict(rows), days)
     avg_pct = avg_by_day(pct_by, days)
+    a30_net = avg_by_day(dict(rows), days, LONG_DAYS)
+    a30_pct = avg_by_day(pct_by, days, LONG_DAYS)
     n = 4 if winrate is not None else 3
     fig, axs = fig_new(n, 3.0 * n + 1.2, sharex=True)
     xs = _bars_by_day(axs[0], days, nets, usd)
@@ -808,9 +830,27 @@ def chart_days(ctx, src):
     ap = [avg_pct.get(d) if d < today else None for d in days]
     lan = next((a for a in reversed(an) if a is not None), None)
     lap = next((a for a in reversed(ap) if a is not None), None)
+    # the 30-day line (10-29), the same rule; only where it averages more days than the 7-day one (a young record's
+    # first week would draw the two on top of each other)
+    first_d = rows[0][0]
+
+    def n_back(d, n):
+        k, e = 0, d
+        while k < n and e >= first_d:
+            k += 1
+            e = prev_day(e)
+        return k
+    a30n = [a30_net.get(d) if d < today and n_back(d, LONG_DAYS) > AVG_DAYS else None for d in days]
+    a30p = [a30_pct.get(d) if d < today and n_back(d, LONG_DAYS) > AVG_DAYS else None for d in days]
+    l30n = next((a for a in reversed(a30n) if a is not None), None)
+    l30p = next((a for a in reversed(a30p) if a is not None), None)
     if lan is not None:
         axs[0].plot([x for x, a in zip(xs, an) if a is not None], [a for a in an if a is not None], color=ORANGE,
                     lw=1.8, ls="--", zorder=4, label="%d-day average, to yesterday (%s a day)" % (AVG_DAYS, usd(lan)))
+        if l30n is not None:
+            axs[0].plot([x for x, a in zip(xs, a30n) if a is not None], [a for a in a30n if a is not None], color=AVG30,
+                        lw=1.6, ls="-.", zorder=4,
+                        label="%d-day average, to yesterday (%s a day)" % (min(LONG_DAYS, n_back(prev_day(today), LONG_DAYS)), usd(l30n)))
         legend(axs[0])
     money_axis(axs[0])
     axs[0].set_title("$ each ET day")
@@ -819,6 +859,10 @@ def chart_days(ctx, src):
     if lap is not None:
         axs[1].plot([x for x, a in zip(xs, ap) if a is not None], [a for a in ap if a is not None], color=ORANGE,
                     lw=1.8, ls="--", zorder=4, label="%d-day average, to yesterday (%+.2f%% a day)" % (AVG_DAYS, lap))
+        if l30p is not None:
+            axs[1].plot([x for x, a in zip(xs, a30p) if a is not None], [a for a in a30p if a is not None], color=AVG30,
+                        lw=1.6, ls="-.", zorder=4,
+                        label="%d-day average, to yesterday (%+.2f%% a day)" % (min(LONG_DAYS, n_back(prev_day(today), LONG_DAYS)), l30p))
         legend(axs[1])
     pct_ticks(axs[1])
     axs[1].set_title(pct_words)
@@ -860,9 +904,9 @@ def chart_days(ctx, src):
     headline(fig, head)
     cap = ("%s: %s; the last %d days drawn, the running total counts all of them. Top: each day's money; then the "
            "same day as %% of what it began with (orange dashes: the average of that day and the %d before it, "
-           "drawn to yesterday); "
+           "drawn to yesterday; slate dash-dots: of that day and the %d before it); "
            "then the running total (right axis: %% of the money put in)%s." % (
-               "/stats" if src == "stats" else "/days", src_words, len(days), AVG_DAYS - 1,
+               "/stats" if src == "stats" else "/days", src_words, len(days), AVG_DAYS - 1, LONG_DAYS - 1,
                "; bottom: won % of markets each day against the break-even win rate its prices needed"
                if winrate is not None else ""))
     return png(fig), cap
@@ -961,7 +1005,7 @@ def chart_stats(ctx):
     ax = axs[1]
     pot = {}
     lo_d = days[0]
-    for _ in range(AVG_DAYS - 1):
+    for _ in range(LONG_DAYS - 1):                      # the 30-day line reaches 29 days left of the picture
         lo_d = bs.shift_day(lo_d, -1)
     for d in days_all:
         if d >= lo_d:
@@ -972,21 +1016,23 @@ def chart_stats(ctx):
     if pv:
         ax.bar(px, pv, width=0.8, color=ups_downs(pv), zorder=3)
         note(ax, px[-1], pv[-1], "%+.2f%%" % pv[-1], dy=6 if pv[-1] >= 0 else -6, ha="right", dx=4)
-        ax_x, ax_v = [], []                             # the average of that day and the 6 before it (known days)
-        for x, d in zip(xs, days):
-            if d >= today:
-                continue
-            span_d, e = [], d
-            for _ in range(AVG_DAYS):
-                if e in pct:
-                    span_d.append(pct[e])
-                e = bs.shift_day(e, -1)
-            if span_d:
-                ax_x.append(x)
-                ax_v.append(sum(span_d) / len(span_d))
-        if ax_v:
-            ax.plot(ax_x, ax_v, color=INK2, lw=1.6, ls="--", zorder=4,
-                    label="%d-day average, to yesterday (%+.2f%% a day)" % (AVG_DAYS, ax_v[-1]))
+        for n_, col, ls in ((AVG_DAYS, INK2, "--"), (LONG_DAYS, AVG30, "-.")):
+            ax_x, ax_v = [], []                         # the average of that day and the n-1 before it (known days)
+            for x, d in zip(xs, days):
+                if d >= today:
+                    continue
+                span_d, e = [], d
+                for _ in range(n_):
+                    if e in pct:
+                        span_d.append(pct[e])
+                    e = bs.shift_day(e, -1)
+                if span_d and (n_ == AVG_DAYS or len(span_d) > AVG_DAYS):
+                    ax_x.append(x)
+                    ax_v.append(sum(span_d) / len(span_d))
+            if ax_v:
+                ax.plot(ax_x, ax_v, color=col, lw=1.6, ls=ls, zorder=4,
+                        label="%d-day average, to yesterday (%+.2f%% a day)" % (n_, ax_v[-1]))
+        if ax.get_lines():
             legend(ax)
     else:
         ax.text(0.5, 0.5, "what the pots held could not be worked out", transform=ax.transAxes, ha="center",
@@ -1039,9 +1085,9 @@ def chart_stats(ctx):
     cap = ("/stats: every bot, every pot (Kalshi's books through botstats), one colour a bot; the last %d days drawn, "
            "the totals count every day since %s. Top: each ET day's money by bot, gains up and losses down; the dark "
            "dot is the day's net over every bot. Middle: that net as %% of what all the pots held when the day began "
-           "(a day whose pots are unknown is left out); dashes: its %d-day average, to yesterday. Bottom: each bot's "
-           "running total and every bot together. All time: %s.%s" % (
-               len(days), first, AVG_DAYS, ", ".join("%s %s" % (name(b), usd(life[b])) for b in bots),
+           "(a day whose pots are unknown is left out); dashes: its %d-day average, to yesterday; slate dash-dots: its "
+           "%d-day one. Bottom: each bot's running total and every bot together. All time: %s.%s" % (
+               len(days), first, AVG_DAYS, LONG_DAYS, ", ".join("%s %s" % (name(b), usd(life[b])) for b in bots),
                (" PARTIAL: leaves out %s (Kalshi could not be read)." % ", ".join(missing)) if missing else ""))
     return png(fig), cap
 
@@ -1181,7 +1227,8 @@ def day_base(bs, pctx_, sub, day):
 
 def pace_curves(bs, pctx_, sub, ms, today, now):
     """{'today': [(hour, cum %)], 'yesterday': [...], 'avg7': [...] (the mean of the PACE_DAYS days before today,
-    on a 15-minute grid; days before the bot's first market are left out), 'n7': days averaged, 'unit': '%'}. A day
+    on a 15-minute grid; days before the bot's first market are left out), 'n7': days averaged, 'avg30' / 'n30': the
+    same over the LONG_DAYS days before today (10-29; None when it would count no more days than avg7), 'unit': '%'}. A day
     whose base is unknown is left out. When TODAY's base is unknown (no good balance read at all), every curve is
     in dollars instead ('unit': '$') -- the panel is never left blank (operator 10-23: 'the top most one was blank')."""
     dollars = day_base(bs, pctx_, sub, today) is None
@@ -1207,23 +1254,25 @@ def pace_curves(bs, pctx_, sub, ms, today, now):
         return v
     first = min((m["t"] for m in ms), default=None)
     out = {"today": curve(today), "yesterday": curve(bs.shift_day(today, -1)), "avg7": None, "n7": 0,
-           "unit": "$" if dollars else "%"}
+           "avg30": None, "n30": 0, "unit": "$" if dollars else "%"}
     if out["today"] is not None:
         out["today"].append((min(24.0, (now - bs.day_start(today)) / 3600.0), out["today"][-1][1]))
     if out["yesterday"] is not None:
         out["yesterday"].append((24.0, out["yesterday"][-1][1]))
-    days = [bs.shift_day(today, -k) for k in range(1, PACE_DAYS + 1)]
-    cs = [c for d in days if first is not None and bs.day_start(bs.shift_day(d, 1)) > first
-          for c in [curve(d)] if c is not None]
-    if cs:
-        grid = [i / 4.0 for i in range(0, 97)]
-        out["avg7"] = [(h, sum(at(c, h) for c in cs) / len(cs)) for h in grid]
-        out["n7"] = len(cs)
+    grid = [i / 4.0 for i in range(0, 97)]
+    for n_, key, nkey in ((PACE_DAYS, "avg7", "n7"), (LONG_DAYS, "avg30", "n30")):
+        days = [bs.shift_day(today, -k) for k in range(1, n_ + 1)]
+        cs = [c for d in days if first is not None and bs.day_start(bs.shift_day(d, 1)) > first
+              for c in [curve(d)] if c is not None]
+        if cs and len(cs) > out["n7"]:                   # the 30-day curve only when it counts more days than the 7
+            out[key] = [(h, sum(at(c, h) for c in cs) / len(cs)) for h in grid]
+            out[nkey] = len(cs)
     return out
 
 
 def draw_pace(ax, pc, now_h, goal=None):
-    """Today (blue, to now) over yesterday (grey) and the 7-day average day (orange dashes), as % of the bank --
+    """Today (blue, to now) over yesterday (grey), the 7-day average day (orange dashes) and the 30-day one (slate
+    dash-dots, when it counts more days than the 7), as % of the bank --
     or in dollars when the bank could not be read (pc['unit'] == '$')."""
     T = mpl()["ticker"]
     dollars = pc.get("unit") == "$"
@@ -1233,6 +1282,9 @@ def draw_pace(ax, pc, now_h, goal=None):
     if pc["avg7"]:
         ax.plot([h for h, _ in pc["avg7"]], [v for _, v in pc["avg7"]], color=ORANGE, lw=1.8, ls="--", zorder=2,
                 label="average of the last %d days (%s by now)" % (pc["n7"], f(_at_h(pc["avg7"], now_h))))
+    if pc.get("avg30"):
+        ax.plot([h for h, _ in pc["avg30"]], [v for _, v in pc["avg30"]], color=AVG30, lw=1.6, ls="-.", zorder=2,
+                label="average of the last %d days (%s by now)" % (pc["n30"], f(_at_h(pc["avg30"], now_h))))
     if pc["yesterday"]:
         ax.step([h for h, _ in pc["yesterday"]], [v for _, v in pc["yesterday"]], where="post", color=GREY, lw=1.6,
                 zorder=2, label="yesterday %s (%s by now)" % (f(pc["yesterday"][-1][1]), f(_at_h(pc["yesterday"], now_h))))
@@ -1348,9 +1400,11 @@ def chart_bot(ctx, name):
     headline(fig, "%s: all time %s%s · today %s" % (
         label, usd(at.get("money")), (" (%+.1f%% of its bank)" % at["pot_pct"]) if at.get("pot_pct") is not None else "",
         usd(td.get("money") or 0.0)))
-    cap = ("%s: every settled %s from Kalshi's books (botstats, %s), its running total and its win rate over "
-           "time (the last %d days drawn; the total counts all). Right axis: the same dollars as %% of the money put into that account." % (
-               label, "leg" if name == "race" else "market", bs.sub_name(sub), WINDOW_DAYS))
+    cap = ("%s: today's pace against yesterday and its average day of the last %d and %d days (slate dash-dots, "
+           "drawn once it has more days than the %d), every settled %s from Kalshi's books (botstats, %s), its running total and its win rate "
+           "over time (the last %d days drawn; the total counts all). Right axis: the same dollars as %% of the money put "
+           "into that account." % (label, PACE_DAYS, LONG_DAYS, PACE_DAYS, "leg" if name == "race" else "market", bs.sub_name(sub),
+                                   WINDOW_DAYS))
     return png(fig), cap
 
 
@@ -1421,10 +1475,21 @@ def chart_losses(ctx):
     for k in xs:
         if nlost[k]:
             ax.annotate("%s\n%d lost" % (usd(base[k]), nlost[k]), (k, base[k]), xytext=(0, -3),
-                        textcoords="offset points", ha="center", va="top", fontsize=8.5, color=DOWN, fontweight="bold")
+                        textcoords="offset points", ha="center", va="top", fontsize=8.5, color=DOWN, fontweight="bold",
+                        zorder=6, bbox=dict(facecolor=SURF, edgecolor="none", pad=1.5))   # over the 30-day line
         if won[k] > 0.005:
             ax.annotate(usd(won[k]), (k, won[k]), xytext=(0, 3), textcoords="offset points", ha="center", va="bottom",
                         fontsize=8.5, color=INK2)
+    # 2026-10-29 ("more charts may benefit from history averages"): what an average week lost over the last 30 FULL ET
+    # days (today left out; days before the first market left out, so a young record averages what it has), so this
+    # week's bar reads against usual. Every bot's losing markets, the bars' own rows.
+    d_hi = bs.shift_day(today, -1)
+    d_lo = max(bs.shift_day(today, -LONG_DAYS), first)
+    n30 = sum(1 for k in range(1, LONG_DAYS + 1) if bs.shift_day(today, -k) >= first)
+    if n30 > 7:
+        wk30 = 7.0 * sum(r["money"] for r in rows if d_lo <= r["day"] <= d_hi) / n30
+        ax.axhline(wk30, color=AVG30, lw=1.6, ls="-.", zorder=2.5,      # behind the bars and their words
+                   label="lost in an average week, last %d days (%s)" % (n30, usd(wk30)))
     ax.set_ylim(min(base or [0]) - 0.32 * span, max(won or [0]) + 0.45 * span)      # headroom: the key, 2 rows
     ax.set_xticks(xs)
     ax.set_xticklabels([(lambda d: d.strftime("%b ") + str(d.day))(_dt.date.fromisoformat(w))
@@ -1483,7 +1548,8 @@ def chart_losses(ctx):
     headline(fig, head)
     cap = ("Losses, every bot (Kalshi's books, every pot; colour = the bot). Top: each ET week's winning markets (green) "
            "against its losing ones (down, by bot), the newest week so far. Bottom: each loss of the last %d days on "
-           "its bot's row, circle area = dollars. Last 7 days = today and the 6 ET days before (as /losses counts "
+           "its bot's row, circle area = dollars. Slate dash-dots: what an average week lost over the 30 full ET days "
+           "before today. Last 7 days = today and the 6 ET days before (as /losses counts "
            "them); 'a week before' = the average of the 4 weeks before those.%s" % (
                LOSS_LANE_DAYS, (" Left out (Kalshi could not be read): " + ", ".join(missing) + ".") if missing else ""))
     return png(fig), cap
@@ -1865,6 +1931,26 @@ def selftest():
     ck(ab == {"2026-10-10": 7.0, "2026-10-12": 7.0, "2026-10-20": 0.0},
        "/days' 7-day line: a gap day counts $0, days before the first are left out: %s" % ab)
     ck(day_avg(Ledger(results=tempfile.gettempdir()), today) == ([], 0), "/today: nothing on the books -> no 7-day line")
+    # the 30-day lines (2026-10-29): the same rule over 30 days, so a young record averages the days it has
+    _a30, _n30 = day_avg(led, today, LONG_DAYS)
+    _listed = [x for x in led.days() if x < today]
+    ck(_n30 == len(_listed) > AVG_DAYS and abs(_a30[-1][1] - sum(nets.get(x, 0.0) for x in _listed) / _n30) < 1e-9
+       and day_avg(led, today) == (avg, navg),
+       "/today's 30-day line: every day on the books before today (%d, under 30 here), its mean day %s; the 7-day line "
+       "unchanged" % (_n30, usd(_a30[-1][1] if _a30 else None)))
+    _ab30 = avg_by_day({"2026-10-01": 30.0, "2026-10-20": 60.0}, ["2026-10-01", "2026-10-20", "2026-10-30", "2026-11-05"],
+                       LONG_DAYS)
+    ck(_ab30 == {"2026-10-01": 30.0, "2026-10-20": 4.5, "2026-10-30": 3.0, "2026-11-05": 2.0}
+       and [prev_day(x) for x in ("2026-11-02", "2026-11-01", "2026-03-09", "2026-03-01")]
+       == ["2026-11-01", "2026-10-31", "2026-03-08", "2026-02-28"]
+       and avg_by_day({"2026-10-01": 30.0, "2026-10-20": 60.0}, ["2026-11-05"]) == {"2026-11-05": 0.0},
+       "/days' 30-day line: that day and the 29 before, a gap day $0, days before the first left out (Oct 20: 90 / 20 "
+       "days; Oct 30: 90 / 30; Nov 5: the Oct 1 day has left the 30), across the Nov 1 clock change: %s" % _ab30)
+    import colorsys as _cs
+    _h30, _s30, _v30 = _cs.rgb_to_hsv(*(int(AVG30[i:i + 2], 16) / 255.0 for i in (1, 3, 5)))
+    ck(AVG30 not in BOT_COLOUR.values() and AVG30 not in (UP, DOWN, ORANGE, GREY, MUTED, INK2) and _s30 < 0.25,
+       "the 30-day line's colour %s is a muted slate (saturation %.2f): not a bot's, not the red or green of money, not "
+       "the 7-day orange" % (AVG30, _s30))
     empty = Ledger(results=tempfile.gettempdir())
     empty.deposited = lambda: None
     ck(all(build(k, {"now": now, "ledger": empty, "pp": pp}) is None for k in ("today", "yesterday", "days", "losses", "fills", "market")),
@@ -2023,6 +2109,31 @@ def selftest():
                "(%d px of its colour; %d with no market) and is named stopped: %r" % (usd(_wx), n_with, n_without,
                                                                                     got[1][:90] if got else None))
             ck(is_png(got0) and "Weather" not in got0[1], "/stats: a bot with no market at all is neither drawn nor named")
+            # the 30-day lines on the botstats pictures: drawn where the record has more days than the 7-day line
+            # averages (the planted pin bot: ~14 days), not drawn for a bot younger than that (the FX taker: ~1 day)
+            _pc_pin = pace_curves(BS, BS.pot_context(c, et_day(now)), "0",
+                                  sorted((m_ for m_ in BS._money_block(c, "pin", et_day(now))["markets"]), key=lambda m_: m_["t"]),
+                                  et_day(now), now)
+            _ms_fx = sorted(BS._money_block(c, "fx", et_day(now))["markets"], key=lambda m_: m_["t"])
+            _pc_fx = pace_curves(BS, BS.pot_context(c, et_day(now)), ("5", "4"), _ms_fx, et_day(now), now)
+            _gp, _gf = build("bot:pin", ctx3), build("bot:fx", ctx3)
+            # the planted main-account tickers all name Oct 18, so every pin and race market would close that one ET
+            # day: dated by when each settled instead, they spread over ~14 days for /losses and /stats
+            _sv0 = c["subs"]["0"]["rows"]
+            try:
+                c["subs"]["0"]["rows"] = {k_: dict(r_, ticker=r_["ticker"].replace("26OCT18", time.strftime(
+                    "%y%b%d", time.gmtime(BS._epoch(r_["settled_time"]) + pindesk.et_offset(BS._epoch(r_["settled_time"])))).upper(), 1))
+                    for k_, r_ in _sv0.items()}
+                _gl, _gs = build("losses", ctx3), build("stats", ctx3)
+            finally:
+                c["subs"]["0"]["rows"] = _sv0
+            ck(_pc_pin["avg30"] and _pc_pin["n30"] > _pc_pin["n7"] == PACE_DAYS and _pc_fx["avg30"] is None
+               and _px(_gp[0], AVG30) > 300 and _px(_gf[0], AVG30) < 30 and _px(_gl[0], AVG30) > 300
+               and _px(_gs[0], AVG30) > 300 and "30 days" in _gp[1] and "average week" in _gl[1],
+               "30-day lines (10-29): the pin bot's pace panel (%d days against the 7), /losses (an average week of the "
+               "last 30 days) and /stats draw one; the young FX taker's pace panel does not (it has no more days than "
+               "the 7-day line): %d / %d / %d / %d px" % (_pc_pin["n30"], _px(_gp[0], AVG30), _px(_gf[0], AVG30),
+                                                         _px(_gl[0], AVG30), _px(_gs[0], AVG30)))
             ck(build("bot:weather", ctx3) is None, "/weather: its stop file is set -> no picture of a stopped bot")
             procs.pop(3)
             ck(build("bot:ladder", ctx3) is None, "/ladder: not in the process table -> no picture")
