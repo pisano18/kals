@@ -16,6 +16,14 @@ Five bots trade real money from one Kalshi key, in four separate pots:
                                    2026-10-04), daily-high temperature brackets
     fx          5 (pool 2) + 4     the FX taker (research/cleanroom/fxtake_live.py, 2026-10-25): the 8 commodity
                 (pool 0)           15-minute series from 5, the 5 currency pairs from 4 (POT_POOL_ONLY)
+    jumpband    3 (cash POOL 2)    the jump band (research/cleanroom/jumpband_live.py --live, 2026-10-30): BNB HYPE ZEC
+                                   NEAR 15-minute markets. Subaccount 3's POOL 0 history is the weather dip-seller's
+                                   (POT_POOL_ONLY / POT_OWNER split the number 3 by pool and by ticker)
+
+**WHAT THE PHONE SHOWS (2026-10-30).** A bot is ACTIVE when its live copy runs (is_bot) and its stop file is absent
+(is_active / active_bots); the pin bot always is. Every per-bot place on the phone lists the active bots only; a
+paused or retired bot's past money stays in every total and, where a per-bot split must add up, sits on one line,
+'earlier bots' (all_bots' `earlier`, shown_parts / shown_by).
 
 **CASH POOLS (2026-10-04).** Kalshi keeps each pot's cash in separate pools (`exchange_index`): crypto
 and commodities in pool 2, where pots 0-2 trade; weather in pool 0, where pot 3 trades. A
@@ -105,18 +113,25 @@ PROC_STALE_S = 300              # an older process table is "could not tell", no
 PAGE = 200
 MAX_PAGES = 200                 # 40,000 settlements a pot: a runaway pager stops loudly
 POOL = 2                        # Kalshi's crypto & commodities cash pool, where pots 0-2 trade
-BOTS = ("pin", "race", "forecaster", "ladder", "weather", "fx")
+BOTS = ("pin", "race", "forecaster", "ladder", "weather", "fx", "jumpband")
 SUBS = ("0", "1", "2", "3", "4", "5")
 # the pool each pot TRADES in, whose cash /portfolio/balance is asked for (2026-10-04: the weather
 # dip-seller's KXHIGH markets are exchange_index 0; read live: sub 3 = $50.00 in pool 0, $0.00 in pool 2)
-SUB_POOL = {"0": POOL, "1": POOL, "2": POOL, "3": 0, "4": 0, "5": POOL}   # 5: the FX taker's commodities (2026-10-25), pool 2 like crypto
+SUB_POOL = {"0": POOL, "1": POOL, "2": POOL, "3": POOL, "4": 0, "5": POOL}   # 5: the FX taker's commodities (2026-10-25), pool 2 like crypto
+# v-tg-active (2026-10-30): subaccount 3 trades in POOL 2 now -- the jump band's $50 went into its pool 2 at ~05:35Z (the
+# weather dip-seller's pool 0 has held $0 since 10-15). Its cash read asks pool 2; every pool is still added for the pot.
 # 4: the FX taker's currency pairs (pool 0, created 2026-10-25 ~21:0xZ). The NUMBER 4 also names the old coin-race reward
 # test's pot in pool 2 (stopped 10-23, ~1c left), never counted here: in subaccount 4 only an FX pair is the FX taker's.
 FX_PAIRS = frozenset(["KXEURUSD15M", "KXGBPUSD15M", "KXUSDJPY15M", "KXAUDUSD15M", "KXUSDCAD15M"])
 # 2026-10-26: for a BOT's pot (its % of bank, its chart, the per-pot check) subaccount 4 is its POOL 0 only -- the money
 # moved in pool 0, its pool-0 cash, the FX pairs it settled. The pool-2 side (the old reward test: $100 in, $70.11 back,
 # lost in its races) made the FX taker's "put in" read $209.89 instead of $180. All pots together keep the whole number 4.
-POT_POOL_ONLY = {"4": 0}
+POT_POOL_ONLY = {"4": 0, "3": POOL}
+# ... and whose bets are that pot's own (pot_rows, _pot_now): subaccount 3's pool 2 is the jump band's (2026-10-30), its pool 0
+# the weather dip-seller's old $50 (in 10-04, back out 10-15). All pots together keep the whole number 3 as well.
+POT_OWNER = {"4": "fx", "3": "jumpband"}
+# the jump band's coins (jumpband_live.SLOW): in subaccount 3 a 15-minute coin market is the jump band's, a KXHIGH the weather's
+JB_SERIES = frozenset(["KXBNB15M", "KXHYPE15M", "KXZEC15M", "KXNEAR15M"])
 # the only things this file ever asks Kalshi for -- every one a GET, through `getter`
 POT_PATHS = ("/portfolio/settlements", "/portfolio/positions", "/portfolio/balance")    # each names its pot
 # account-wide LISTINGS (2026-10-02, for the pot): (path, the list's key, paged?)
@@ -168,6 +183,13 @@ SPEC = {
            "sub": "5", "also": ("4",),            # 5 = commodities (pool 2), 4 = the 5 currency pairs (pool 0), since 10-25
            "script": "fxtake_live.py", "stop": "fxtake-live.stop", "log": "fxtake-live-orders.jsonl",
            "keepalive": "boot_all.ps1 (every 10 min) restarts it unless the stop file is there"},     # since 10-26 (add_fx_keepalive.ps1)
+    # v-tg-active (2026-10-30): the jump band, live stage 1 (research/cleanroom/jumpband_live.py --live --subaccount 3, ledger
+    # LS25): its paper arm runs the same script WITHOUT --live (log jumpband-paper.jsonl) and is never this bot
+    "jumpband": {"label": "Jump band",
+                 "what": "buys the 70-90c favourite on BNB/HYPE/ZEC/NEAR when the price jumps 2+ standard deviations in "
+                         "the last minute, 5 contracts, holds to the end",
+                 "sub": "3", "script": "jumpband_live.py", "stop": "jumpband-live.stop", "log": "jumpband-live.jsonl",
+                 "keepalive": None},          # started by hand on the server (results/jb_deploy.ps1); not in boot_all
 }
 SUB_NAME = {"0": "main account", "1": "subaccount 1", "2": "subaccount 2", "3": "subaccount 3", "4": "subaccount 4",
             "5": "subaccount 5"}
@@ -191,7 +213,8 @@ def sub_name(sub):
 # what counts as sent / filled / refused / stopped in each bot's own log
 HALT_KINDS = {"pin": ("halt", "entries_stopped", "pause"), "race": ("live_halt",),
               "forecaster": ("halt", "day_stop", "run_stop"), "ladder": ("day_stop",),
-              "weather": ("day_stop", "kill", "done"), "fx": ("halt", "day_stop")}
+              "weather": ("day_stop", "kill", "done"), "fx": ("halt", "day_stop"),
+              "jumpband": ("halt", "day_stop", "stop_line")}
 
 
 # ---- clocks (ET for people, UTC inside) -------------------------------------
@@ -307,7 +330,9 @@ def owner(ticker, sub):
     if sub == "2":
         return "forecaster"
     if sub == "3":
-        return "weather"
+        # 2026-10-30: the number 3 is two pots' history -- the weather dip-seller's KXHIGH brackets (pool 0, 10-04..10-10)
+        # and the jump band's 15-minute coins (pool 2, from 10-30)
+        return "jumpband" if (series in JB_SERIES or series in pinday.CRYPTO) else "weather"
     if sub == "5":
         return "fx"
     if sub == "4":
@@ -877,7 +902,118 @@ def is_bot(name, cl):
         return False
     if "--live" not in t:
         return False
+    if name == "jumpband" and "--dry-run" in t:            # 2026-10-30: --live --dry-run sends nothing
+        return False
     return not (name == "race" and "--paper-live" in t)
+
+
+# ---- which bots the phone shows (v-tg-active, 2026-10-30) -------------------------------------------------------
+# The operator, 2026-10-30: "Make sure all commands in telegram are being updated to what bots are actually running
+# including both if one gets paused/removed/added telegram should reflect that by either showing it or not showing it.
+# So remove the paused and removed until they're added back, and show the details for the new one in any relevant
+# commands." A bot is ACTIVE when its live copy runs (is_bot: its script AND --live) AND its stop file is absent: the coin
+# race kept running with pinracepenny.stop set (it refuses every trade) and is not active; the jump band's paper arm (no
+# --live) is not the jump band. A bot that stopped ITSELF for the day (a day stop, a halt) still runs and stays shown. The
+# pin bot is always shown: /status, /pause and /start are about it. Nothing here hides money: every total keeps every
+# bot's markets, and all_bots puts a hidden bot's past money on one line, 'earlier bots'.
+ALWAYS_SHOWN = ("pin",)
+ACTIVE_TTL_S = 10               # the process table + stop files are re-read at most this often for active_bots()
+_ACTIVE = {"t": 0.0, "v": None}
+
+
+def stop_set(name):
+    """True when bot `name`'s stop file exists (False when it cannot be looked at)."""
+    try:
+        return os.path.exists(os.path.join(RESULTS, SPEC[name]["stop"]))
+    except (OSError, KeyError, TypeError):
+        return False
+
+
+def is_active(name, rows, ok):
+    """Shown on the phone? The pin bot always; any other bot when its stop file is absent and a live copy of it is in the
+    process table `rows`. A table that could not be read (ok False) hides nothing but a stop-filed bot: never hidden on a
+    failed read."""
+    if name in ALWAYS_SHOWN:
+        return True
+    if stop_set(name):
+        return False
+    if not ok or rows is None:
+        return True
+    return any(is_bot(name, r[2]) for r in rows)
+
+
+def active_from(rows, ok):
+    """The active bots, in BOTS order, from a process table already read (botstats' [pid, started, cmdline] rows)."""
+    return tuple(b for b in BOTS if is_active(b, rows, ok))
+
+
+def active_bots(procs=None, now=None):
+    """The active bots (BOTS order) for a page that does not read all_bots: `procs` as procs_for takes it -- a table the
+    caller holds, a callable, or None to read Windows here (the native read, milliseconds; when it fails, the cached
+    table if under PROC_STALE_S old, never the 30 s WMI read inside a command). Memoised ACTIVE_TTL_S. Never raises: on
+    any error every bot without a stop file is shown."""
+    try:
+        if procs is not None and not callable(procs):
+            return active_from(_norm_procs(procs), True)
+        t = time.time() if now is None else float(now)
+        if callable(procs) or _ACTIVE["v"] is None or not (0.0 <= t - _ACTIVE["t"] < ACTIVE_TTL_S):
+            if callable(procs):
+                rows = procs()
+            else:
+                try:
+                    rows = _procs_native()
+                except Exception:                                # noqa: BLE001
+                    rows = None
+                if rows is None:
+                    p = load_cache().get("procs") or {}
+                    if p.get("rows") is not None and 0.0 <= t - float(p.get("t") or 0) < PROC_STALE_S:
+                        rows = p["rows"]
+            v = active_from(None if rows is None else _norm_procs(rows), rows is not None)
+            if callable(procs):
+                return v
+            _ACTIVE.update(t=t, v=v)
+        return _ACTIVE["v"]
+    except Exception:                                            # noqa: BLE001
+        return tuple(b for b in BOTS if not stop_set(b) or b in ALWAYS_SHOWN)
+
+
+EARLIER = "earlier"             # all_bots' one line for every hidden bot's past money
+EARLIER_LABEL = "Earlier bots"
+
+
+def shown_parts(a):
+    """[(key, money block)] for a per-bot list that must add up to all_bots' totals: each ACTIVE bot, then 'earlier'
+    (every hidden bot's markets on one line) when it has a market or could not be read, then 'other'."""
+    act = a.get("active") or BOTS
+    out = [(b, a["bots"][b]["money"]) for b in act if b in a["bots"]]
+    e = a.get("earlier")
+    if e and (not e.get("ok") or (e.get("all_time") or {}).get("markets")):
+        out.append((EARLIER, e))
+    out.append(("other", a["other"]))
+    return out
+
+
+def shown_by(a, d, how="sum"):
+    """A by-bot dict of all_bots (a window's by_bot, by_bot_markets, by_bot_put_in, by_bot_pot_pct, a day's by_bot) with
+    the hidden bots folded into one 'earlier' entry: added up (how='sum'), or None (how='none', for a % of a pot, which
+    has no meaning summed over pots). Order: active bots, 'earlier', then the rest ('other')."""
+    act = set(a.get("active") or BOTS)
+    out, hid = {}, []
+    for k, v in (d or {}).items():
+        if k in SPEC and k not in act:
+            hid.append(v)
+        elif k != "other":
+            out[k] = v
+    if hid:
+        out[EARLIER] = None if how == "none" else round(sum(x or 0 for x in hid), 4)
+    if "other" in (d or {}):
+        out["other"] = d["other"]
+    return out
+
+
+def shown_name(a, name):
+    """'earlier' for a hidden bot's name (a missing pot, an error line), the name itself otherwise."""
+    return EARLIER if name in SPEC and name not in (a.get("active") or BOTS) else name
 
 
 # ---- the bots' own logs (what they DID; never money) -------------------------
@@ -1075,8 +1211,24 @@ def activity(name, since):
                     out["refused"] += 1
                     g = str(r.get("why") or k)
                     why[g] = why.get(g, 0) + 1
+            elif name == "jumpband":
+                # jumpband_live.py (2026-10-30): 'trigger' = every qualifying jump it judged, 'order' = every IOC buy sent,
+                # 'fill' = what one got ('qty' contracts), and the money refusals the order path logs by their own kind
+                if k == "trigger":
+                    triggers += 1
+                elif k == "order":
+                    out["sent"] += 1
+                    if pinledger.money(r, "filled") <= 0:
+                        out["not_filled"] += 1
+                elif k == "fill":
+                    out["filled"] += 1
+                    out["contracts_filled"] += pinledger.money(r, "qty")
+                elif k in ("no_cash", "max_cost", "refused", "order_skip", "body_refused"):
+                    out["refused"] += 1
+                    g = str(r.get("why") or k)
+                    why[g] = why.get(g, 0) + 1
             if k in HALT_KINDS[name] or k in ("stop_file", "exit"):
-                w = r.get("why") or r.get("day_pnl") or r.get("run_pnl") or ""
+                w = r.get("why") or r.get("day_pnl") or r.get("run_pnl") or _jb_why(r) or ""
                 if k == "exit" and r.get("stopped") is True and not r.get("why"):
                     w = "stop file, its run %s" % usd(_num(r.get("run_pnl")) or 0.0)
                 out["halts"].append({"t_et": et_clock(_t_of(r)), "what": k, "why": str(w)[:120]})
@@ -1088,7 +1240,23 @@ def activity(name, since):
         out["triggers"] = triggers
         out["note"] = ("%s seen today; each order rests up to 3 h and is cancelled if unfilled, by design"
                        % _n(triggers, "price-drop trigger"))
+    if name == "jumpband":
+        out["triggers"] = triggers
+        out["note"] = ("%s judged today; it buys only one whose favourite asks 70-90c with 10-60 s left, once a market"
+                       % _n(triggers, "price jump"))
     return out
+
+
+def _jb_why(r):
+    """The jump band's day_stop / stop_line record in words ('settled -$15.20 today, its day stop -$15'), else ''."""
+    k = r.get("kind")
+    if k == "day_stop" and _num(r.get("day_money")) is not None:
+        return "settled %s on %s, its day stop %s" % (usd(_num(r["day_money"])), r.get("day") or "the day",
+                                                     usd(_num(r.get("day_stop")) or 0.0))
+    if k == "stop_line" and _num(r.get("line_money")) is not None:
+        return "settled %s since it went live, its stop line %s: stood down for good" % (
+            usd(_num(r["line_money"])), usd(_num(r.get("stop_line")) or 0.0))
+    return ""
 
 
 # ---- every bot's FILLS, from its own log (2026-10-26) ------------------------------
@@ -1098,7 +1266,7 @@ def activity(name, since):
 # bot's log backwards from its end (read_since: only the hours asked for, a few hundredths of a second) and tags every
 # fill with its bot and its pot. What a bot DID, never money: money stays Kalshi's settlements.
 FILL_KINDS = {"pin": ("order", "hedge"), "race": ("live_order",), "forecaster": ("live_fill",),
-              "ladder": ("live_fill",), "weather": ("fill",), "fx": ("fill",)}
+              "ladder": ("live_fill",), "weather": ("fill",), "fx": ("fill",), "jumpband": ("fill",)}
 
 
 def fill_sub(name, ticker):
@@ -1122,7 +1290,7 @@ def fill_of(name, r):
     if hedge and str(r.get("status")) != "executed":
         return None
     n = pinledger.money(r, "n" if hedge else {"pin": "filled", "race": "filled", "forecaster": "n",
-                                              "fx": "n"}.get(name, "delta"))
+                                              "fx": "n", "jumpband": "qty"}.get(name, "delta"))
     if n <= 0:
         return None
     tk = r.get("ticker")
@@ -1215,10 +1383,11 @@ def version_of(name):
                    "forecaster": [n for n in names if "forecaster" in n or n == "v-crash-guard"],
                    "ladder": [n for n in names if re.match(r"v-ladder-[a-z]", n)],
                    "weather": [n for n in names if re.search(WX_VER, n)],
-                   "fx": [n for n in names if "fxtake" in n or n.startswith("v-fx")]}
+                   "fx": [n for n in names if "fxtake" in n or n.startswith("v-fx")],
+                   "jumpband": [n for n in names if "jumpband" in n or n.startswith("v-jb")]}
             if any(own.values()):
                 own["pin"] = []
-            elif not re.search(r"cleanroom|clean-room|bettor|penny|" + WX_VER, low):
+            elif not re.search(r"cleanroom|clean-room|bettor|penny|jumpband|" + WX_VER, low):
                 own["pin"] = names
             else:
                 own["pin"] = []
@@ -1242,13 +1411,20 @@ def version_of(name):
         lad = "ladder_live" in low or "penny ladder" in low
         wx = bool(re.search(WX_VER, low))
         fx = "fxtake" in low or vname.startswith("v-fx")
+        # 2026-10-30: the jump band's entries name its script (jumpband_live) or start v-jb; never the pin bot's
+        jb = "jumpband" in low or vname.startswith("v-jb")
         if vname.startswith("v-fx"):                     # its own name wins over words about the pots it shares
-            race = fc = lad = wx = False
+            race = fc = lad = wx = jb = False
+        if vname.startswith("v-jb"):
+            race = fc = lad = wx = fx = False
         clean = bool(re.search(r"cleanroom|clean-room|bettor|forecaster|ladder_live|penny", low))
-        mine = {"race": race and not fc and not lad and not wx and not fx, "forecaster": fc and not lad and not race and not wx and not fx,
-                "ladder": lad and not fc and not race and not wx and not fx, "weather": wx and not (race or fc or lad or fx),
-                "fx": fx and not (race or fc or lad or wx),
-                "pin": not (race or fc or lad or clean or wx or fx)}[name]
+        mine = {"race": race and not fc and not lad and not wx and not fx and not jb,
+                "forecaster": fc and not lad and not race and not wx and not fx and not jb,
+                "ladder": lad and not fc and not race and not wx and not fx and not jb,
+                "weather": wx and not (race or fc or lad or fx or jb),
+                "fx": fx and not (race or fc or lad or wx or jb),
+                "jumpband": jb and not (race or fc or lad or wx or fx),
+                "pin": not (race or fc or lad or clean or wx or fx or jb)}[name]
         if not mine:
             continue
         t = None
@@ -1380,6 +1556,30 @@ def settings_fx(start):
     return s, "; ".join(bits)
 
 
+def settings_jumpband(start):
+    """The jump band's settings, all from its own start record (jumpband_live.py writes max_contracts, max_cost, k, lo, hi,
+    tau, series, stop_line, day_stop): 'up to 5 contracts a buy, at most $20.00 an order; ...'."""
+    st = start or {}
+    s = {k: st.get(k) for k in ("max_contracts", "max_cost", "k", "lo", "hi", "tau", "series", "stop_line", "day_stop",
+                                "subaccount", "rule_override") if k in st}
+    bits = []
+    if s.get("max_contracts") is not None:
+        bits.append("up to %s contracts a buy%s" % (_fmt_g(s["max_contracts"]), (", at most %s an order"
+                                                    % usd(float(s["max_cost"])).lstrip("+")) if s.get("max_cost") else ""))
+    if s.get("lo") is not None and s.get("hi") is not None:
+        tau = s.get("tau") or []
+        bits.append("buys the favourite at %s-%s when the price moves %s+ standard deviations in its last minute%s"
+                    % (_c(s["lo"]), _c(s["hi"]), _fmt_g(s.get("k")),
+                       (", %s-%s s before the close" % (_fmt_g(tau[0]), _fmt_g(tau[-1]))) if len(tau) == 2 else ""))
+    if s.get("series"):
+        bits.append("coins %s" % " ".join(re.sub(r"^KX|15M$", "", x) for x in s["series"]))
+    if s.get("day_stop") is not None:
+        bits.append("stops the day at %s settled" % usd(float(s["day_stop"])))
+    if s.get("stop_line") is not None:
+        bits.append("stands down for good at %s since it went live" % usd(float(s["stop_line"])))
+    return s, "; ".join(bits)
+
+
 def settings_clean(name, start, cl):
     s = {}
     r = (start or {}).get("rails") or {}
@@ -1498,7 +1698,7 @@ def running(name, rows, ok, now):
                 start = None
         else:
             pid = out["pid"]
-            if pid is not None and name in ("forecaster", "ladder", "weather", "fx"):
+            if pid is not None and name in ("forecaster", "ladder", "weather", "fx", "jumpband"):
                 start = last_record(log, ("start",), lambda r: r.get("pid") == pid)
             if start is None:
                 start = last_record(log, ("start",), lambda r: r.get("live") is not False)
@@ -1519,6 +1719,8 @@ def running(name, rows, ok, now):
         out["settings"], out["settings_text"] = settings_weather(start, out["command"])
     elif name == "fx":
         out["settings"], out["settings_text"] = settings_fx(start)
+    elif name == "jumpband":
+        out["settings"], out["settings_text"] = settings_jumpband(start)
     else:
         out["settings"], out["settings_text"] = settings_clean(name, start, out["command"])
         if out["settings"].get("variant_mismatch"):
@@ -1534,9 +1736,12 @@ def running(name, rows, ok, now):
             if h and (h.get("kind") or h.get("ev")) == "resume":
                 continue
             ht = _t_of(h) if h else None
+            # 2026-10-30: the jump band's day stop names its ET day and lifts by itself the next day (no restart)
+            if h and name == "jumpband" and h.get("kind") == "day_stop" and h.get("day") and h["day"] != et_day(now):
+                continue
             if h and ht is not None and (st_t is None or ht >= st_t):
                 out["halted"] = {"t_et": et_clock(ht), "what": h.get("kind") or h.get("ev"),
-                                 "why": str(h.get("why") or h.get("day_pnl") or h.get("run_pnl") or "")[:160]}
+                                 "why": str(h.get("why") or h.get("day_pnl") or h.get("run_pnl") or _jb_why(h) or "")[:160]}
     v = version_of(name)
     if v:
         out["version"], out["version_et"], out["version_title"] = v[0], et_clock(v[1]), v[2][:300]
@@ -1615,10 +1820,11 @@ def xfer_in_pot(r, sub):
 
 def pot_rows(x, sub, own=True):
     """Pot `sub`'s settled rows (x = c['subs'][sub]): all of them, except that a POT_POOL_ONLY pot's own view keeps
-    only its bot's (subaccount 4: the FX pairs, not the old reward test's coin legs)."""
+    only its bot's (subaccount 4: the FX pairs, not the old reward test's coin legs; subaccount 3: the jump band's coins,
+    not the weather dip-seller's brackets -- POT_OWNER)."""
     rows = list((x.get("rows") or {}).values())
     if own and sub in POT_POOL_ONLY:
-        rows = [r for r in rows if owner(r.get("ticker"), sub) != "other"]
+        rows = [r for r in rows if owner(r.get("ticker"), sub) == POT_OWNER[sub]]
     return rows
 
 
@@ -1675,7 +1881,7 @@ def _pot_now(c, sub, own=False):
     cash, why = _cash_all_pools(led, sub, x["balance"], own)
     if cash is None:
         return None, why
-    ps = [p for p in x["positions"] if not (own and sub in POT_POOL_ONLY and owner(p.get("ticker"), sub) == "other")]
+    ps = [p for p in x["positions"] if not (own and sub in POT_POOL_ONLY and owner(p.get("ticker"), sub) != POT_OWNER[sub])]
     return cash + sum(float(p.get("at_risk") or 0.0) + float(p.get("fees") or 0.0) for p in ps), None
 
 
@@ -1859,6 +2065,28 @@ def _money_block(c, name, today, ctx=None):
     return base
 
 
+def _earlier_block(c, hidden, today):
+    """v-tg-active (2026-10-30): every HIDDEN bot's settled markets as one money block (the shape of _money_block's, no
+    pot % -- the bots' pots differ), so a per-bot split still adds up to the all-bots total: 'earlier bots'."""
+    subs = [s for s in SUBS if any(s in bot_subs(b) for b in hidden)]
+    xs = [(s, (c.get("subs") or {}).get(s) or {}) for s in subs]
+    have = bool(xs) and all(bool(y.get("fetched")) or bool(y.get("rows")) for _, y in xs)
+    err = next((y.get("err") for _, y in xs if y.get("err")), None)
+    base = {"ok": have, "names": list(hidden), "label": EARLIER_LABEL, "complete": all(bool(y.get("complete")) for _, y in xs),
+            "error": err, "stale": bool(err) and have}
+    if not have:
+        for k in ("today", "yesterday", "last_7_days", "this_month", "all_time", "first_day"):
+            base[k] = None
+        base["days_7"], base["days_30"], base["all_days"] = [], [], []
+        base["error"] = base["error"] or ("nothing hidden" if not hidden else "Kalshi has not been read yet")
+        return base
+    hid = set(hidden)
+    ms = [market(s) for sb, y in xs for s in (y.get("rows") or {}).values() if owner(s.get("ticker"), sb) in hid]
+    ms.sort(key=lambda m: (m["t"] or 0), reverse=True)
+    base.update(windows(ms, today))
+    return base
+
+
 def _open_block(c, name):
     subs = bot_subs(name)
     xs = [(s, (c.get("subs") or {}).get(s) or {}) for s in subs]
@@ -1911,6 +2139,22 @@ def _bot_from(c, name, now, rows, ok, ctx=None):
     for k in ("money", "open", "balance"):
         if out[k].get("error"):
             out["errors"].append("%s: %s" % (k, out[k]["error"]))
+    # v-tg-active (2026-10-30): a pot it shares with a bot that is not shown is said as its own -- the pin bot's main
+    # account while the coin race is paused, subaccount 3 (the jump band's pool 2, the old weather pool 0) -- so a paused
+    # or retired bot is never named on another bot's page
+    act = active_from(rows, ok)
+    out["active"] = list(act)
+    out["shares_subaccount_with"] = [b for b in out["shares_subaccount_with"] if b in act]
+    if isinstance(money.get("pot_shared_with"), list):
+        money["pot_shared_with"] = [b for b in money["pot_shared_with"] if b in act]
+    bal = out["balance"]
+    sh = [b for b in bal.get("shared_with") or [] if b in act]
+    if sh != (bal.get("shared_with") or []):
+        subs = bot_subs(name)
+        bal["shared_with"] = sh
+        bal["note"] = ("shared: the %s's cash sits in the same pot" % " and ".join(SPEC[b]["label"].lower() for b in sh)
+                       if sh else "its own pot%s (%s)" % ("s" if len(subs) > 1 else "",
+                                                         sub_name(subs if len(subs) > 1 else subs[0])))
     return out
 
 
@@ -1939,6 +2183,8 @@ def all_bots(now=None, getter=None, procs=None):
     today = et_day(now)
     ctx = pot_context(c, today)
     bots = {b: _bot_from(c, b, now, rows, ok, ctx) for b in BOTS}
+    active = active_from(rows, ok)                       # v-tg-active: what the phone lists bot by bot
+    hidden = [b for b in BOTS if b not in active]
     other = _money_block(c, "other", today, ctx)
     other.pop("markets", None)
     other["label"] = "Other main-account markets (the old oil bot, anything unlisted)"
@@ -1990,19 +2236,25 @@ def all_bots(now=None, getter=None, procs=None):
         days_30.append({"day": d, "money": mo, "pot": None if pot is None else round(pot, 2),
                         "pot_pct": round(100.0 * mo / pot, 2) if pot else None,
                         "before_first": not firsts or d < min(firsts)})
+    # one figure a POT: subaccount 3 is the jump band's pot now (its cash read is pool 2 since 10-30) and was the weather
+    # dip-seller's; "weather" keeps that same figure for older readers and is not added twice
     bal = {"main": bots["pin"]["balance"]["dollars"], "forecaster": bots["forecaster"]["balance"]["dollars"],
-           "ladder": bots["ladder"]["balance"]["dollars"], "weather": bots["weather"]["balance"]["dollars"],
+           "ladder": bots["ladder"]["balance"]["dollars"], "jumpband": bots["jumpband"]["balance"]["dollars"],
            "fx": bots["fx"]["balance"]["dollars"]}
     bal["all"] = round(sum(bal.values()), 4) if all(v is not None for v in bal.values()) else None
+    bal["weather"] = bal["jumpband"]
     bal["main_holds"] = ["pin", "race"]
+    bal["pot_bots"] = {"main": ["pin", "race"], "ladder": ["ladder"], "forecaster": ["forecaster"],
+                       "jumpband": ["jumpband", "weather"], "fx": ["fx"]}
     note = ("The main account's cash%s holds the pin bot and the coin race together; the forecaster "
-            "(subaccount 2), the ladder (subaccount 1), the weather dip-seller (subaccount 3, weather cash "
-            "pool) and the FX taker (subaccounts 5 + 4) are separate pots and are NOT in the main account's cash or "
+            "(subaccount 2), the ladder (subaccount 1), the jump band (subaccount 3, once the weather dip-seller's) "
+            "and the FX taker (subaccounts 5 + 4) are separate pots and are NOT in the main account's cash or "
             "its money totals."
             % (" (%s)" % usd(bal["main"]).lstrip("+") if bal["main"] is not None else ""))
     errors = [("%s: %s" % (b, e)) for b in BOTS for e in bots[b]["errors"]]
     return {"as_of_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)), "as_of_et": et_clock(now),
             "today_et": today, "bots": bots, "other": other, "total": total, "total_days_7": days_7,
+            "active": list(active), "hidden": hidden, "earlier": _earlier_block(c, hidden, today),
             "total_days_30": days_30,
             "balances": bal, "note": note, "errors": sorted(set(errors)), "pot_check": pot_check(ctx),
             "pots_as_of": ctx.get("as_of")}
@@ -2029,7 +2281,10 @@ PLAIN = [(r"^no_offer$", "nothing for sale"), (r"^edge_floor$", "edge too thin")
          (r"^done$", "test finished"), (r"^stopped$", "stop file"), (r"^pool \S+ is not", "wrong cash pool"),
          # the FX taker's (fxtake_live.decide)
          (r"^unfunded_pool$", "no cash in that market's pool"), (r"^per_close$", "6 already this quarter-hour"),
-         (r"^held$", "$70 already in play")]
+         (r"^held$", "$70 already in play"),
+         # the jump band's (jumpband_live.plan_live, 2026-10-30)
+         (r"^max_cost$", "order over its $ cap"), (r"^under_one_contract$", "under one contract offered"),
+         (r"^no_pool$", "market's cash pool unknown")]
 
 
 def plain(why):
@@ -2183,10 +2438,10 @@ def text_summary(name="all", now=None, getter=None, procs=None):
     for w in ("today", "yesterday", "last_7_days", "this_month", "all_time"):
         t = a["total"][w]
         L.append(_wline(t, t["label"], "all pots"))
-        bits = ["%s %s%s" % (b, usd(v) if t["by_bot_markets"][b] else "none",
-                             (" (%s)" % pot_pct_txt(t["by_bot_pot_pct"][b]))
-                             if t["by_bot_markets"][b] and t["by_bot_pot_pct"].get(b) is not None else "")
-                for b, v in t["by_bot"].items() if b != "other" or t["by_bot_markets"][b]]
+        bm, bp = shown_by(a, t["by_bot_markets"]), shown_by(a, t["by_bot_pot_pct"], "none")   # v-tg-active
+        bits = ["%s %s%s" % (b, usd(v) if bm[b] else "none",
+                             (" (%s)" % pot_pct_txt(bp[b])) if bm[b] and bp.get(b) is not None else "")
+                for b, v in shown_by(a, t["by_bot"]).items() if b not in ("other", EARLIER) or bm[b]]
         if t["markets"]:
             L.append("  " + " | ".join(bits))
         if t["partial"]:
@@ -2199,19 +2454,18 @@ def text_summary(name="all", now=None, getter=None, procs=None):
 
     def cash(x):
         return "?" if x is None else usd(x).lstrip("+")
-    L.append("Cash: main %s (pin + race), forecaster %s, ladder %s, weather %s, fx %s, all %s" % (
-        cash(bal["main"]), cash(bal["forecaster"]), cash(bal["ladder"]), cash(bal["weather"]), cash(bal.get("fx")),
-        cash(bal["all"])))
-    L.append("Main-page totals include pin + race only; forecaster, ladder, weather and fx are separate pots.")
+    L.append("Cash: %s, all %s" % (", ".join("%s %s" % (k, cash(v)) for k, v in shown_cash(a)), cash(bal["all"])))
+    L.append("Main-page totals include the main account only (pin%s); the other pots are separate."
+             % (" + race" if "race" in a["active"] else ""))
     run = []
-    for b in BOTS:
+    for b in a["active"]:
         r = a["bots"][b]["running"]
         s = "?" if r["alive"] is None else ("yes" if r["alive"] else ("stopped (flag)" if r["stop_flag"] else "NO"))
         if r["halted"]:
             s += ", HALTED"
         run.append("%s %s" % (b, s))
     L.append("Running: " + ", ".join(run))
-    for b in BOTS:
+    for b in a["active"]:
         o = a["bots"][b]["open"]
         if o["ok"] and o["count"]:
             L.append("Open: %s %d (%s at risk)" % (b, o["count"], usd(o["at_risk"]).lstrip("+")))
@@ -2219,6 +2473,24 @@ def text_summary(name="all", now=None, getter=None, procs=None):
         L.append("! " + e)
     L += pot_check_lines(a.get("pot_check"))
     return "\n".join(L)
+
+
+def shown_cash(a):
+    """[(name, dollars)] one a pot whose bot is active -- 'main' always -- and every other pot's cash on ONE line, 'earlier
+    bots' pots' (v-tg-active), so the list still adds up to all pots. None = could not read."""
+    bal, act = a["balances"], set(a.get("active") or BOTS)
+    out, rest, unread = [], 0.0, False
+    for k, bots in (bal.get("pot_bots") or {}).items():
+        v = bal.get(k)
+        if k == "main" or any(b in act for b in bots):
+            out.append((k if k == "main" else next(b for b in bots if b in act), v))   # named for its running bot
+        elif v is None:
+            unread = True
+        else:
+            rest += v
+    if unread or abs(rest) > 0.004:
+        out.append(("earlier bots' pots", None if unread else round(rest, 4)))
+    return out
 
 
 def pot_check_lines(pc):
@@ -2343,7 +2615,8 @@ def selftest():
                     {"subaccount_number": 2, "exchange_index": 2, "balance": "24.0000"},
                     {"subaccount_number": 5, "exchange_index": 2, "balance": "0.0000"},     # the FX taker's pot, empty here
                     {"subaccount_number": 4, "exchange_index": 0, "balance": "0.0000"},     # its currency pot (pool 0), empty here
-                    {"subaccount_number": 3, "exchange_index": 0, "balance": "0.0000"}]}
+                    {"subaccount_number": 3, "exchange_index": 0, "balance": "0.0000"},
+                    {"subaccount_number": 3, "exchange_index": 2, "balance": "0.0000"}]}   # the jump band's pool (10-30), empty here
             if path.endswith("/deposits"):
                 return 200, {"deposits": deps, "cursor": ""}
             return 200, {"withdrawals": wdrs}
@@ -2360,8 +2633,9 @@ def selftest():
         if path == "/portfolio/positions":
             return 200, {"market_positions": poss.get(sub, []), "event_positions": [], "cursor": ""}
         if path == "/portfolio/balance":
-            # Kalshi answers for the NAMED pool only (read live 2026-10-04); pots 0-2 trade in pool 2, pot 3 in 0
-            if q.get("exchange_index") != {"3": 0}.get(sub, 2):
+            # Kalshi answers for the NAMED pool only (read live 2026-10-04); pots 0-3 and 5 trade in pool 2 (pot 3 since
+            # the jump band, 10-30; it was pool 0 for the weather dip-seller), pot 4 in pool 0
+            if q.get("exchange_index") != {"4": 0}.get(sub, 2):
                 return 200, {"balance": 0, "balance_dollars": "0.0000"}
             return 200, {"balance": 0, "balance_dollars": bals.get(sub, "0")}
         return 404, {}
@@ -2605,7 +2879,7 @@ def selftest():
         fl_, un_ = fills_since(day_start("2026-09-30"))
         ck([(f["bot"], f["contracts"]) for f in fl_] == [("race", 20.0), ("ladder", 1.0), ("pin", 50.0),
                                                            ("forecaster", 5.0)]
-           and all(f["sub"] == SPEC[f["bot"]]["sub"] for f in fl_) and set(un_) == {"weather", "fx"},
+           and all(f["sub"] == SPEC[f["bot"]]["sub"] for f in fl_) and set(un_) == {"weather", "fx", "jumpband"},
            "fills_since: today's fills from every bot's own log, oldest first, each with its bot and pot -- the 11 PM "
            "order is yesterday's, an order that got nothing and a hedge not executed are not fills; a bot with no "
            "log is named, never a zero: %r %r" % ([(f["bot"], f["contracts"]) for f in fl_], un_))
@@ -2676,7 +2950,7 @@ def selftest():
            "ALL TIME is of the money put in: deposits after fees - withdrawals ($985, the pending $500 left out); "
            "main = that - what moved to the bot pots ($946); a subaccount = what moved into it, net ($16, $23)")
         ck(tt["today"]["by_bot_pot_pct"] == {"pin": -0.93, "race": -0.41, "forecaster": -9.34, "ladder": 0.26,
-                                            "weather": None, "fx": None, "other": None},
+                                            "weather": None, "fx": None, "jumpband": None, "other": None},
            "the /bots breakdown carries each bot's own %% of its own pot: %s" % tt["today"]["by_bot_pot_pct"])
         _pt = _bot_text(pin)
         ck("Today: -$10.12 on $109.50 in (-9.2%) = -0.93% of its bank ($1,088.32), 2 won, 1 lost" in _pt
@@ -2686,8 +2960,10 @@ def selftest():
            "says the main pot is shared")
         _st = text_summary("all", now=NOW + 1, getter=fake, procs=PROCS)
         ck("Today: -$16.99 on $" in _st and "= -1.5% of all pots ($1,130.83)" in _st
-           and "pin -$10.12 (-0.93%) | race -$4.44 (-0.41%) | forecaster -$2.47 (-9.3%) | ladder +$0.04 (+0.26%)"
-           in _st, "/bots-style text: the all-pots % and each bot's own % in the breakdown")
+           and "pin -$10.12 (-0.93%) | race -$4.44 (-0.41%) | forecaster -$2.47 (-9.3%) | earlier +$0.04"
+           in _st and "ladder" not in _st.split("Running:")[1],
+           "/bots-style text: the all-pots % and each bot's own % in the breakdown; the ladder (stopped by its stop file in "
+           "this world) is not listed, its money is on the one 'earlier' line (v-tg-active)")
         pc = a["pot_check"]
         ck(pc["1"]["off"] is False and abs(pc["1"]["unexplained"]) < 0.01
            and pc["0"]["off"] is True and abs(pc["0"]["unexplained"] - 154.65) < 0.006 and pc["2"]["off"] is True
@@ -2881,9 +3157,14 @@ def selftest():
     #   1.10 = 48.40; pot now = 49.50 = 50 put in - 0.50 settled (explained to the cent). Yesterday's pot:
     #   it held $0 at midnight ET Sep 29, + the $50 moved in that day = $50 -> -0.50 is -1.0%; all time
     #   -1.0% of the $50 put in. A pool-2 read of sub 3 answers $0.00, as Kalshi does.
+    # v-tg-active (2026-10-30): this world is subaccount 3 as it was 10-04..10-29 -- the weather pot in pool 0. Since the
+    # jump band (10-30) the number 3 trades in pool 2 (SUB_POOL, POT_POOL_ONLY); the world runs on the old settings.
     td3 = tempfile.mkdtemp(prefix="botstats-wx-")
+    pool_saved = (dict(SUB_POOL), dict(POT_POOL_ONLY))
     try:
         globals()["RESULTS"] = td3
+        SUB_POOL["3"] = 0
+        POT_POOL_ONLY.pop("3", None)
         _MEMO.update(key=None, data=None)
         _BACK.clear()
         wx_rows = [S("KXHIGHNY-26SEP29-B72.5", "2026-09-30T14:00:05Z", "no", nn=2, nc=1.20),       # +0.80
@@ -2948,8 +3229,9 @@ def selftest():
         w = all_bots(now=NOW, getter=wxf, procs=WXP)
         wb = w["bots"]["weather"]
         ck("weather" in BOTS and wb["label"] == "Weather dip-seller" and wb["subaccount"] == 3
-           and wb["shares_subaccount_with"] == [],
-           "WEATHER: the dip-seller is a bot of its own, in its own pot (subaccount 3)")
+           and wb["shares_subaccount_with"] == [] and wb["balance"]["note"] == "its own pot (subaccount 3)",
+           "WEATHER: the dip-seller is a bot of its own, in its own pot (subaccount 3; the jump band, which took the number "
+           "over on 10-30, does not run in this world, so it is not named)")
         ck(any(p == "/portfolio/balance" and q == {"subaccount": "3", "exchange_index": 0} for p, q in wx_asked)
            and not any(p == "/portfolio/balance" and q.get("subaccount") == "3" and q.get("exchange_index") != 0
                        for p, q in wx_asked)
@@ -3002,7 +3284,208 @@ def selftest():
         _MEMO.update(saved[1])
         _BACK.clear()
         _BACK.update(saved[2])
+        SUB_POOL.clear()
+        SUB_POOL.update(pool_saved[0])
+        POT_POOL_ONLY.clear()
+        POT_POOL_ONLY.update(pool_saved[1])
         shutil.rmtree(td3, ignore_errors=True)
+    # 7. v-tg-active (2026-10-30): WHICH BOTS ARE SHOWN, and THE JUMP BAND in subaccount 3's pool 2. Worked by hand:
+    #   $1,000 deposited Oct 1. Sub 3 pool 0 (the weather dip-seller): $50 in Oct 4, one bracket +$0.80 (Oct 5), $50.80
+    #   back Oct 15 -> $0. Sub 3 pool 2 (the jump band): $50 in at 05:38Z Oct 30 (1:38 AM ET); BNB NO x5 at 88c +$0.56,
+    #   ZEC YES x5 at 80c -$4.06 (both Oct 30), HYPE x5 open ($4.25 + $0.06 fee) -> pool-2 cash 50 + 0.56 - 4.06 - 4.31
+    #   = $42.19; its pot now $46.50 = $50 put in - $3.50 settled. Main: pin BTC +$0.40 and a race leg +$0.40 today ->
+    #   $951.60. Today all bots: +0.40 + 0.40 - 3.50 = -$2.70; all time -$1.90 (+ the weather's +0.80).
+    NOW7 = float(calendar.timegm((2026, 10, 30, 12, 30, 0)))           # 8:30 AM ET, Fri Oct 30
+    td4 = tempfile.mkdtemp(prefix="botstats-jb-")
+    try:
+        globals()["RESULTS"] = td4
+        _MEMO.update(key=None, data=None)
+        _BACK.clear()
+        _ACTIVE.update(t=0.0, v=None)
+        jb_rows = [S("KXBNB15M-26OCT300545-45", "2026-10-30T09:45:46Z", "no", nn=5, nc=4.40, fee=0.04),        # +0.56
+                   S("KXZEC15M-26OCT300745-45", "2026-10-30T11:45:50Z", "no", yn=5, yc=4.00, fee=0.06),        # -4.06
+                   S("KXHIGHNY-26OCT05-B72.5", "2026-10-06T14:00:05Z", "no", nn=2, nc=1.20)]                  # +0.80 weather
+        w7 = {"0": [S("KXBTC15M-26OCT300100-00", "2026-10-30T05:00:05Z", "no", nn=20, nc=19.60),             # +0.40 pin
+                    S("KXCRYPTOLEAD15M-26OCT300030-SOL", "2026-10-30T04:31:00Z", "yes", yn=10, yc=9.60)],    # +0.40 race
+              "3": jb_rows}
+        list7 = [{"subaccount_number": n, "exchange_index": ix, "balance": b} for n, ix, b in (
+            (0, 0, "0.0000"), (0, 2, "951.6000"), (1, 0, "0.0000"), (1, 2, "0.0000"), (2, 0, "0.0000"), (2, 2, "0.0000"),
+            (3, 0, "0.0000"), (3, 2, "42.1900"), (4, 0, "0.0000"), (4, 2, "0.0000"), (5, 2, "0.0000"))]
+        xf7 = [{"amount_cents": 5000, "created_ts": T("2026-10-04T07:00:00Z"), "from_subaccount": 0, "to_subaccount": 3,
+                "exchange_index": 0, "transfer_id": "w1"},
+               {"amount_cents": 5080, "created_ts": T("2026-10-15T05:33:00Z"), "from_subaccount": 3, "to_subaccount": 0,
+                "exchange_index": 0, "transfer_id": "w2"},
+               {"amount_cents": 5000, "created_ts": T("2026-10-30T05:38:07Z"), "from_subaccount": 0, "to_subaccount": 3,
+                "exchange_index": 2, "transfer_id": "j1"}]
+        asked7 = []
+
+        def f7(path, q):
+            asked7.append((path, dict(q or {})))
+            sub = str((q or {}).get("subaccount"))
+            if path.endswith("/transfers"):
+                return 200, {"transfers": xf7, "cursor": ""}
+            if path.endswith("/subaccounts/balances"):
+                return 200, {"subaccount_balances": list7}
+            if path.endswith("/deposits"):
+                return 200, {"deposits": [{"amount_cents": 100000, "fee_cents": 0, "status": "applied",
+                                           "finalized_ts": T("2026-10-01T12:00:00Z")}], "cursor": ""}
+            if path.endswith("/withdrawals"):
+                return 200, {"withdrawals": [], "cursor": ""}
+            if path == "/portfolio/settlements":
+                return 200, {"settlements": w7.get(sub, []), "cursor": ""}
+            if path == "/portfolio/positions":
+                return 200, {"market_positions": [{"ticker": "KXHYPE15M-26OCT300845-45", "position_fp": "5.00",
+                                                   "market_exposure_dollars": "4.25", "fees_paid_dollars": "0.06"}]
+                             if sub == "3" else [], "cursor": ""}
+            if path == "/portfolio/balance":
+                if q.get("exchange_index") != {"4": 0}.get(sub, 2):
+                    return 200, {"balance": 0, "balance_dollars": "0.0000"}
+                return 200, {"balance": 0, "balance_dollars": {"0": "951.6000", "3": "42.1900"}.get(sub, "0.0000")}
+            return 404, {}
+        jb_start = {"t": "2026-10-30T08:13:26.860378Z", "kind": "start", "pid": 2972, "live": True, "paper": False,
+                    "dry": False, "subaccount": 3, "max_contracts": 5, "live_max_contracts": 20, "max_cost": 20.0,
+                    "stop_line": -25.0, "day_stop": -15.0, "cash": {"0": 0.0, "2": 50.0}, "line_money": 0.0,
+                    "series": ["KXBNB15M", "KXHYPE15M", "KXZEC15M", "KXNEAR15M"], "k": 2.0, "lo": 0.7, "hi": 0.9,
+                    "fast_k": None, "rule_override": False, "tau": [10, 60],
+                    "argv": ["research\\cleanroom\\jumpband_live.py", "--live", "--subaccount", "3", "--max-contracts", "5"]}
+        jb_log = [jb_start,
+                  {"t": "2026-10-30T09:44:28Z", "kind": "trigger", "outcome": "out_of_band", "ticker": "KXBNB15M-26OCT300545-45"},
+                  {"t": "2026-10-30T09:44:29.0Z", "kind": "trigger", "outcome": "buy", "ticker": "KXBNB15M-26OCT300545-45"},
+                  {"t": "2026-10-30T09:44:29.05Z", "kind": "order_sent", "cid": "jb-1", "ticker": "KXBNB15M-26OCT300545-45"},
+                  {"t": "2026-10-30T09:44:29.068Z", "kind": "order", "status": 201, "filled": 5.0, "outcome": "fill",
+                   "ticker": "KXBNB15M-26OCT300545-45", "side": "no", "qty": 5, "ask": 0.88},
+                  {"t": "2026-10-30T09:44:29.069Z", "kind": "fill", "ticker": "KXBNB15M-26OCT300545-45", "series": "KXBNB15M",
+                   "side": "no", "qty": 5.0, "price": 0.88, "cost": 4.4, "fee": 0.04, "pool": 2},
+                  {"t": "2026-10-30T09:45:46Z", "kind": "settle", "ticker": "KXBNB15M-26OCT300545-45", "side": "no", "qty": 5.0,
+                   "price": 0.88, "cost": 4.4, "fee": 0.04, "result": "no", "payout": 5.0, "money": 0.56, "won": True,
+                   "run_money": 0.56, "day_money": 0.56, "line_money": 0.56, "cash": 50.56},
+                  {"t": "2026-10-30T12:29:26.069Z", "kind": "order", "status": 201, "filled": 0.0, "outcome": "no_fill",
+                   "ticker": "KXZEC15M-26OCT300830-30", "side": "yes", "qty": 5, "ask": 0.76},
+                  {"t": "2026-10-30T12:29:26.07Z", "kind": "order_fail", "why": "no_fill", "ticker": "KXZEC15M-26OCT300830-30"},
+                  {"t": "2026-10-30T12:29:40Z", "kind": "no_cash", "ticker": "KXNEAR15M-26OCT300830-30", "need": 4.4, "cash": 1.0},
+                  {"t": "2026-10-30T12:29:41Z", "kind": "day_stop", "day": "2026-10-29", "day_money": -15.2, "day_stop": -15.0}]
+        J(os.path.join(td4, "jumpband-live.jsonl"), jb_log)
+        J(os.path.join(td4, "jumpband-paper.jsonl"), [{"t": "2026-10-30T09:44:29Z", "kind": "paper_buy",
+                                                      "ticker": "KXBNB15M-26OCT300545-45", "qty": 100}])
+        with open(os.path.join(td4, VERSIONS_NAME), "w", encoding="utf-8") as fh:
+            fh.write("# v-jb-live -- LIVE 2026-10-30 08:13:26Z (jumpband_live.py pid 2972, subaccount 3 pool 2, $50)\n"
+                     "# v-wrongside -- LIVE 2026-10-28 01:17:20Z (pid 444): the pin bot\n")
+        with open(os.path.join(td4, SPEC["race"]["stop"]), "w") as fh:
+            fh.write("paused 10-28")
+        for b in ("forecaster", "weather"):
+            open(os.path.join(td4, SPEC[b]["stop"]), "w").close()
+        P7 = [(444, "", "C:\\Python314\\python.exe -u C:\\kals-live-0925n\\research\\pinrun.py --live --size 20"),
+              (3564, "", "\"C:\\Python314\\python.exe\" -u research\\cleanroom\\ladder_live.py --subaccount 1 --live"),
+              (4408, "", "\"C:\\Python314\\python.exe\" -u research/pinracearm.py --live --max-contracts 20"),
+              (676, "", "\"C:\\Python314\\python.exe\" -u research\\cleanroom\\fxtake_live.py --subaccount 5 --live"),
+              (4276, "", "C:\\Python314\\python.exe -u research\\cleanroom\\jumpband_live.py --minutes 20160"),
+              (2972, "2026-10-30T08:13:20Z", "C:\\Python314\\python.exe  -u research\\cleanroom\\jumpband_live.py --live "
+                                             "--subaccount 3 --max-contracts 5 --minutes 20160")]
+        PAPER_ONLY = [r for r in P7 if r[0] != 2972]
+        # -- which bots are ACTIVE: the process + stop-file combinations
+        ck(active_from(_norm_procs(P7), True) == ("pin", "ladder", "fx", "jumpband"),
+           "ACTIVE: pin, ladder, FX taker and the jump band; the coin race RUNS with its stop file set -> hidden; the "
+           "forecaster and the weather dip-seller (stop files, not running) -> hidden: %s" % (active_from(_norm_procs(P7), True),))
+        ck("jumpband" not in active_from(_norm_procs(PAPER_ONLY), True) and is_bot("jumpband", P7[5][2])
+           and not is_bot("jumpband", P7[4][2])
+           and not is_bot("jumpband", "python research\\cleanroom\\jumpband_live.py --live --dry-run --subaccount 3"),
+           "ACTIVE: the jump band's PAPER arm (no --live) and a --live --dry-run are not the live jump band")
+        ck(active_from(None, False) == ("pin", "ladder", "fx", "jumpband"),
+           "ACTIVE, the process table UNREADABLE: every bot without a stop file is shown (never hidden on a failed read)")
+
+        def _boom():
+            raise OSError("boom")
+        ck(active_bots(procs=lambda: None) == ("pin", "ladder", "fx", "jumpband")
+           and active_bots(procs=P7) == ("pin", "ladder", "fx", "jumpband")
+           and active_bots(procs=_boom) == ("pin", "ladder", "fx", "jumpband"),
+           "active_bots: a planted table, a callable, a failed read and a raising read all answer (fail-safe)")
+        os.remove(os.path.join(td4, SPEC["race"]["stop"]))
+        ck(active_from(_norm_procs(P7), True) == ("pin", "race", "ladder", "fx", "jumpband"),
+           "ACTIVE: the race's stop file removed (its process still --live) -> the race is back, no code change")
+        ck(active_from(_norm_procs([r for r in P7 if r[0] != 4408]), True) == ("pin", "ladder", "fx", "jumpband"),
+           "ACTIVE: no stop file but no live race process -> hidden")
+        with open(os.path.join(td4, SPEC["race"]["stop"]), "w") as fh:
+            fh.write("paused 10-28")
+        # -- subaccount 3: whose market is whose
+        ck(owner("KXBNB15M-26OCT300545-45", "3") == "jumpband" and owner("KXHYPE15M-26OCT300845-45", "3") == "jumpband"
+           and owner("KXZEC15M-26OCT300745-45", "3") == "jumpband" and owner("KXNEAR15M-26OCT300830-30", "3") == "jumpband"
+           and owner("KXHIGHNY-26OCT05-B72.5", "3") == "weather" and owner("KXHIGHTSFO-26OCT05-B72.5", "3") == "weather"
+           and owner("KXBNB15M-26OCT300545-45", "0") == "pin" and SUB_POOL["3"] == 2 and POT_POOL_ONLY["3"] == 2,
+           "OWNER: in subaccount 3 a coin market is the jump band's, a KXHIGH bracket the weather dip-seller's; its cash "
+           "read asks pool 2")
+        a7 = all_bots(now=NOW7, getter=f7, procs=P7)
+        jb = a7["bots"]["jumpband"]
+        ck(a7["active"] == ["pin", "ladder", "fx", "jumpband"] and a7["hidden"] == ["race", "forecaster", "weather"],
+           "all_bots names the active bots and the hidden ones: %s / %s" % (a7["active"], a7["hidden"]))
+        ck(any(p == "/portfolio/balance" and q == {"subaccount": "3", "exchange_index": 2} for p, q in asked7)
+           and jb["balance"]["dollars"] == 42.19 and a7["balances"]["jumpband"] == 42.19,
+           "JUMP BAND cash: subaccount 3's POOL 2 balance, $42.19")
+        jm = jb["money"]
+        ck(jm["today"]["markets"] == 2 and abs(jm["today"]["money"] - (-3.50)) < 1e-9
+           and abs(jm["today"]["put_in"] - 8.40) < 1e-9 and jm["all_time"]["markets"] == 2
+           and jb["open"]["count"] == 1 and jb["open"]["positions"][0]["side"] == "yes",
+           "JUMP BAND money: today -$3.50 on $8.40 put in (2 coin markets), not the weather bracket; HYPE YES x5 open")
+        ck(P(jm["all_time"], 50.0, -7.0, "money_in") and P(jm["today"], 50.0, -7.0),
+           "JUMP BAND pot: 'put in' $50.00 (pool 2 only -- not $50 + $50 - $50.80 over both pools); today -7.0%% of the $50 "
+           "it began with: %s / %s" % ((jm["all_time"]["pot"], jm["all_time"]["pot_pct"]), (jm["today"]["pot"], jm["today"]["pot_pct"])))
+        pc7 = a7["pot_check"]
+        ck(pc7["3"]["now"] == 46.5 and pc7["3"]["off"] is False and pc7["all"]["now"] == 998.1 and pc7["all"]["off"] is False,
+           "JUMP BAND pot check: $46.50 = $50 in - $3.50 settled; all pots $998.10 explained to the cent")
+        jr = jb["running"]
+        ck(jr["alive"] is True and jr["pid"] == 2972 and jr["version"] == "v-jb-live" and version_of("pin")[0] == "v-wrongside"
+           and "up to 5 contracts a buy, at most $20.00 an order" in jr["settings_text"]
+           and "favourite at 70c-90c" in jr["settings_text"] and "2+ standard deviations" in jr["settings_text"]
+           and "10-60 s before the close" in jr["settings_text"] and "coins BNB HYPE ZEC NEAR" in jr["settings_text"]
+           and "-$15.00" in jr["settings_text"] and "-$25.00" in jr["settings_text"] and jr["halted"] is None,
+           "JUMP BAND running: pid 2972 (not the paper arm), its own version, its settings from its start record; "
+           "yesterday's day stop is no halt today: %s" % jr["settings_text"])
+        ja = jb["activity_today"]
+        ck(ja["sent"] == 2 and ja["filled"] == 1 and ja["contracts_filled"] == 5 and ja["not_filled"] == 1
+           and ja["refused"] == 1 and ja["refused_why"] == {"no_cash": 1} and ja["triggers"] == 2,
+           "JUMP BAND today by its log: 2 jumps judged, 2 orders sent, 1 filled (5 contracts), 1 got nothing, 1 no_cash")
+        jf = fill_of("jumpband", jb_log[5])
+        ck(jf and jf["contracts"] == 5.0 and jf["price"] == 0.88 and jf["side"] == "no" and jf["sub"] == "3"
+           and fill_of("jumpband", jb_log[4]) is None,
+           "JUMP BAND fill: its 'fill' record (qty 5 at 88c, NO, subaccount 3); the 'order' record is not a second fill")
+        with open(os.path.join(td4, "jumpband-live.jsonl"), "a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"t": "2026-10-30T12:29:50Z", "kind": "day_stop", "day": "2026-10-30", "day_money": -15.2,
+                                 "day_stop": -15.0}) + "\n")
+        jr2 = bot("jumpband", now=NOW7 + 1, getter=f7, procs=P7)["running"]
+        ck(jr2["halted"] and jr2["halted"]["what"] == "day_stop" and "its day stop -$15.00" in jr2["halted"]["why"]
+           and "jumpband" in active_from(_norm_procs(P7), True),
+           "JUMP BAND halted for TODAY by its own day stop: shown as halted, still an active bot")
+        # -- the hidden bots' money: ONE 'earlier' line, the totals unchanged
+        e7 = a7["earlier"]
+        t7 = a7["total"]
+        ck(e7["ok"] and abs(e7["today"]["money"] - 0.40) < 1e-9 and e7["today"]["markets"] == 1
+           and abs(e7["all_time"]["money"] - 1.20) < 1e-9 and e7["all_time"]["markets"] == 2,
+           "EARLIER: the race's leg today (+$0.40) and the weather's old bracket (+$0.80) on one line, all time +$1.20")
+        ok_sum = True
+        for k in WINDOW_KEYS:
+            sb = shown_by(a7, t7[k]["by_bot"])
+            ok_sum = ok_sum and abs(sum(sb.values()) - t7[k]["money"]) < 1e-6 and not (set(sb) & {"race", "forecaster", "weather"})
+            ok_sum = ok_sum and abs(sum(m[k]["money"] for _n, m in shown_parts(a7) if m.get(k)) - t7[k]["money"]) < 1e-6
+        ck(ok_sum and abs(t7["today"]["money"] - (-2.70)) < 1e-9 and abs(t7["all_time"]["money"] - (-1.90)) < 1e-9
+           and shown_by(a7, t7["today"]["by_bot"]) == {"pin": 0.4, "ladder": 0.0, "fx": 0.0, "jumpband": -3.5,
+                                                       "earlier": 0.4, "other": 0.0}
+           and shown_by(a7, t7["today"]["by_bot_pot_pct"], "none")["earlier"] is None,
+           "EARLIER: every window's per-bot split (active bots + 'earlier' + other) adds up to the unchanged total "
+           "(today -$2.70, all time -$1.90); no hidden bot is named")
+        sc7 = shown_cash(a7)
+        ck([k for k, _v in sc7] == ["main", "ladder", "jumpband", "fx"] and abs(sum(v for _k, v in sc7) - a7["balances"]["all"]) < 1e-6,
+           "CASH line: main, ladder, jump band, FX taker -- the empty forecaster pot is not named, and it adds up: %s" % sc7)
+        tx7 = text_summary("all", now=NOW7 + 2, getter=f7, procs=P7)
+        ck("jumpband -$3.50" in tx7 and "earlier +$0.40" in tx7 and "race" not in tx7.replace("Main-page", "")
+           and "forecaster" not in tx7 and "weather" not in tx7,
+           "ALL-BOTS text: the jump band named, the race / forecaster / weather not -- their money on the 'earlier' line")
+    finally:
+        globals()["RESULTS"] = saved[0]
+        _MEMO.clear()
+        _MEMO.update(saved[1])
+        _BACK.clear()
+        _BACK.update(saved[2])
+        _ACTIVE.update(t=0.0, v=None)
+        shutil.rmtree(td4, ignore_errors=True)
     ck(describe("KXHIGHTSFO-26SEP29-B72.5") == "SFO high B72.5" and describe("KXHIGHNY-26SEP29-T65") == "NY high T65",
        "a weather bracket in words: city, high, bracket")
 

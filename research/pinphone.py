@@ -26,7 +26,7 @@ COMMANDS
   /losses     every bot's losses   /hedges    insurance and whether it was needed
   /stats      the whole record by window: money, win rate vs break-even, losses, timing
   /bots       every bot and its pot (subaccount): running, money by window, cash, the all-bots total
-  /pin  /forecaster (/fc)  /ladder  /weather (/wx)  /fx   one bot in full: running or not and why, version,
+  /pin  /forecaster (/fc)  /ladder  /weather (/wx)  /fx  /jb (/jumpband)   one bot in full: running or not and why, version,
               settings, money today / yesterday / 7 days / month / all time, worst and best,
               open bets, cash, last markets, what its log did today (research/botstats.py)
   /race       the live coin race now (real money, main account; since v-race-snowball its bets grow
@@ -122,13 +122,37 @@ FUNDS_WHAT = {
     0: "main bot (pin) + coin race",
     1: "penny ladder",
     2: "forecaster",
-    3: {0: "weather dip-seller (stopped)", 2: "empty"},
+    3: {0: "weather dip-seller", 2: "jump band: BNB/HYPE/ZEC/NEAR after a price jump (live stage 1, 2026-10-30)"},
     4: {0: "FX taker: the 5 currency pairs (penny test, 2026-10-25)", 2: "coin-race reward test (stopped)"},
     5: "FX taker: the 8 commodities (penny test, 2026-10-25)",
 }
+# v-tg-active (2026-10-30): the bots behind each FUNDS_WHAT entry. /funds names only the ACTIVE ones (botstats.active_bots:
+# running live, no stop file); an entry whose bots are all paused or retired reads FUNDS_IDLE -- its money is still listed.
+FUNDS_BOTS = {0: ("pin", "race"), 1: ("ladder",), 2: ("forecaster",), 3: {0: ("weather",), 2: ("jumpband",)},
+              4: {0: ("fx",), 2: ()}, 5: ("fx",)}
+FUNDS_IDLE = "nothing runs here now (stopped)"
 FUNDS_POOL_NAME = {0: "weather pool", 2: "crypto pool"}     # Kalshi's exchange_index; others say "pool N"
 # whose bet size /funds shows under each account (read from that bot's own log, see funds_sizes)
-FUNDS_SIZE_BOTS = {0: ("pin", "race"), 1: ("ladder",), 2: ("forecaster",), 4: ("fx",), 5: ("fx",)}
+FUNDS_SIZE_BOTS = {0: ("pin", "race"), 1: ("ladder",), 2: ("forecaster",), 3: ("jumpband",), 4: ("fx",), 5: ("fx",)}
+
+
+def funds_what(n, active=None):
+    """FUNDS_WHAT's words for account n, naming only the ACTIVE bots (v-tg-active; None = the whole roster): an entry
+    whose bots are all hidden reads FUNDS_IDLE; the main account names the coin race only while it runs."""
+    what = FUNDS_WHAT.get(n)
+    if what is None or active is None:
+        return what
+    bots = FUNDS_BOTS.get(n)
+
+    def one(w, who):
+        if who is None:
+            return w
+        if n == 0:
+            return "main bot (pin)" + (" + coin race" if "race" in active else "")
+        return w if any(b in active for b in who) else FUNDS_IDLE
+    if isinstance(what, dict):
+        return {ix: one(w, (bots or {}).get(ix) if isinstance(bots, dict) else bots) for ix, w in what.items()}
+    return one(what, bots)
 
 
 def _tgc():
@@ -651,23 +675,17 @@ class FakeTelegram:
 # ===========================================================================
 # the bot
 # ===========================================================================
-HELP_TEXT = Html("""📱 <b>Commands</b>
+HELP_TEXT = """📱 <b>Commands</b>
 
 💰 <b>Money</b>
 /today · /yesterday — every bot's money that day: % of all pots, and a table with each bot's % of its bank
 /days — the last 7 days, every bot: each day's % of all pots, each bot's week
 /stats — the whole record by window: money, win rate vs break-even, losses, timing
-/funds (or /bank, /accounts) — the money in every account and subaccount: cash, open bets, total, what runs there, bet size now, each account's last 7 days (main bot and coin race apart), and the grand total
-/bots — every bot: running or not, money today / 7 days / all time, each pot's cash, and the total of all of them
+/funds (or /bank, /accounts) — the money in every account and subaccount: cash, open bets, total, what runs there, bet size now, each account's last 7 days{funds_split}, and the grand total
+/bots — every bot running now: money today / 7 days / all time, each pot's cash, and the total of all of them
 
-🤖 <b>One bot</b>
-/pin — the pin bot: running or not and why, version, settings, money by window, worst, open bets, cash, last markets
-/race — the live coin race right now (real money; its bets grow with the bank), its last 10 races, and its money by window
-/racestats — the coin race record, and the paper arms on the same races
-/forecaster (or /fc) — the forecaster (subaccount 2), the same detail as /pin
-/ladder — the penny ladder (subaccount 1), the same detail as /pin
-/weather (or /wx) — the weather dip-seller (subaccount 3, weather cash pool), the same detail as /pin
-/fx — the FX taker: the 5 currency pairs (subaccount 4) and the 8 commodities (subaccount 5), the same detail as /pin
+🤖 <b>One bot</b> <i>(the bots running now; a paused or stopped one comes back here when it runs again)</i>
+{bot_lines}
 
 🔎 <b>Right now</b>
 /status — is it trading, with the evidence
@@ -693,7 +711,33 @@ HELP_TEXT = Html("""📱 <b>Commands</b>
 
 📈 Most commands send a chart right after the words (not /open, /help, /speed, /server or the controls).
 
-<i>Alerts come by themselves: state changes, every losing close (with its % of the bank), low disk (under 8 GB, again under 6 GB), and yesterday's summary for every bot at 8 AM ET. Long details sit behind a tap on the quoted block.</i>""")
+<i>Alerts come by themselves: state changes, every losing close (with its % of the bank), low disk (under 8 GB, again under 6 GB), and yesterday's summary for every bot at 8 AM ET. Long details sit behind a tap on the quoted block.</i>"""
+
+# v-tg-active (2026-10-30, the operator: "remove the paused and removed until they're added back, and show the details
+# for the new one in any relevant commands"): /help lists a bot's command only while it is ACTIVE (botstats.active_bots).
+HELP_BOT_LINES = (
+    ("pin", "/pin — the pin bot: running or not and why, version, settings, money by window, worst, open bets, cash, last markets"),
+    ("race", "/race — the live coin race right now (real money; its bets grow with the bank), its last 10 races, and its money by window"),
+    ("race", "/racestats — the coin race record, and the paper arms on the same races"),
+    ("forecaster", "/forecaster (or /fc) — the forecaster (subaccount 2), the same detail as /pin"),
+    ("ladder", "/ladder — the penny ladder (subaccount 1), the same detail as /pin"),
+    ("weather", "/weather (or /wx) — the weather dip-seller (subaccount 3, weather cash pool), the same detail as /pin"),
+    ("fx", "/fx — the FX taker: the 5 currency pairs (subaccount 4) and the 8 commodities (subaccount 5), the same detail as /pin"),
+    ("jumpband", "/jb (or /jumpband) — the jump band: buys the 70-90c favourite on BNB/HYPE/ZEC/NEAR after a 2+ sd price "
+                 "jump, 5 contracts (subaccount 3), the same detail as /pin"),
+)
+
+
+def help_text(active=None):
+    """/help with the one-bot commands of the ACTIVE bots only (None = every bot: the whole roster)."""
+    act = set(active) if active is not None else None
+    lines = [w for b, w in HELP_BOT_LINES if act is None or b in act]
+    return Html(_HELP_TPL.replace("{bot_lines}", "\n".join(lines)).replace(
+        "{funds_split}", " (main bot and coin race apart)" if act is None or "race" in act else ""))
+
+
+_HELP_TPL = HELP_TEXT
+HELP_TEXT = help_text()                  # the whole roster (the self-test's reference); /help sends help_text(active)
 
 # the immediate reply to a control (the work itself runs on a thread, see Phone.control)
 CONTROL_REPLY = {"start": Html("▶️ <b>Starting…</b>"),
@@ -1171,7 +1215,7 @@ _VER_RE = re.compile(r"^#\s+(v-\S+(?:\s*\+\s*v-\S+)*)\s+--\s+(?:LIVE\s+)?(\d{4}-
 # Entries that are another bot's: the coin race, the clean-room forecaster and
 # penny ladder, and the boot entries that name them. botstats.version_of uses
 # the same words, and the self-test fails if the two pick different versions.
-_NOT_PIN_RE = re.compile(r"coin.?race|penny|cleanroom|clean-room|bettor|forecaster|ladder_live|dipsell|dip.?sell",
+_NOT_PIN_RE = re.compile(r"coin.?race|penny|cleanroom|clean-room|bettor|forecaster|ladder_live|dipsell|dip.?sell|jumpband",
                          re.I)
 
 
@@ -1210,7 +1254,7 @@ def live_version(path):
     would otherwise sit on top and date every 'since the version' figure
     wrong."""
     for v in versions(path):
-        if v[0].lower().startswith("v-race") or _NOT_PIN_RE.search(v[0] + " " + v[3]) \
+        if v[0].lower().startswith(("v-race", "v-jb")) or _NOT_PIN_RE.search(v[0] + " " + v[3]) \
                 or re.match(r"v-(tg|phone|telegram|wifi|recorder|collector)\b", v[0].lower()):   # = botstats.INFRA_VER
             continue
         return v
@@ -1711,8 +1755,9 @@ def disk_alert(level, disk_gb):
 # 4, 2026-10-25) are separate pots and are added up only in /bots.
 # ===========================================================================
 BOT_CMDS = {"/pin": "pin", "/forecaster": "forecaster", "/fc": "forecaster", "/ladder": "ladder",
-            "/weather": "weather", "/wx": "weather", "/fx": "fx"}
-BOT_CMD_OF = {"pin": "/pin", "race": "/race", "forecaster": "/fc", "ladder": "/ladder", "weather": "/weather", "fx": "/fx"}
+            "/weather": "weather", "/wx": "weather", "/fx": "fx", "/jb": "jumpband", "/jumpband": "jumpband"}
+BOT_CMD_OF = {"pin": "/pin", "race": "/race", "forecaster": "/fc", "ladder": "/ladder", "weather": "/weather", "fx": "/fx",
+              "jumpband": "/jb"}
 BS_WINDOWS = ("today", "yesterday", "last_7_days", "this_month", "all_time")
 BS_LABEL = {"today": "Today", "yesterday": "Yesterday", "last_7_days": "Last 7 days",
             "this_month": "This month", "all_time": "All time"}
@@ -1971,14 +2016,80 @@ def bs_errors_line(errors):
     return ["! %s: %s" % (what, ", ".join(sorted(set(who)))) for what, who in sorted(by.items())]
 
 
+# ---- v-tg-active (2026-10-30): only the ACTIVE bots by name ----------------------------------------------------------
+# all_bots carries "active" (botstats.active_from: a live copy running and no stop file; the pin bot always) and
+# "earlier" (every hidden bot's past markets as one money block). A page lists the active bots and, where its rows must
+# add up to a total, one 'earlier' row; it never names a paused or retired bot. An older botstats (no "active") lists
+# every bot as before.
+_POT_WORD = {"main": "main account", "ladder": "ladder", "forecaster": "forecaster", "jumpband": "jump band",
+             "weather": "weather", "fx": "FX taker", "earlier bots' pots": "earlier bots' pots"}
+
+
+def _active_of(a):
+    return [b for b in (a.get("active") or _bs().BOTS) if b in a.get("bots", {})]
+
+
+def _shown_by(a, d, how="sum"):
+    bs = _bs()
+    return bs.shown_by(a, d, how) if hasattr(bs, "shown_by") else dict(d or {})
+
+
+def _shown_name(a, name):
+    bs = _bs()
+    return bs.shown_name(a, name) if hasattr(bs, "shown_name") else name
+
+
+def _shown_parts(a):
+    """[(key, money block)]: the active bots, 'earlier' when it has a market, then 'other' (botstats.shown_parts)."""
+    bs = _bs()
+    if hasattr(bs, "shown_parts"):
+        return bs.shown_parts(a)
+    return [(b, a["bots"][b]["money"]) for b in bs.BOTS] + [("other", a["other"])]
+
+
+def shown_cash(a):
+    """[(pot key, dollars)]: one a pot whose bot runs, the rest on one 'earlier bots' pots' entry (botstats.shown_cash)."""
+    bs = _bs()
+    if hasattr(bs, "shown_cash"):
+        return bs.shown_cash(a)
+    bal = a["balances"]
+    return [(k, bal.get(k)) for k in ("main", "forecaster", "ladder", "weather", "fx")]
+
+
+def _shown_errors(a):
+    """all_bots' error lines with a hidden bot's name said as 'earlier'."""
+    out = []
+    for e in a.get("errors") or []:
+        who, sep, what = str(e).partition(": ")
+        out.append((_shown_name(a, who) + sep + what) if sep else e)
+    return sorted(set(out))
+
+
+def earlier_lines(a):
+    """One line for every hidden bot's past money (all_bots' 'earlier'), or [] when there is none: 'EARLIER BOTS
+    (paused or stopped, not listed): today $0.00, 7 days +$1.20, all time -$41.02 on 412 markets.'"""
+    e = a.get("earlier")
+    if not e or not a.get("hidden"):
+        return []
+    if not e.get("ok"):
+        return ["EARLIER BOTS (paused or stopped, not listed): money COULD NOT READ KALSHI."]
+    at = e.get("all_time") or {}
+    if not at.get("markets"):
+        return []
+    fmt = _bs().usd
+    return ["EARLIER BOTS (paused or stopped, not listed): today %s, 7 days %s, all time %s on %s -- in every total "
+            "above." % (_short(e["today"], fmt), _short(e["last_7_days"], fmt), fmt(at["money"]),
+                        _nof(at["markets"], "market"))]
+
+
 def bs_all_text(a):
     """/bots: the ALL-BOTS total with each bot's share, every pot's cash, and one line a bot."""
     bs = _bs()
     fmt = bs.usd
     L = ["ALL BOTS -- %s" % a["as_of_et"],
          "Money from Kalshi, every pot; a market counts on the ET day it closed.",
-         "The % after '=' or in brackets = share of the pot when the window began (its cash + open bets; "
-         "pin and race share the main account). All time = share of the money put in."]
+         "The %% after '=' or in brackets = share of the pot when the window began (its cash + open bets%s). All "
+         "time = share of the money put in." % ("; pin and race share the main account" if "race" in _active_of(a) else "")]
     anything = False
     for k in BS_WINDOWS:
         t = a["total"][k]
@@ -1989,12 +2100,14 @@ def bs_all_text(a):
         L.append(bs_window_line(t, label, "market", fmt, "all pots"))
         if t["markets"]:
             anything = True
-            pp = t.get("by_bot_pot_pct") or {}
+            # v-tg-active: the active bots by name, every hidden bot's money on ONE 'earlier' entry (botstats.shown_by)
+            pp, bm = _shown_by(a, t.get("by_bot_pot_pct") or {}, "none"), _shown_by(a, t["by_bot_markets"])
             L.append("  " + " | ".join(
                 "%s %s" % (b, (fmt(v) + ((" (%s)" % bs.pot_pct_txt(pp[b])) if pp.get(b) is not None else ""))
-                           if t["by_bot_markets"].get(b) else "none")
-                for b, v in t["by_bot"].items() if b != "other" or t["by_bot_markets"].get(b)))
-    miss = a["total"]["all_time"]["missing"]
+                           if bm.get(b) else "none")
+                for b, v in _shown_by(a, t["by_bot"]).items() if b not in ("other", "earlier") or bm.get(b)))
+    miss = [_shown_name(a, x) for x in a["total"]["all_time"]["missing"]]
+    miss = sorted(set(miss), key=miss.index)
     if miss:
         L.append("PARTIAL: these totals leave out %s -- Kalshi could not be read for %s."
                  % (", ".join(miss), "it" if len(miss) == 1 else "them"))
@@ -2005,27 +2118,27 @@ def bs_all_text(a):
         for d in a["total_days_7"]:
             if firsts and d["day"] < min(firsts):
                 continue                                # before anything ever settled
-            parts = ", ".join("%s %s" % (b, fmt(v)) for b, v in d["by_bot"].items() if abs(v) > 0.004)
+            parts = ", ".join("%s %s" % (b, fmt(v)) for b, v in _shown_by(a, d["by_bot"]).items() if abs(v) > 0.004)
             L.append("  %s: %s" % (d["label"], "nothing settled" if not d["markets"] else
                                    "%s, %s%s" % (fmt(d["money"]), _nof(d["markets"], "market"),
                                                  (" (%s)" % parts) if parts else "")))
     elif not miss:
         L.append("Nothing settled yet in any pot.")
     bal = a["balances"]
-    L.append("Cash: main account %s (pin + race share it), forecaster %s, ladder %s, weather %s, FX taker %s -- "
-             "all pots %s." % (_cash(bal["main"]), _cash(bal["forecaster"]), _cash(bal["ladder"]),
-                               _cash(bal.get("weather")), _cash(bal.get("fx")), _cash(bal["all"])))
-    L.append("The main page (/today /days /stats, the desktop) counts pin + race only. The forecaster, "
-             "the ladder, the weather dip-seller and the FX taker are separate pots, added up only here.")
+    sc = shown_cash(a)
+    L.append("Cash: %s -- all pots %s." % (", ".join("%s %s" % (_POT_WORD.get(k, k), _cash(v)) for k, v in sc),
+                                          _cash(bal["all"])))
+    L.append("The main page (/today /days /stats, the desktop) counts the main account only (%s). Every other pot is "
+             "separate, added up only here." % main_words(a.get("active")))
     # 2026-10-01: the operator saw about -$119 in Kalshi's app while every bot was up. Kalshi's apps do not
     # support subaccounts (API-only, docs.kalshi.com/getting_started/subaccounts), so the cash moved from the
     # main account into the two bot pots shows there as money gone.
-    if all(bal.get(k) is not None for k in ("forecaster", "ladder", "weather", "fx")):
-        L.append("Kalshi's own app shows the MAIN account only. The %s sitting in the forecaster, ladder, "
-                 "weather and FX pots was moved out of it, so Kalshi's screens read that much lower than all pots -- "
-                 "not a loss." % _cash(bal["forecaster"] + bal["ladder"] + bal["weather"] + bal["fx"]))
+    rest = [v for k, v in sc if k != "main"]
+    if rest and all(v is not None for v in rest):
+        L.append("Kalshi's own app shows the MAIN account only. The %s sitting in the other pots was moved out of it, "
+                 "so Kalshi's screens read that much lower than all pots -- not a loss." % _cash(sum(rest)))
     L.append("")
-    for name in bs.BOTS:
+    for name in _active_of(a):
         b = a["bots"][name]
         r, m, o = b["running"], b["money"], b["open"]
         if r["alive"] is None:
@@ -2052,7 +2165,8 @@ def bs_all_text(a):
         L.append("NOT ANY BOT'S (main account): all time %s on %s; worst %s %s (%s)." % (
             fmt(w["money"]), _nof(w["markets"], "market"), fmt(w["worst"]["money"]), w["worst"]["what"],
             bs.day_label(w["worst"]["day"])))
-    L += bs_errors_line(a["errors"])
+    L += earlier_lines(a)
+    L += bs_errors_line(_shown_errors(a))
     L += bs.pot_check_lines(a.get("pot_check"))     # a pot Kalshi's own books do not explain
     if all(a["total"][k].get("pot_pct") is None for k in BS_WINDOWS if a["total"][k]["markets"]) \
             and any(a["total"][k]["markets"] for k in BS_WINDOWS):
@@ -2130,7 +2244,14 @@ def bs_running_html(r):
 # WHICH BOT a trade is (2026-10-26, the operator: "anywhere that trades or transactions are listed list the account or
 # which bot"). The words a line uses for each bot; 'other' = a main-account market no bot claims.
 BOT_WORD = {"pin": "pin bot", "race": "coin race", "forecaster": "forecaster", "ladder": "ladder",
-            "weather": "weather dip-seller", "fx": "FX taker", "other": "not any bot's"}
+            "weather": "weather dip-seller", "fx": "FX taker", "jumpband": "jump band", "earlier": "earlier bots",
+            "other": "not any bot's"}
+
+
+def main_words(active=None):
+    """The main account's bots in words: 'pin bot + coin race' while the race is active, else 'pin bot' (v-tg-active).
+    The main account's own books (/status, /today's tap, /days' tap) still carry every market it ever settled."""
+    return "pin bot + coin race" if active is None or "race" in active else "pin bot"
 
 
 def main_bot_of(tk):
@@ -2322,12 +2443,11 @@ def bots_avg_table(a):
             young.append("%s since %s" % (name, bs.day_label(x["first"])))
         return (name, usd(x["money"]), bs.pot_pct_txt(x["pot_pct"]) if x["pot_pct"] is not None else "-",
                 "%d%s" % (x["days"], "*" if x["young"] else ""))
-    for nm in tuple(bs.BOTS) + ("other",):
-        m = a["other"] if nm == "other" else a["bots"][nm]["money"]
+    for nm, m in _shown_parts(a):                     # v-tg-active: the active bots, 'earlier', 'other'
         if not m.get("ok"):
             continue
         busy = any(d["markets"] for d in m.get("days_30") or [])
-        if not busy and (nm == "other" or _bot_parked(a["bots"].get(nm))):
+        if not busy and (nm in ("other", "earlier") or _bot_parked(a["bots"].get(nm))):
             continue
         x = bs.avg_day(m.get("days_30"))
         if x is not None:
@@ -2375,15 +2495,15 @@ def bots_window_table(a, key, span="day"):
         return (name, usd(w["money"]), bs.pot_pct_txt(w["pot_pct"]) if w.get("pot_pct") is not None else "-",
                 bs.pct(w["return_pct"]) if w.get("return_pct") is not None else "-", "%d/%d" % (w["lost"], w["markets"]))
     rows = [("Bot", "Money", "of bank", "Return", "Lost")]
-    for nm in tuple(bs.BOTS) + ("other",):
-        m = a["other"] if nm == "other" else a["bots"][nm]["money"]
+    for nm, m in _shown_parts(a):                     # v-tg-active: the active bots, 'earlier', 'other'
         w = m.get(key) if m.get("ok") else None
         if w and w["markets"]:
             rows.append(cells(nm, w))
     rows.append(cells("ALL", tot))
     return [pre(table(rows, "lrrrr")),
-            i_("of bank = share of that bot's pot when the %s began (pin + race share the main account; ALL = every "
-               "pot) · Return = on what the bets cost · Lost = markets lost / settled" % span)]
+            i_("of bank = share of that bot's pot when the %s began (%sALL = every pot) · Return = on what the bets "
+               "cost · Lost = markets lost / settled" % (span, "pin + race share the main account; "
+                                                         if "race" in _active_of(a) else ""))]
 
 
 def _day_long(day):
@@ -2488,8 +2608,9 @@ def bs_all_html(a):
     anything = any(tot[k]["markets"] for k in BS_WINDOWS)
     tbl, base = bs_money_table(tot, "of pots")
     L.append(pre(tbl))
-    L.append(money_legend(base, "all pots (pin and race share the main account)"))
-    miss = tot["all_time"]["missing"]
+    L.append(money_legend(base, "all pots (pin and race share the main account)" if "race" in _active_of(a) else "all pots"))
+    miss = [_shown_name(a, x) for x in tot["all_time"]["missing"]]
+    miss = sorted(set(miss), key=miss.index)
     if miss:
         L.append("⚠️ PARTIAL: these totals leave out %s -- Kalshi could not be read for %s."
                  % (esc(", ".join(miss)), "it" if len(miss) == 1 else "them"))
@@ -2499,13 +2620,14 @@ def bs_all_html(a):
     t7 = tot["last_7_days"]
     if t7["markets"]:
         # a stopped bot with nothing in the week is one line further down, not a 'none' row here
-        got = [(nm, v) for nm, v in t7["by_bot"].items() if t7["by_bot_markets"].get(nm)
-               or (nm != "other" and not _bot_parked(a["bots"].get(nm)))]
-        mx = max([abs(v) for nm, v in got if t7["by_bot_markets"].get(nm)] or [0])
-        pin_, pp_ = t7.get("by_bot_put_in") or {}, t7.get("by_bot_pot_pct") or {}
+        bm7 = _shown_by(a, t7["by_bot_markets"])       # v-tg-active: hidden bots on one 'earlier' row
+        got = [(nm, v) for nm, v in _shown_by(a, t7["by_bot"]).items() if bm7.get(nm)
+               or (nm not in ("other", "earlier") and not _bot_parked(a["bots"].get(nm)))]
+        mx = max([abs(v) for nm, v in got if bm7.get(nm)] or [0])
+        pin_, pp_ = _shown_by(a, t7.get("by_bot_put_in") or {}), _shown_by(a, t7.get("by_bot_pot_pct") or {}, "none")
         rows = [("Bot", "Money", "Return", "of bank", "")]
         for nm, v in got:
-            if not t7["by_bot_markets"].get(nm):
+            if not bm7.get(nm):
                 rows.append((nm, "none"))
                 continue
             rows.append((nm, usd(v), ret(v, pin_.get(nm)) or "-",
@@ -2516,7 +2638,7 @@ def bs_all_html(a):
     L += bots_avg_table(a)
     L.append("")
     parked = []
-    for name in bs.BOTS:
+    for name in _active_of(a):                        # v-tg-active: a paused or retired bot gets no card
         bt = a["bots"][name]
         r, m, o = bt["running"], bt["money"], bt["open"]
         if _bot_parked(bt):                       # stopped by its stop file, nothing open, nothing this week
@@ -2543,14 +2665,14 @@ def bs_all_html(a):
             dot(w["money"]), esc(usd(w["money"])), esc(_nof(w["markets"], "market")), esc(usd(w["worst"]["money"])),
             esc(w["worst"]["what"]), esc(bs.day_label(w["worst"]["day"]))))
     L += parked
+    e_ = earlier_lines(a)
+    if e_:
+        L.append("⏸ " + esc(norm_money(e_[0])))
     bal = a["balances"]
     L.append("")
-    wx = bal.get("weather")
-    L.append("💵 <b>Cash:</b> main account %s (pin + race share it), forecaster %s, ladder %s%s, FX taker %s -- "
-             "all pots <b>%s</b>." % (esc(_cash(bal["main"])), esc(_cash(bal["forecaster"])), esc(_cash(bal["ladder"])),
-                                      "" if (wx is not None and abs(wx) < 0.005 and _bot_parked(a["bots"].get("weather")))
-                                      else ", weather %s" % esc(_cash(wx)), esc(_cash(bal.get("fx"))),
-                                      esc(_cash(bal["all"]))))
+    L.append("💵 <b>Cash:</b> %s -- all pots <b>%s</b>." % (
+        esc(", ".join("%s %s" % (_POT_WORD.get(k, k) + (" (%s)" % main_words(a.get("active")) if k == "main" else ""),
+                                 _cash(v)) for k, v in shown_cash(a))), esc(_cash(bal["all"]))))
     firsts = [mm.get("first_day") for mm in [a["bots"][x]["money"] for x in bs.BOTS] + [a["other"]]
               if mm.get("first_day")]
     days = [d for d in a["total_days_7"] if not (firsts and d["day"] < min(firsts))]
@@ -2568,7 +2690,7 @@ def bs_all_html(a):
         L.append(pre(table(rows, "lrrrrl")))
     elif not anything and not miss:
         L.append("Nothing settled yet in any pot.")
-    warn = bs_errors_line(a["errors"]) + list(bs.pot_check_lines(a.get("pot_check")))
+    warn = bs_errors_line(_shown_errors(a)) + list(bs.pot_check_lines(a.get("pot_check")))
     if all(tot[k].get("pot_pct") is None for k in BS_WINDOWS if tot[k]["markets"]) \
             and any(tot[k]["markets"] for k in BS_WINDOWS):
         why = next((tot[k].get("pot_why") for k in BS_WINDOWS if tot[k].get("pot_why")), None)
@@ -2581,15 +2703,15 @@ def bs_all_html(a):
     keep, skip = [], True
     for x in full[1:]:
         if x.startswith(("PIN BOT", "COIN RACE", "FORECASTER", "PENNY LADDER", "LADDER", "WEATHER DIP-SELLER",
-                         "FX TAKER", "NOT ANY BOT'S", "! ", "PARTIAL:", "% of the pots", "Cash: ")):
+                         "FX TAKER", "JUMP BAND", "EARLIER BOTS", "NOT ANY BOT'S", "! ", "PARTIAL:", "% of the pots", "Cash: ")):
             continue
         keep.append(x)
     while keep and not keep[-1].strip():
         keep.pop()
     L.append(details(elines(keep), "🔎 Details: each window by bot, each day by bot, what the % mean"))
     L.append("<i>A bot's dot = its money today: 🟢 up, 🔴 down, ⚪ no gain or loss yet, ❔ Kalshi unread; whether it runs "
-             "is in words under its name. One bot in full: /pin /race /fc /ladder /weather /fx · every account's cash: "
-             "/funds</i>")
+             "is in words under its name. One bot in full: %s · every account's cash: /funds</i>"
+             % " ".join(BOT_CMD_OF.get(b, "/" + b) for b in _active_of(a)))
     return L
 
 
@@ -2742,9 +2864,10 @@ def funds_read(getter, clock=time.monotonic, deadline_s=FUNDS_DEADLINE_S):
     return out
 
 
-def funds_sizes(results=RESULTS):
+def funds_sizes(results=RESULTS, active=None):
     """{subaccount: [words]}: each bot's bet size NOW, from its own log -- no Kalshi read. A log with no
-    size record leaves that bot out; a log that cannot be read says so. Never a guess."""
+    size record leaves that bot out; a log that cannot be read says so. Never a guess. `active` (v-tg-active): only
+    those bots (None = every bot)."""
     import glob
     bs = _bs()
 
@@ -2826,10 +2949,20 @@ def funds_sizes(results=RESULTS):
         return "FX taker%s %g contracts a market (set at its start %s%s)" % (
             what, size, when(r), (" on a %s pot" % _usd2(pot)) if _fnum(pot) is not None else "")
 
-    readers = {"pin": pin, "race": race, "ladder": ladder, "forecaster": forecaster, "fx": fx}
+    def jumpband():
+        r = bs.last_record(os.path.join(results, "jumpband-live.jsonl"), ("start",), lambda x: x.get("live") is True)
+        n = _fnum((r or {}).get("max_contracts"))
+        if n is None:
+            return None
+        return "jump band up to %g contracts a buy%s (set at its start %s)" % (
+            n, (", at most %s an order" % _usd2(r["max_cost"])) if _fnum(r.get("max_cost")) is not None else "", when(r))
+
+    readers = {"pin": pin, "race": race, "ladder": ladder, "forecaster": forecaster, "fx": fx, "jumpband": jumpband}
     out = {}
     for n, bots in FUNDS_SIZE_BOTS.items():
         for b in bots:
+            if active is not None and b not in active:
+                continue                                        # v-tg-active: a paused or retired bot's size is not said
             try:
                 w = readers[b](n) if b == "fx" else readers[b]()     # the FX taker: one start, a pot per account
             except Exception as e:                              # noqa: BLE001
@@ -2879,6 +3012,13 @@ FUNDS_HIST_PAGES = 60                   # 12,000 settlements in FUNDS_DAYS days,
 FUNDS_HIST_DEADLINE_S = 15.0            # the whole settlement read, every account; short: loss alerts wait on it
 FUNDS_HIST_PATH = "/portfolio/settlements"                    # GET only
 FUNDS_BOOKS = (("bot", "main bot"), ("race", "race"), ("other", "other"))
+
+
+def funds_books(active=None):
+    """FUNDS_BOOKS with the coin race's book named 'earlier bots' while the race is not active (v-tg-active)."""
+    if active is None or "race" in active:
+        return FUNDS_BOOKS
+    return tuple((k, "earlier bots" if k == "race" else w) for k, w in FUNDS_BOOKS)
 _FUNDS_HIST = {}                        # subaccount -> {"t": clock, "since": epoch, "res": a whole pull}
 
 
@@ -3029,7 +3169,7 @@ def funds_days(res, today, days=FUNDS_DAYS, sub=None):
     return out
 
 
-def _funds_hist_lines(n, res, today, show, held):
+def _funds_hist_lines(n, res, today, show, held, active=None):
     """The past-days lines under one account. `show` = how many day lines to list (the total always
     counts all FUNDS_DAYS); `held` = what the account holds now, or None when that was not read whole."""
     bs = _bs()
@@ -3047,7 +3187,7 @@ def _funds_hist_lines(n, res, today, show, held):
         if n != 0 or not x["all"]["n"]:
             return cw(x["all"])
         return "%s = %s" % (bs.usd(x["all"]["money"]), " + ".join(
-            "%s %s" % (w, cw(x[k], other_names if k == "other" else "")) for k, w in FUNDS_BOOKS if x[k]["n"]))
+            "%s %s" % (w, cw(x[k], other_names if k == "other" else "")) for k, w in funds_books(active) if x[k]["n"]))
 
     def label(d):
         return "%s %s%s" % (time.strftime("%a", time.strptime(d, "%Y-%m-%d")), bs.day_label(d),
@@ -3088,15 +3228,15 @@ def _funds_hist_lines(n, res, today, show, held):
     return L
 
 
-def funds_text(f, sizes, now, hist=None):
+def funds_text(f, sizes, now, hist=None, active=None):
     """/funds' words from funds_read() and funds_sizes(). Anything unread is named, and a total that
     leaves something out says 'at least' and what. With `hist` (funds_settled), every account also
     carries its last FUNDS_DAYS ET days; the day lines shrink through FUNDS_SHOW_DAYS until the page fits
     one Telegram message (MAX_LEN), and say so."""
     if hist is None:
-        return _funds_page(f, sizes, now, None, 0)
+        return _funds_page(f, sizes, now, None, 0, active)
     for show in FUNDS_SHOW_DAYS:
-        t = _funds_page(f, sizes, now, hist, show)
+        t = _funds_page(f, sizes, now, hist, show, active)
         if len(t) <= MAX_LEN:
             break
     return t
@@ -3104,13 +3244,28 @@ def funds_text(f, sizes, now, hist=None):
 
 # /funds on a phone (2026-10-18): a short name an account goes by in the summary table. Edit beside
 # FUNDS_WHAT when a bot moves; an account not here shows its FUNDS_WHAT words, cut short.
-FUNDS_SHORT = {0: "main+race", 1: "ladder", 2: "forecaster", 3: "weather", 4: "fx pairs", 5: "fx commod"}
+FUNDS_SHORT = {0: "main+race", 1: "ladder", 2: "forecaster", 3: "jump band", 4: "fx pairs", 5: "fx commod"}
 
 
-def funds_idle(n):
+def funds_short(n, active=None):
+    """FUNDS_SHORT's name for account n -- 'idle' when nothing active runs there, 'main' for the main account while the
+    coin race is not active (v-tg-active; None = the whole roster)."""
+    if active is None or n not in FUNDS_SHORT:
+        return FUNDS_SHORT.get(n)
+    if n == 0:
+        return "main+race" if "race" in active else "main"
+    if funds_idle(n, active):
+        return "idle"
+    if n == 3 and "jumpband" not in active:
+        return "weather"
+    return FUNDS_SHORT[n]
+
+
+def funds_idle(n, active=None):
     """True when every pool of account n is marked stopped or empty in FUNDS_WHAT: money there runs
-    nothing. (The operator, 2026-10-18: 'dead sitting money'.) Unknown accounts are not called idle."""
-    what = FUNDS_WHAT.get(n)
+    nothing. (The operator, 2026-10-18: 'dead sitting money'.) Unknown accounts are not called idle.
+    v-tg-active: with `active`, a pool whose bots are all hidden is stopped too (funds_what)."""
+    what = funds_what(n, active)
     if what is None:
         return False
     vals = list(what.values()) if isinstance(what, dict) else [what]
@@ -3121,7 +3276,7 @@ def _funds_day_label(d, today):
     return "%s %d%s" % (time.strftime("%a", time.strptime(d, "%Y-%m-%d")), int(d[8:]), "*" if d == today else "")
 
 
-def _funds_days_html(n, res, today, show, held):
+def _funds_days_html(n, res, today, show, held, active=None):
     """One account's past days as a table (money and how many of the markets settled lost), its total and
     that total's share of what it holds now -- the figures _funds_hist_lines words, from funds_days. For
     the main account the main bot / race / other split follows, its day-by-day lines behind a tap."""
@@ -3175,11 +3330,11 @@ def _funds_days_html(n, res, today, show, held):
         L.append("Split: " + " · ".join(
             "%s <b>%s</b> (%d of %d lost%s)" % (esc(w), esc(usd(tot[k]["money"])), tot[k]["lost"], tot[k]["n"],
                                                 esc("; " + names) if k == "other" and names else "")
-            for k, w in FUNDS_BOOKS if tot[k]["n"]))
+            for k, w in funds_books(active) if tot[k]["n"]))
         # the day lines only: the total, its % and the NOT READ list are said above
-        L.append(details(elines([x.strip() for x in _funds_hist_lines(n, res, today, show, held)[1:]
+        L.append(details(elines([x.strip() for x in _funds_hist_lines(n, res, today, show, held, active)[1:]
                                  if not x.strip().startswith(("NOT READ", "7 days:", "the "))]),
-                         "Each day, main bot / race / other"))
+                         "Each day, %s" % " / ".join(w for _k, w in funds_books(active))))
     if lo_line:
         L.append(lo_line)
     if unread:
@@ -3188,7 +3343,7 @@ def _funds_days_html(n, res, today, show, held):
     return L
 
 
-def _funds_page(f, sizes, now, hist, show):
+def _funds_page(f, sizes, now, hist, show, active=None):
     """/funds as Html: the grand total first, a one-line-an-account table, idle money named, then each
     account -- the same figures and the same 'at least' / COULD NOT READ rules as always."""
     today = pinday.et_day_of_epoch(now)
@@ -3198,7 +3353,9 @@ def _funds_page(f, sizes, now, hist, show):
     accts = []
     for n in sorted(f["subs"]):
         s = f["subs"][n]
-        what = FUNDS_WHAT.get(n, "unknown (not in FUNDS_WHAT in pinphone.py)")
+        what = funds_what(n, active)
+        if what is None:
+            what = "unknown (not in FUNDS_WHAT in pinphone.py)"
         if isinstance(what, dict):
             what = "; ".join("%s: %s" % (_pool_name(ix), w) for ix, w in sorted(what.items()))
         name = "MAIN ACCOUNT (0)" if n == 0 else "SUBACCOUNT %d" % n
@@ -3262,7 +3419,7 @@ def _funds_page(f, sizes, now, hist, show):
         allt = cash_t + open_t
         rows = [("Account", "Total $", "Share") + (("7 days",) if hist is not None else ())]
         for a in accts:
-            nm = "%d %s" % (a["n"], FUNDS_SHORT.get(a["n"], str(a["what"])[:10]))
+            nm = "%d %s" % (a["n"], funds_short(a["n"], active) or str(a["what"])[:10])
             tt = ("" if a["whole"] else ">=") + "{:,.2f}".format(a["total"])
             sh = (pct_of(a["total"], allt, 1) or "-") if (not missing and allt > 0.004) else "-"
             if hist is None:
@@ -3281,7 +3438,7 @@ def _funds_page(f, sizes, now, hist, show):
         L.append(pre(table(rows)))
         if hist is not None:
             L.append(i_("7 days = that account's money over the past 7 ET days and its share of what it holds now"))
-        idle = [a for a in accts if funds_idle(a["n"]) and a["whole"] and a["total"] > 0.004]
+        idle = [a for a in accts if funds_idle(a["n"], active) and a["whole"] and a["total"] > 0.004]
         if idle:
             it = sum(a["total"] for a in idle)
             L.append("💤 <b>Idle: %s</b>%s sits in %s nothing now (%s)." % (
@@ -3301,7 +3458,8 @@ def _funds_page(f, sizes, now, hist, show):
         if sizes.get(n):
             L.append("bet size now: " + esc("; ".join(sizes[n])))
         if hist is not None:
-            L.extend(_funds_days_html(n, hist.get(n), today, show, (a["cash"] + s["open"]) if a["whole"] else None))
+            L.extend(_funds_days_html(n, hist.get(n), today, show, (a["cash"] + s["open"]) if a["whole"] else None,
+                                      active))
     L.append("")
     L.append(i_("Open bets count at what they cost. Bet sizes are from each bot's own log."
                 + (" Past days: Kalshi's settlement records -- what each market paid minus its cost and fees, on "
@@ -3332,6 +3490,11 @@ LADDER_PY = os.path.join(HERE, "cleanroom", "ladder_live.py")
 
 # the roster: (script file, a flag it must have or None, a flag it must NOT have or None, label, one sentence).
 # A launch in boot_all that matches no row is still shown (by boot_all's own label); a row with no launch says so.
+# v-tg-active (2026-10-30): a money bot's row (FEATURE_BOT) is shown only while that bot is ACTIVE; its paper rows stay.
+FEATURE_BOT = {("pinrun.py", "--live"): "pin", ("pinracearm.py", "--live"): "race", ("forecaster_live.py", None): "forecaster",
+               ("ladder_live.py", None): "ladder", ("dipsell_live.py", None): "weather", ("fxtake_live.py", "--live"): "fx",
+               ("jumpband_live.py", "--live"): "jumpband", ("pinracearm.py", None): "race",
+               ("fc_variants_paper.py", None): "forecaster"}        # the paper rows that are a hidden bot's own family
 FEATURES = (
     ("pinrun.py", "--live", None, "Pin bot (LIVE, main account)",
      "Buys the near-certain side of a 15-minute coin market in its last seconds, when the price has pinned."),
@@ -3347,6 +3510,11 @@ FEATURES = (
     ("fxtake_live.py", "--live", None, "FX taker (LIVE, subaccounts 5 + 4)",
      "In the last 45 to 15 seconds of each 15-minute currency and commodity market (30 to 15 until 10-30), buys the side already bid 98c "
      "or more at 99c or less, 10 contracts: the 5 currency pairs from subaccount 4, the 8 commodities from subaccount 5."),
+    ("jumpband_live.py", "--live", None, "Jump band (LIVE, subaccount 3)",
+     "Buys the 70-90c favourite on BNB, HYPE, ZEC and NEAR when the price jumps 2+ standard deviations in the last "
+     "minute, 10 to 60 seconds before the close, 5 contracts, and holds it to the end (live stage 1 since 10-30, $50)."),
+    ("jumpband_live.py", None, "--live", "Jump band paper arm",
+     "The jump band's rule on paper at 100 contracts, beside the live one; no orders."),
     ("pinracearm.py", None, "--live", "Coin race paper arms",
      "Watch the same coin races on paper with other entry rules; no orders."),
     ("pinrun.py", None, "--live", "Pin bot paper arms",
@@ -3499,9 +3667,28 @@ def ladder_rules_html(path=None):
     return L
 
 
-def features_html(boot_path=None, ladder_path=None):
+def _hand_started(bot, procs=None):
+    """A live bot boot_all does not start: its settings from its own start record (botstats), said as such."""
+    L = [i_("not started by boot_all: started by hand on the server (results\\jb_deploy.ps1); nothing restarts it if it dies")]
+    try:
+        r = _bs().running(bot, _bs()._norm_procs(procs) if procs is not None and not callable(procs) else None,
+                          procs is not None and not callable(procs), time.time())
+        if r.get("settings_text"):
+            L.append(esc("settings: " + r["settings_text"]))
+        if r.get("command"):
+            toks = r["command"].replace('"', " ").split()
+            i = next((k for k, t in enumerate(toks) if t.lower().endswith(".py")), -1)
+            L.extend(argv_lines(toks[i + 1:]))                    # its flags, after the script (not python.exe)
+    except Exception as e:                                      # noqa: BLE001
+        L.append(esc("its settings could not be read: %s" % str(e)[:80]))
+    return L
+
+
+def features_html(boot_path=None, ladder_path=None, active=None, procs=None):
     """The /features page: a block a bot from FEATURES, its settings from boot_all.ps1 as it is now, the ladder's
-    goal and rungs, then the rules block. Longer than one message: Telegram.send cuts it at a blank line."""
+    goal and rungs, then the rules block. Longer than one message: Telegram.send cuts it at a blank line.
+    v-tg-active: with `active`, a money bot that is not active gets no block (its boot_all launch neither); an active bot
+    boot_all does not start (the jump band, started by hand) shows its settings from its live start record."""
     boot_path = boot_path or BOOT_ALL
     try:
         with open(boot_path, encoding="utf-8") as fh:
@@ -3518,6 +3705,15 @@ def features_html(boot_path=None, ladder_path=None):
         mine = [k for k, x in enumerate(launches) if x["script"] == script
                 and (must is None or must in x["argv"]) and (must_not is None or must_not not in x["argv"])]
         used.update(mine)
+        bot = FEATURE_BOT.get((script, must))
+        if active is not None and bot is not None and bot not in active:
+            continue                                     # v-tg-active: a paused or retired bot is not listed
+        if bot == "jumpband" and not mine:
+            L.append("")
+            L.append("<b>%s</b>" % esc(label))
+            L.append(esc(what))
+            L += _hand_started(bot, procs)
+            continue
         # 2026-10-23: a bot boot_all keeps off with its stop file says so, without its settings (it read LIVE)
         off = [_stopped_since(launches[k]) for k in mine]
         if mine and all(t is not None for t in off):
@@ -3546,8 +3742,9 @@ def features_html(boot_path=None, ladder_path=None):
             if x["arms"]:
                 L.append("arms: <b>%d</b> -- %s" % (len(x["arms"]), esc(", ".join(x["arms"]))))
                 L.append(i_("each arm adds its own band, early-leg or confidence flags to the shared ones above"))
+    hidden_scripts = {sc for (sc, _m), b in FEATURE_BOT.items() if active is not None and b not in active}
     for k, x in enumerate(launches):
-        if k not in used:
+        if k not in used and x["script"] not in hidden_scripts:
             L.append("")
             off = _stopped_since(x)
             L.append("%s<b>%s</b>" % ("⏸ " if off is not None else "", esc(x["label"] or x["script"])))
@@ -3596,9 +3793,12 @@ SPEED_MIN_OTHER = 20            # ... and for another bot's line
 SPEED_OTHERS = (("fx", "fxtake-live-orders.jsonl", "kind", "placed"),
                 ("forecaster", "forecaster-live-orders.jsonl", "ev", "placed"),
                 ("race", "pinracepenny-live.jsonl", "kind", "live_order"))
-SPEED_SKIPPED = (("ladder", "skipped: its bids rest on the book until a seller hits them, so how fast it sends does "
+# the jump band (2026-10-30) started on the server, so it has no home window to set its speed against
+SPEED_SKIPPED = (("jumpband", "skipped: it started on the server (10-30), so there is no home window to compare"),
+                 ("ladder", "skipped: its bids rest on the book until a seller hits them, so how fast it sends does "
                             "not decide what it gets, and its log keeps no send-to-answer time"),)
-SPEED_LABEL = {"fx": "FX taker", "forecaster": "Forecaster", "race": "Coin race", "ladder": "Ladder"}
+SPEED_LABEL = {"fx": "FX taker", "forecaster": "Forecaster", "race": "Coin race", "ladder": "Ladder",
+               "jumpband": "Jump band"}
 
 # THE SERVER, as AWS shows it (the console, 10-27). The prices are AWS's on-demand list for us-east-2 and only feed the
 # ESTIMATE /server shows next to (or, until the billing role exists, instead of) AWS's own figures.
@@ -3825,17 +4025,21 @@ def speed_estimate(home, srv, money, span_s):
     return out
 
 
-def speed_gather(results, orders, now, since=None, home_days=None):
-    """Everything /speed shows, worked from the logs (see the section's head). `orders` = the Ledger's order rows."""
+def speed_gather(results, orders, now, since=None, home_days=None, active=None):
+    """Everything /speed shows, worked from the logs (see the section's head). `orders` = the Ledger's order rows.
+    `active` (v-tg-active): the other bots' lines for those bots only (None = every bot)."""
     since = SERVER_SINCE_EPOCH if since is None else since
     h0 = since - (SPEED_HOME_DAYS if home_days is None else home_days) * 86400
     pins = pin_speed_orders(orders)
     home, srv = _speed_win(pins, h0, since), _speed_win(pins, since, now + 1)
-    d = {"since": since, "home_from": h0, "now": now, "others": [], "skipped": list(SPEED_SKIPPED),
+    d = {"since": since, "home_from": h0, "now": now, "others": [],
+         "skipped": [x for x in SPEED_SKIPPED if active is None or x[0] in active],
          "pin": {"home": speed_stats(home), "server": speed_stats(srv)}}
     d["pin"]["money"] = speed_pin_money(results, srv, since)
     d["pin"]["est"] = speed_estimate(d["pin"]["home"], d["pin"]["server"], d["pin"]["money"], now - since)
     for bot, name, field, value in SPEED_OTHERS:
+        if active is not None and bot not in active:
+            continue
         p = os.path.join(results, name)
         if not os.path.exists(p):
             d["others"].append({"bot": bot, "missing": name})
@@ -3947,7 +4151,8 @@ def speed_html(d, bank=None, min_orders=None, min_other=None):
         "Why only an estimate: it assumes the extra contracts made what the server's filled ones made, and that the "
         "markets of the two windows were alike. Neither is proven; the gap in got/asked is the measured part.",
         "Other bots: only orders Kalshi took count (a refusal such as 'market not found' is no race); their time is the "
-        "bot's own send-to-answer time (rtt). The coin race keeps none.",
+        "bot's own send-to-answer time (rtt).%s" % (" The coin race keeps none." if any(x.get("bot") == "race"
+                                                                                       for x in d["others"]) else ""),
         "Home = the %d days before the move (SERVER_SINCE = %s, a constant in pinphone.py); server = since. Read from "
         "the bots' own logs; nothing is asked of Kalshi." % (SPEED_HOME_DAYS, SERVER_SINCE)]),
         "🔎 How each figure is worked (tap)"))
@@ -4435,7 +4640,7 @@ What the role can do: read the budget and the cost totals, nothing else. It cann
 <i>budgets:ViewBudget is the permission behind AWS's DescribeBudgets call (there is no separate budgets:DescribeBudgets permission). DescribeBudgets is free and is read at most once an hour; Cost Explorer costs $0.01 a read, so it is read at most every 6 hours and only when /server is asked (at most about $1.20 a month).</i>""")
 
 
-def _server_pots_lines(pots, now):
+def _server_pots_lines(pots, now, active=None):
     """/server's funds: every pot from botstats' cache (cached_pots: the last read /bots, /funds or a chart made)."""
     if not isinstance(pots, dict) or pots.get("err") or not pots.get("pots"):
         return ["💰 <b>Funds</b>: botstats' cache could not be read%s. /funds reads every account."
@@ -4449,7 +4654,7 @@ def _server_pots_lines(pots, now):
     notes = []
     for sub in sorted(ps, key=lambda s: int(s) if str(s).isdigit() else 99):
         p = ps[sub]
-        name = FUNDS_SHORT.get(int(sub), "pot %s" % sub) if str(sub).isdigit() else str(sub)
+        name = (funds_short(int(sub), active) or "pot %s" % sub) if str(sub).isdigit() else str(sub)
         v = p.get("value")
         if v is None:
             notes.append("%s: %s%s" % (name, p.get("why") or "not read",
@@ -4523,7 +4728,7 @@ def _server_aws_lines(aws, est, total, now):
     return L
 
 
-def server_html(m, ping, pots, aws, est, now, pin_home=None, pin_srv=None):
+def server_html(m, ping, pots, aws, est, now, pin_home=None, pin_srv=None, active=None):
     """/server's screen: the machine (machine_read), the time to Kalshi (kalshi_ping), every pot's money (botstats'
     cache), the AWS bill (aws_cost, aws_estimate). Each part says what it could not read; none stops the others."""
     best = min(ping["ms"]) if ping and ping.get("ms") else None
@@ -4582,7 +4787,7 @@ def server_html(m, ping, pots, aws, est, now, pin_home=None, pin_srv=None):
     L.append(i_("A bare TCP connect to %s:443 (no request is sent, so no Kalshi limit is used), at most once a minute."
                 % KALSHI_HOST))
     L.append("")
-    fl, total = _server_pots_lines(pots, now)
+    fl, total = _server_pots_lines(pots, now, active)
     L += fl
     L.append("")
     L += _server_aws_lines(aws or {}, est, total, now)
@@ -4645,6 +4850,27 @@ class Phone:
     @property
     def chat_id(self):
         return self.cfg.get("chat_id")
+
+    def active(self):
+        """The bots shown now (v-tg-active, 2026-10-30): botstats.active_bots -- a live copy running and no stop file; the
+        pin bot always. Fail-safe: any error shows every bot (a command never dies on it)."""
+        bs = _bs()
+        try:
+            return tuple(bs.active_bots(procs=self.bs_procs))
+        except Exception:                                       # noqa: BLE001
+            log(traceback.format_exc())
+            return tuple(bs.BOTS)
+
+    def text_hidden(self, name):
+        """The answer to a paused or retired bot's own command (/race, /fc, /wx ... while it is not active)."""
+        bs = _bs()
+        label = bs.SPEC[name]["label"] if name in bs.SPEC else name
+        why = "its stop file is set" if bs.stop_set(name) else "no live copy of it is running"
+        return Html("⏸ <b>%s is not running now</b> (%s), so it is left off every page and /help.\n%s\n%s" % (
+            esc(label), esc(why), i_("It comes back by itself -- here, in /help, /bots and the rest -- once it runs "
+                                     "again with no stop file. Its past money stays in every total, on the 'earlier bots' "
+                                     "line of /bots."),
+            i_("The bots running now: %s" % " ".join(BOT_CMD_OF.get(b, "/" + b) for b in self.active()))))
 
     def save_cfg(self):
         try:
@@ -4812,8 +5038,8 @@ class Phone:
             # 2026-10-26: was 'Bank $1,340.77 (+19.34% on the $1,123.46 put in)' -- the main account's bank against
             # the money put into EVERY pot (about $1,024 of it now sits in the other bots' pots), so the % read low
             lines.append("")
-            lines.append("🏦 <b>Main account %s</b> (pin bot + coin race) · bet size %g contracts" % (
-                esc(dollars(b["bank"])), b.get("size") or 0))
+            lines.append("🏦 <b>Main account %s</b> (%s) · bet size %g contracts" % (
+                esc(dollars(b["bank"])), esc(main_words(self.active())), b.get("size") or 0))
             try:
                 a = self._bs_get("all")
                 at, allc = a["total"]["all_time"], a["balances"].get("all")
@@ -4826,7 +5052,8 @@ class Phone:
                 log(traceback.format_exc())
         today = et_day(self.now())
         lines.append("")
-        lines += self.day_html(self.ledger.settled_on(today), today, "Pin + race today")
+        lines += self.day_html(self.ledger.settled_on(today), today,
+                               "Pin + race today" if "race" in self.active() else "Main account today")
         try:
             t_ = self._bs_get("all")["total"]["today"]
             if t_["markets"]:
@@ -4945,10 +5172,12 @@ class Phone:
         top = self._all_bots_day(day, label)
         if top:
             # inside the tap's quote: no <code> (Telegram refuses code inside a blockquote -- tg_html_problems)
+            mw = main_words(self.active())
             L = [x.replace("<code>", "").replace("</code>", "")
-                 for x in self.day_html(self.ledger.settled_on(day), day, "Pin + race")]
-            return Html("\n".join(top + ["", details(L, "🏦 Pin bot + coin race (main account): closes, fills, "
-                                                        "hours up -- tap"),
+                 for x in self.day_html(self.ledger.settled_on(day), day,
+                                        "Pin + race" if "race" in mw else "Main account")]
+            return Html("\n".join(top + ["", details(L, "🏦 %s (main account): closes, fills, "
+                                                        "hours up -- tap" % (mw[:1].upper() + mw[1:])),
                                          i_("each bot in full: /bots · the week: /days")]))
         L = self.day_html(self.ledger.settled_on(day), day, label)
         if day == et_day(self.now()):                          # /today: yesterday beside it, for scale
@@ -5010,7 +5239,7 @@ class Phone:
                     usd(at["money"]), (" (%s on the %s put in)" % (bs.pot_pct_txt(at["pot_pct"]), dollars(at["pot"])))
                     if at.get("pot_pct") is not None and at.get("pot") else "", _nof(at["markets"], "market"), at["lost"])))
             firsts = [mm.get("first_day") for mm in [a["bots"][x]["money"] for x in bs.BOTS] + [a["other"]]
-                      if mm.get("first_day")]
+                      if mm.get("first_day")]               # every bot's books, hidden ones too: the totals' days
             days = [d for d in a["total_days_7"] if not (firsts and d["day"] < min(firsts))]
             if days:
                 mx = max([abs(d["money"]) for d in days if d["markets"]] or [0])
@@ -5033,7 +5262,8 @@ class Phone:
             det = ["%s: <b>%s</b> (%s of the bank) · %d of %d closes lost" % (
                 esc(bs.day_label(d)), esc(usd(v)), esc(pct(r)), lost, closes) for d, v, r, lost, closes in main]
             if det:
-                out += ["", details(det, "🏦 Pin bot + coin race (main account), day by day -- tap")]
+                mw = main_words(a.get("active"))
+                out += ["", details(det, "🏦 %s (main account), day by day -- tap" % (mw[:1].upper() + mw[1:]))]
         else:
             rows, vals = [("Day", "Money", "% bank", "Lost", "")], []
             for d, v, r, lost, closes in main:
@@ -5068,19 +5298,23 @@ class Phone:
         try:
             a = self._bs_get("all")
             bs = _bs()
+            act = _active_of(a)
             for nm in bs.BOTS:
                 if nm == "pin":
                     continue
                 bt = a["bots"][nm]
                 o = bt["open"]
+                if nm not in act and not (o["ok"] and o["count"]):
+                    continue                             # v-tg-active: a hidden bot only if it still holds a bet
+                label = bt["label"] if nm in act else "Earlier bot (not running)"
                 if not o["ok"]:
-                    unread.append(bt["label"].lower())
+                    unread.append(label.lower())
                     continue
                 if not o["count"]:
                     continue
                 cash = (bt.get("balance") or {}).get("dollars")
                 others.append("📂 <b>%s: %d open</b> · %s at risk%s" % (
-                    esc(bt["label"]), o["count"], esc(_cash(o["at_risk"])),
+                    esc(label), o["count"], esc(_cash(o["at_risk"])),
                     (" (%s of its cash)" % esc(pct_of(o["at_risk"], cash + o["at_risk"], 1))) if cash else ""))
                 for p_ in o["positions"][:8]:
                     others.append("  %s %s x%g · %s" % (esc(p_["what"]), esc(str(p_["side"]).upper()), p_["contracts"],
@@ -5148,8 +5382,14 @@ class Phone:
         bot. Html lines; a failure costs these lines only."""
         try:
             bs = _bs()
-            names = [b for b in bs.BOTS if b != "pin"]
-            fl, unread = bs.fills_since(et_day_start(day), names)
+            act = self.active()
+            fl, unread = bs.fills_since(et_day_start(day), [b for b in bs.BOTS if b != "pin"])
+            # v-tg-active: a paused or retired bot's fills (there should be none) are 'earlier bots', never its name
+            names = [b for b in act if b != "pin"] + ["earlier"]
+            for f in fl:
+                if f["bot"] not in act:
+                    f["bot"] = "earlier"
+            unread = {(b if b in act else "earlier"): w for b, w in unread.items()}
         except Exception:                                       # noqa: BLE001
             log(traceback.format_exc())
             return ["", i_("The other bots' fills could not be read.")]
@@ -5192,7 +5432,8 @@ class Phone:
             top = self._all_bots_day(et_day(self.now()), "Today")      # 2026-10-26: every pot first, with its %
             if not top:
                 return body
-            return Html("\n".join(top + ["", "🏦 <b>Pin bot + coin race (main account)</b>", str(body)]))
+            mw = main_words(self.active())
+            return Html("\n".join(top + ["", "🏦 <b>%s (main account)</b>" % esc(mw[:1].upper() + mw[1:]), str(body)]))
         except Exception as e:                                  # noqa: BLE001
             return ("Could not build today's briefing: %s\n"
                     "Everything else still works -- try /today again, or "
@@ -5289,8 +5530,13 @@ class Phone:
             return {}, None
         try:
             bs = _bs()
-            names = [b for b in bs.BOTS if b != "pin"]
-            fl, unread = bs.fills_since(min(cs) - 2 * 3600, names)
+            act = self.active()
+            fl, unread = bs.fills_since(min(cs) - 2 * 3600, [b for b in bs.BOTS if b != "pin"])
+            names = [b for b in act if b != "pin"] + ["earlier"]       # v-tg-active, as /fills
+            for f in fl:
+                if f["bot"] not in act:
+                    f["bot"] = "earlier"
+            unread = {(b if b in act else "earlier"): w for b, w in unread.items()}
         except Exception:                                       # noqa: BLE001
             log(traceback.format_exc())
             return {}, "the other bots' logs"
@@ -5325,7 +5571,7 @@ class Phone:
                         + (" ⚠️ Leaves out %s (Kalshi could not be read)." % esc(", ".join(missing)) if missing else ""))
 
         def line(r):
-            what = r["what"][5:] if r["bot"] == "race" and r["what"].startswith("race ") else r["what"]
+            what = r["what"][5:] if r["bot"] in ("race", "earlier") and r["what"].startswith("race ") else r["what"]
             held = ("hedged x%s" % _cnt(r["contracts"])) if r["side"] == "both" else \
                 ("%s x%s" % (r["side"].upper(), _cnt(r["contracts"])) if r["side"] in ("yes", "no") else "")
             return "<b>%s</b>%s · %s · %s" % (esc(usd(r["money"])),
@@ -5333,7 +5579,7 @@ class Phone:
                                              esc(short.get(r["bot"], r["bot"])), esc(" ".join(x for x in (what, held) if x)))
 
         tbl = [("Bot", "Lost", "7d", "$ lost", "Worst")]
-        for nm in tuple(bs.BOTS) + ("other",):
+        for nm in tuple(bs.BOTS) + ("earlier", "other"):         # all_losses folds hidden bots into one row
             p = per.get(nm)
             if p and p["settled"]:
                 tbl.append((short.get(nm, nm), "%d/%d" % (p["lost"], p["settled"]), str(p["lost_7d"]),
@@ -5349,8 +5595,9 @@ class Phone:
             out = ["🔴 <b>%s losing markets</b> of %s settled, every bot (%.1f%%) · %d in the last 7 days" % (
                        _cnt(lost), _cnt(settled), 100.0 * lost / settled if settled else 0.0,
                        sum(p["lost_7d"] for p in per.values())),
-                   i_("the last %d, newest first · %% = of that bot's pot when its day began (pin + race share the "
-                      "main account) · Kalshi's books, every pot" % n)]
+                   i_("the last %d, newest first · %% = of that bot's pot when its day began (%s) · Kalshi's books, "
+                      "every pot" % (n, "pin + race share the main account" if "race" in per else
+                                     "earlier bots = the paused or stopped ones"))]
             if missing:
                 out.append("⚠️ PARTIAL: leaves out %s (Kalshi could not be read)" % esc(", ".join(missing)))
             day = None
@@ -5458,8 +5705,8 @@ class Phone:
         L = ["%s <b>Lifetime %s</b> (<b>%s</b> on $%s risked) · since %s" % (
                  dot(life["net"]), esc(usd(life["net"])), esc(ret(life["net"], life["risked"], 2)),
                  esc(_usd(life["risked"])), esc(_md(FIRST_LIVE_DAY))),
-             i_("📊 STATS · %s ET · Kalshi's books, main account (pin + coin race; every other bot: /bots); "
-                "days are ET." % et_str(now, "%a %m/%d %I:%M %p"))]
+             i_("📊 STATS · %s ET · Kalshi's books, main account (%s; every other bot: /bots); "
+                "days are ET." % (et_str(now, "%a %m/%d %I:%M %p"), main_words(self.active())))]
         # % of the bank (2026-10-26): each window's money over the main account's bank when it began (pindesk's
         # bank_at, the /days figure); Life over the money put into the main account (botstats' pot, as /pin says)
         life_in = None
@@ -5495,7 +5742,8 @@ class Phone:
         by = {}
         for m in sts[0][4]:
             by[m["book"]] = by.get(m["book"], 0.0) + m["pnl"]
-        names = {"crypto": "pin bot", "coin race": "coin race", "commodity": "old oil bot (Sep)", "other": "other"}
+        names = {"crypto": "pin bot", "coin race": "coin race" if "race" in self.active() else "earlier bots",
+                 "commodity": "old oil bot (Sep)", "other": "other"}
         L.append(esc("Lifetime by bot: " + ", ".join("%s %s" % (names.get(b, b), usd(v))
                                                      for b, v in sorted(by.items(), key=lambda kv: -kv[1])) + "."))
         pid = fl["live"][0] if fl["live"] else None
@@ -5541,10 +5789,13 @@ class Phone:
             L.append("Paper arms: the process table could not be read.")
         else:
             arms = [a[4:] if a.startswith("arm-") else a for a in fl["arms"]]
-            L.append(esc("Paper arms: %d%s + %d race arms%s." % (
+            race_on = "race" in self.active()            # v-tg-active: the paused race and its arms are not said
+            L.append(esc("Paper arms: %d%s%s." % (
                 len(arms), (" (" + ", ".join(arms) + ")") if arms else "",
-                len(fl["race_arms"]), (" (" + ", ".join(fl["race_arms"]) + ")") if fl["race_arms"] else "")))
-        L.append("🏁 Coin race: " + esc(self._race_summary(races_from(mk))))
+                (" + %d race arms%s" % (len(fl["race_arms"]), (" (" + ", ".join(fl["race_arms"]) + ")")
+                                        if fl["race_arms"] else "")) if race_on else "")))
+        if "race" in self.active():
+            L.append("🏁 Coin race: " + esc(self._race_summary(races_from(mk))))
         det, seen = [], []
         for title, st, nd, lab, sub in sts:                 # every window's full sentences, one quote
             keys = frozenset(m["tk"] for m in sub)
@@ -5699,7 +5950,8 @@ class Phone:
                     "main account's numbers." % (cmd, str(e)[:200]))
         more = {"pin": "More on pin: /stats (win rate vs break-even), /fills (today's orders), /open, /losses, /hedges.",
                 "forecaster": "Every bot: /bots.", "ladder": "Every bot: /bots.",
-                "weather": "Every bot: /bots.", "fx": "Every bot: /bots · both FX pots' cash: /funds."}.get(name)
+                "weather": "Every bot: /bots.", "fx": "Every bot: /bots · both FX pots' cash: /funds.",
+                "jumpband": "Every bot: /bots · its pot (subaccount 3, crypto pool): /funds."}.get(name)
         return Html("\n".join(out) + ("\n\n" + i_(more) if more else ""))
 
     def text_racestats(self):
@@ -5898,8 +6150,9 @@ class Phone:
             getter = self.funds_getter or _bs().default_getter()
             f = funds_read(getter)
             now = self.now()
-            return funds_text(f, funds_sizes(self.ledger.results), now,
-                              funds_hist(getter, f["subs"], now, bs_getter=self.bs_getter))
+            act = self.active()
+            return funds_text(f, funds_sizes(self.ledger.results, act), now,
+                              funds_hist(getter, f["subs"], now, bs_getter=self.bs_getter), active=act)
         except Exception as e:                                  # noqa: BLE001
             log(traceback.format_exc())
             return ("Could not build /funds: %s\nEverything else still works -- /bots shows each bot pot's "
@@ -5911,7 +6164,7 @@ class Phone:
         pin bot's orders home against server, what speed added in $ (an estimate), and a line for each other bot whose
         log allows it (speed_gather). No Kalshi read: the pin orders are the Ledger's, already in memory."""
         try:
-            d = speed_gather(self.ledger.results, self.ledger.orders, self.now())
+            d = speed_gather(self.ledger.results, self.ledger.orders, self.now(), active=self.active())
             return speed_html(d, (self.ledger.bank() or {}).get("bank"))
         except Exception as e:                                  # noqa: BLE001
             log(traceback.format_exc())
@@ -5939,7 +6192,7 @@ class Phone:
             return server_html(m, ping, pots, aws, aws_estimate(now), now,
                                speed_stats(_speed_win(pins, SERVER_SINCE_EPOCH - SPEED_HOME_DAYS * 86400,
                                                       SERVER_SINCE_EPOCH)),
-                               speed_stats(_speed_win(pins, SERVER_SINCE_EPOCH, now + 1)))
+                               speed_stats(_speed_win(pins, SERVER_SINCE_EPOCH, now + 1)), active=self.active())
         except Exception as e:                                  # noqa: BLE001
             log(traceback.format_exc())
             return ("Could not build /server: %s\nEverything else still works -- /funds has every account's money."
@@ -5999,7 +6252,7 @@ class Phone:
                 self.cfg["chat_id"] = chat_id
                 self.save_cfg()
                 log("paired with chat %s" % chat_id)
-                return Html("<b>Paired.</b> This chat now controls the bot.\n\n" + HELP_TEXT)
+                return Html("<b>Paired.</b> This chat now controls the bot.\n\n" + help_text(self.active()))
             log("refused pairing from chat %s" % chat_id)
             return None
         if self.chat_id is None or chat_id != self.chat_id:
@@ -6030,6 +6283,10 @@ class Phone:
             return self.text_hedges()
         if cmd == "/stats":
             return self.text_stats()
+        if cmd in ("/race", "/racestats") or cmd in BOT_CMDS:
+            name = BOT_CMDS.get(cmd, "race")
+            if name not in self.active():                # v-tg-active: a paused or retired bot is not shown
+                return self.text_hidden(name)
         if cmd == "/race":
             return self.text_race()
         if cmd == "/racestats":
@@ -6065,14 +6322,14 @@ class Phone:
         if cmd == "/update":
             return self.text_update()
         if cmd in ("/help", "/?"):
-            return HELP_TEXT
-        return Html("I did not understand that.\n\n" + HELP_TEXT)
+            return help_text(self.active())
+        return Html("I did not understand that.\n\n" + help_text(self.active()))
 
     def text_features(self):
         """/features (operator 10-22): every bot's job and its settings as boot_all.ps1 has them now, plus the
         ladder's rails from ladder_live.py -- features_html reads both files on each call. No Kalshi read."""
         try:
-            return features_html()
+            return features_html(active=self.active(), procs=self.bs_procs)
         except Exception as e:                                  # noqa: BLE001
             log(traceback.format_exc())
             return "Could not build /features: %s" % str(e)[:200]
@@ -6211,7 +6468,8 @@ class Phone:
         if not top or top[0].startswith("❔"):
             return base
         return Html("\n".join(["☀️ <b>YESTERDAY, %s</b> · every bot" % esc(_day_long(d))] + top + [
-            "", details(str(base).split("\n"), "🏦 Pin bot + coin race (main account): the day's story -- tap")]))
+            "", details(str(base).split("\n"), "🏦 %s (main account): the day's story -- tap"
+                        % (lambda w: w[:1].upper() + w[1:])(main_words(self.active())))]))
 
     # ---- charts (2026-10-18) ----
     def chart_after(self, chat_id, text):
@@ -6244,8 +6502,9 @@ class Phone:
         """What the picture reads, fixed right after the words were built: the clock, a private copy of the
         ledger's lists (this thread keeps appending to the live ones), botstats' getter and process table as
         the words use them, and /bars' gathered numbers."""
+        act = self.active()
         ctx = {"now": self.now(), "pp": sys.modules[__name__], "bs_getter": self.bs_getter,
-               "bs_procs": self.bs_procs, "funds_what": FUNDS_WHAT}
+               "bs_procs": self.bs_procs, "funds_what": {n: funds_what(n, act) for n in FUNDS_WHAT}, "active": act}
         if kind in tgc.LEDGER_KINDS:
             ctx["ledger"] = self._ledger_snapshot()
         if kind == "bars":
@@ -6636,6 +6895,7 @@ def selftest():
                                     {"subaccount_number": 2, "exchange_index": 2, "balance": "24.0000"},
                                     {"subaccount_number": 5, "exchange_index": 2, "balance": "0.0000"},   # the FX taker's pot (2026-10-25), empty here
                                     {"subaccount_number": 4, "exchange_index": 0, "balance": "0.0000"},   # its currency pot (pool 0, 10-25), empty here
+                                    {"subaccount_number": 3, "exchange_index": 2, "balance": "0.0000"},   # the jump band's pool (10-30), empty here
                                     {"subaccount_number": 3, "exchange_index": 0, "balance": "0.0000"}]}
         # the WEATHER world (2026-10-04): $50 moved main -> subaccount 3 in POOL 0 at 3 AM ET Sep 15; one Sep 15
         # bracket settled (NY: sold YES at 40c x2, NO won, +0.80) and one is open (MIA NO x2, $1.10). Cash in
@@ -6671,8 +6931,9 @@ def selftest():
             if path == "/portfolio/positions":
                 return 200, {"market_positions": [] if empty else _bs_pos.get(sub, []), "cursor": ""}
             if path == "/portfolio/balance":
-                # Kalshi answers for the NAMED pool only: pots 0-2 trade in pool 2, the weather pot (3) in pool 0
-                if (q or {}).get("exchange_index") != (0 if sub == "3" else 2):
+                # Kalshi answers for the NAMED pool only: each pot's trading pool as botstats has it (SUB_POOL: pot 3 is
+                # pool 2 since the jump band, 10-30; the weather world below runs on its old pool 0)
+                if (q or {}).get("exchange_index") != _bsm.SUB_POOL.get(sub, 2):
                     return 200, {"balance": 0, "balance_dollars": "0.0000"}
                 if wx and sub == "3":
                     return 200, {"balance": 0, "balance_dollars": "49.7000"}
@@ -6773,6 +7034,9 @@ def selftest():
                        {"t": "2026-09-16T13:59:34Z", "kind": "placed", "ticker": "KXSILVER15M-26SEP161000-00",
                         "filled": 0.0}):
                 _fh.write(json.dumps(_r) + "\n")
+        # v-tg-active (2026-10-30): the FX taker runs for /market and /fills (a bot that does not run is not named)
+        _fxp = (676, "2026-09-16T00:00:00Z", r"python -u research\cleanroom\fxtake_live.py --subaccount 5 --live")
+        ph.bs_procs = _bs_procs + [_fxp]
         _mk = P(ph.handle(111, "/market"))
         _mk10 = [x for x in _mk.split("\n") if x.startswith("10:00 AM · ")]
         ck("Sellers:" in _mk and _mk10 == ["10:00 AM · sellers 40.00% · pin bot bought 85 (BNB NO) · forecaster 5 "
@@ -6802,6 +7066,13 @@ def selftest():
            "/fills (10-26): every other bot's fills today from its own log, a count a bot, then newest first, each line "
            "naming its bot -- the order that got nothing is not a fill: %r" % P(_fl))
         ck(ph.handle(111, "/bets") == _fl, "/bets is the same command")
+        ph.bs_procs = _bs_procs                     # the FX taker stops: its fills are 'earlier bots', never named
+        _fl0, _mk0 = P(ph.handle(111, "/fills")), P(ph.handle(111, "/market"))
+        ck("FX taker" not in _fl0 and "earlier bots 3 fills, 30 contracts" in _fl0
+           and "9:59a · earlier bots · GOLD 10:00 AM YES x10 · 99.0c" in _fl0
+           and "forecaster 5 (ETH YES) · earlier bots 3 markets x10" in _mk0 and "FX taker" not in _mk0,
+           "v-tg-active: a bot that is not running is not named on /fills or /market; a fill in its log (there should "
+           "be none) is said as 'earlier bots', never dropped")
         _sv_o = L.orders
         L.orders = [
             {"t": now["t"], "tk": "KXBTC15M-26SEP180100-00", "filled": 77.0,
@@ -6869,7 +7140,8 @@ def selftest():
            and "Wed Sep 16\n-$2.54 (" in _lo and "Forecaster · ETH 10:00 AM YES x5" in _lo
            and "Pin bot · ETH 9:45 AM hedged x80" in _lo and "Tue Sep 15\n-$4.51" in _lo and "Other · WTI 2:00 PM YES x5" in _lo
            and _lo.index("Forecaster · ETH") < _lo.index("Pin bot · ETH") < _lo.index("Other · WTI")
-           and len(_lb) == 2 and "Coin race" not in _lb[0] and "Ladder" in _lb[1] and "ALL" in _lb[1] and "3/8" in _lb[1]
+           and len(_lb) == 2 and "Coin race" not in _lb[0] and "Ladder" not in _lb[1] and "Earlier bots  0/1" in _lb[1]
+           and "ALL" in _lb[1] and "3/8" in _lb[1]                  # v-tg-active: the stopped ladder is 'Earlier bots'
            and fits(ph.handle(111, "/losses")),
            "/losses (10-26): EVERY bot's losing markets from Kalshi's books -- the forecaster's and the old oil bot's "
            "too -- each named by bot, newest day first, with side and contracts; the pin's hedged market on its own "
@@ -7368,14 +7640,18 @@ def selftest():
         # midnight + 15.06 moved in = 15.06 (+0.28%); all 1087.80 + 12.528 = 1100.33 (-1.1%).
         # YESTERDAY: main 1048.70 + 14.00 - 76.95 = 985.75 at the start + 98 deposit + 2 back = 1085.75
         # (pin +0.05%, other -0.42%); forecaster 24 + 1.9928 - 5.99 = 20.00 (+2.7%); all 1103.75 (-0.31%).
+        # v-tg-active (2026-10-30): in this world the ladder is stopped by its stop file and the weather dip-seller, the FX
+        # taker and the jump band do not run -- none is named; the ladder's +$0.04 sits on the one 'earlier' entry
         ck("Today: -$12.53 on $123.81 put in (-10.1%) = -1.1% of all pots ($1,100.33); 5 markets, 3 won, 2 lost\n"
-           "  pin -$10.40 (-0.96%) | race +$0.37 (+0.03%) | forecaster -$2.54 (-9.6%) | ladder +$0.04 (+0.28%)"
+           "  pin -$10.40 (-0.96%) | race +$0.37 (+0.03%) | forecaster -$2.54 (-9.6%) | earlier +$0.04"
            in b_,
            "/bots TODAY is all four pots: -10.40 + 0.37 - 2.54 + 0.042 = -12.53 on 99.80 + 19.60 + 2.45 + 1.958 "
-           "put in = -1.1% of the $1,100.33 all pots held at midnight; each bot's share of ITS OWN pot listed")
+           "put in = -1.1% of the $1,100.33 all pots held at midnight; each running bot's share of ITS OWN pot listed, "
+           "the stopped ladder's money on the 'earlier' entry (no pot %%: earlier bots' pots differ)")
         ck("Yesterday: -$3.42 on $36.32 put in (-9.4%) = -0.31% of all pots ($1,103.75); 3 markets, 2 won, 1 lost\n"
-           "  pin +$0.54 (+0.05%) | race none | forecaster +$0.55 (+2.7%) | ladder none | weather none | fx none | other -$4.51 (-0.42%)"
-           in b_,
+           "  pin +$0.54 (+0.05%) | race none | forecaster +$0.55 (+2.7%) | other -$4.51 (-0.42%)"
+           in b_ and "ladder" not in b_.lower().replace("/ladder", "") and "weather" not in b_.lower()
+           and "fx" not in b_.lower() and "jump" not in b_.lower(),
            "YESTERDAY: the SOL and XRP markets that closed before midnight ET count on Sep 15 though Kalshi "
            "settled them on the 16th (UTC); the oil market that is no bot's is shown as `other`; the $98 "
            "deposit made during the day is part of the pot")
@@ -7385,15 +7661,15 @@ def selftest():
         ck("The % after '=' or in brackets = share of the pot when the window began" in b_
            and "Kalshi's books explain" not in b_,
            "/bots says once what the percentages are; every planted pot reconciles, so no pot warning")
-        ck("  Sep 16: -$12.53, 5 markets (pin -$10.40, race +$0.37, forecaster -$2.54, ladder +$0.04)" in b_
+        ck("  Sep 16: -$12.53, 5 markets (pin -$10.40, race +$0.37, forecaster -$2.54, earlier +$0.04)" in b_
            and "  Sep 15: -$3.42, 3 markets (pin +$0.54, forecaster +$0.55, other -$4.51)" in b_
            and "Sep 14" not in b_,
            "by day, with each bot's part; no line for the days before anything settled")
-        ck("Cash: main account $1,000.00 (pin + race share it), forecaster $24.00, ladder $15.10, weather $0.00, FX taker "
-           "$0.00 -- all pots $1,039.10." in b_ and "counts pin + race only" in b_
-           and "the weather dip-seller and the FX taker are separate pots" in b_,
-           "the cash of every pot, and HIS QUESTION answered: the main page counts pin + race only")
-        ck("Kalshi's own app shows the MAIN account only. The $39.10 sitting in the forecaster, ladder, weather and FX pots" in b_,
+        ck("Cash: main account (pin bot + coin race) $1,000.00, forecaster $24.00, earlier bots' pots $15.10 -- all pots "
+           "$1,039.10." in b_ and "counts the main account only (pin bot + coin race)" in b_,
+           "the cash of every pot -- a stopped bot's pot on one 'earlier bots' pots' entry, so it still adds up -- and HIS "
+           "QUESTION answered: the main page counts the main account only")
+        ck("Kalshi's own app shows the MAIN account only. The $39.10 sitting in the other pots" in b_,
            "/bots says why Kalshi's app reads lower than all pots: the bot pots' cash (24.00 + 15.10) is outside it")
         # 2026-10-26 (operator: "a green emoji for a negative bank makes no sense"): a card's dot is the bot's money
         # TODAY -- the pin bot is running and DOWN, so red -- and whether it runs is in words on the line under it
@@ -7402,16 +7678,19 @@ def selftest():
            "(-7.6% on bets · -0.93% of bank) · open: 1 ($29.10 at risk)" in b_,
            "a card a bot: its dot is its money today (pin is running and down: red), running since (ET) in words, "
            "version, money with its share of the pot, open bets, its command")
-        ck("🟢 LADDER · subaccount 1 · /ladder\n⏸ STOPPED by its stop file" in b_
+        ck("LADDER ·" not in b_ and "STOPPED by its stop file" not in b_
            and "🔴 FORECASTER · subaccount 2 · /fc\nrunning since Sep 16 8:34 AM ET · v-forecaster-race1" in b_
-           and "🟢 COIN RACE · main account · /race\nrunning since Sep 15 10:49 PM ET · v-race20" in b_,
-           "the paper race arm is not the live race; the ladder with a stop file is STOPPED, not dead -- said in words "
-           "under a dot that is its money today (up 4c: green); the forecaster runs and is down (red)")
-        ck("⚪ WEATHER DIP-SELLER · subaccount 3 · /weather\n⚠️ NOT RUNNING -- no stop file, it stopped on its own" in b_
-           and "⚪ FX TAKER · subaccount 5 + subaccount 4 · /fx\n⚠️ NOT RUNNING -- no stop file, it stopped on its own" in b_
-           and "🟠" not in b_ and "A bot's dot = its money today" in b_,
-           "a DEAD bot stays loud in words (NOT RUNNING, no stop file) though its dot is only its money (nothing settled: "
-           "white); the legend says what the dot is: %r" % b_[b_.find("WEATHER DIP"):b_.find("WEATHER DIP") + 260])
+           and "🟢 COIN RACE · main account · /race\nrunning since Sep 15 10:49 PM ET · v-race20" in b_
+           and "⏸ EARLIER BOTS (paused or stopped, not listed): today +$0.04 (+2.1% on bets), 7 days +$0.04 (+2.1% on "
+               "bets), all time +$0.04 on 1 market -- in every total above." in b_,
+           "the paper race arm is not the live race (the race runs: its card); the ladder with a stop file gets NO card "
+           "(v-tg-active, 2026-10-30) -- its money is one 'earlier bots' line, in every total; the forecaster runs and is "
+           "down (red)")
+        ck("WEATHER" not in b_ and "FX TAKER" not in b_ and "JUMP BAND" not in b_ and "NOT RUNNING" not in b_
+           and "🟠" not in b_ and "A bot's dot = its money today" in b_
+           and "One bot in full: /pin /race /fc · every account's cash: /funds" in b_,
+           "bots that do not run (the weather dip-seller, the FX taker, the jump band) get no card and no command; the "
+           "legend lists only the running bots' commands: %r" % b_[-300:])
         ck("🔴 NOT ANY BOT'S (main account): all time -$4.51 on 1 market; worst -$4.51 WTI 2:00 PM (Sep 15)." in b_,
            "a main-account market that is no bot's is shown on its own, never folded into pin; its dot is its money")
         _r0 = {"alive": True, "started_et": "Sep 16 7:59 AM ET", "halted": None, "stop_flag": False}
@@ -7497,8 +7776,14 @@ def selftest():
                 ("1 order sent, 1 filled (5 contracts).", "what its log did today"),
                 ("  Refused 1 time: order already in flight 1.", "its refusals in words")):
             ck(_want in f_, "/forecaster: " + _why)
-        # /ladder
-        l_ = P(ph.handle(111, "/ladder"))
+        # /ladder: stopped by its stop file, so the command says so and nothing else (v-tg-active); its page, built
+        # directly, still says why it is not running
+        lh_ = P(ph.handle(111, "/ladder"))
+        ck(lh_.startswith("⏸ Ladder is not running now (its stop file is set)") and "comes back by itself" in lh_
+           and "Today:" not in lh_ and lh_.endswith("The bots running now: /pin /race /fc"),
+           "/ladder while its stop file is set: one short answer -- not running, why, that it comes back by itself -- "
+           "and the bots that do run: %r" % lh_)
+        l_ = P(ph.text_bot("ladder"))
         ck("⏸ Running: NO -- stopped by its stop file (set " in l_ and ': "stood down by the operator".' in l_
            and "stopped on its own" not in l_ and l_.split("\n")[0].startswith("🟢 Ladder today +$0.04")
            and l_.split("\n")[1].startswith("⏸ LADDER -- "),
@@ -7535,9 +7820,88 @@ def selftest():
            and set(_p for _p, _q in _bs_asked) <= set(_bsm.PATHS),
            "still every per-pot Kalshi read names its subaccount and every read is a read path")
 
+        # v-tg-active (2026-10-30, the operator: "remove the paused and removed until they're added back, and show the
+        # details for the new one in any relevant commands"): the server's shape -- the coin race RUNS with its stop file
+        # set, the ladder is stopped, the jump band runs live beside its paper arm (which is never the bot)
+        with open(os.path.join(_bsdir, "jumpband-live.jsonl"), "w", encoding="utf-8") as _fh:
+            _fh.write(json.dumps({"t": "2026-09-16T08:13:26.86Z", "kind": "start", "pid": 2972, "live": True, "paper": False,
+                                  "subaccount": 3, "max_contracts": 5, "max_cost": 20.0, "stop_line": -25.0,
+                                  "day_stop": -15.0, "series": ["KXBNB15M", "KXHYPE15M", "KXZEC15M", "KXNEAR15M"],
+                                  "k": 2.0, "lo": 0.7, "hi": 0.9, "tau": [10, 60]}) + "\n")
+            _fh.write(json.dumps({"t": "2026-09-16T14:44:29Z", "kind": "trigger", "outcome": "buy"}) + "\n")
+            _fh.write(json.dumps({"t": "2026-09-16T14:44:29.05Z", "kind": "order", "filled": 5.0, "status": 201}) + "\n")
+            _fh.write(json.dumps({"t": "2026-09-16T14:44:29.06Z", "kind": "fill", "ticker": "KXBNB15M-26SEP161045-45",
+                                  "side": "no", "qty": 5.0, "price": 0.88, "cost": 4.4, "fee": 0.04}) + "\n")
+        _jbp = [(2972, "2026-09-16T08:13:20Z", r"C:\Python314\python.exe -u research\cleanroom\jumpband_live.py --live "
+                                               r"--subaccount 3 --max-contracts 5 --minutes 20160"),
+                (4276, "2026-09-16T08:00:00Z", r"C:\Python314\python.exe -u research\cleanroom\jumpband_live.py --minutes 20160")]
+        with open(os.path.join(_bsdir, _bsm.SPEC["race"]["stop"]), "w", encoding="utf-8") as _fh:
+            _fh.write("paused by the operator")
+        ph.bs_procs = _bs_procs + _jbp
+        ck(ph.active() == ("pin", "forecaster", "jumpband"),
+           "ACTIVE on the server's shape: the pin bot, the forecaster and the jump band -- not the race (running, stop "
+           "file set), not the ladder (stop file), not the paper arm: %s" % (ph.active(),))
+        _hp = P(ph.handle(111, "/help"))
+        ck("/jb (or /jumpband) — the jump band" in _hp and "/fc" in _hp and "/race" not in _hp and "/racestats" not in _hp
+           and "/ladder" not in _hp and "/weather" not in _hp and "/fx" not in _hp and "coin race apart" not in _hp
+           and P(help_text(("pin", "race"))).count("/race") == 2 and not tg_html_problems(ph.handle(111, "/help"))
+           and fits(ph.handle(111, "/help")),
+           "/help lists only the running bots' commands (the jump band's included); the paused race, the stopped ladder "
+           "and the bots not running are left out")
+        _rh = P(ph.handle(111, "/race"))
+        ck(_rh.startswith("⏸ Coin race is not running now (its stop file is set)") and "Last 10 races" not in _rh
+           and P(ph.handle(111, "/racestats")) == _rh and P(ph.handle(111, "/fx")).startswith(
+               "⏸ FX taker is not running now (no live copy of it is running)"),
+           "/race and /racestats while the race's stop file is set: one short answer, no page; /fx (not running) the same")
+        _jh = ph.handle(111, "/jb")
+        _jp = P(_jh)
+        for _want, _why in (
+                ("JUMP BAND -- buys the 70-90c favourite on BNB/HYPE/ZEC/NEAR when the price jumps 2+ standard deviations "
+                 "in the last minute, 5 contracts, holds to the end", "its own page, in plain words"),
+                ("Pot: subaccount 3.", "its own pot (the weather dip-seller, stopped, is not named)"),
+                ("Running: YES, pid 2972, since Sep 16 4:13 AM ET.", "the --live copy, not the paper arm"),
+                ("up to 5 contracts a buy, at most $20.00 an order; buys the favourite at 70c-90c when the price moves 2+ "
+                 "standard deviations in its last minute, 10-60 s before the close; coins BNB HYPE ZEC NEAR; stops the "
+                 "day at -$15.00 settled; stands down for good at -$25.00 since it went live", "its settings, from its start record"),
+                ("Keep-alive: NONE -- if it dies, nothing restarts it.", "it is not in boot_all, said plainly"),
+                ("Today, its own log (what it did, not money): 1 order sent, 1 filled (5 contracts).", "what its log did today"),
+                ("1 price jump judged today", "its triggers"),
+                ("its pot (subaccount 3, crypto pool): /funds", "where its cash is")):
+            ck(_want in _jp, "/jb: " + _why + ": %r" % _jp[:200])
+        ck(P(ph.handle(111, "/jumpband")) == _jp and fits(_jh) and not tg_html_problems(_jh)
+           and "weather" not in _jp.lower(), "/jumpband is /jb; Telegram-valid; no word of the weather dip-seller")
+        _bj = P(ph.handle(111, "/bots"))
+        ck("JUMP BAND · subaccount 3 · /jb\nrunning since Sep 16 4:13 AM ET" in _bj and "COIN RACE" not in _bj
+           and "LADDER ·" not in _bj and "⏸ EARLIER BOTS (paused or stopped, not listed): today +$0.41" in _bj
+           and "One bot in full: /pin /fc /jb ·" in _bj and "race +$" not in _bj and "| earlier +$0.41" in _bj
+           and "Cash: main account (pin bot) $1,000.00, forecaster $24.00, jump band $0.00, earlier bots' pots $15.10 -- "
+               "all pots $1,039.10." in _bj,
+           "/bots: the jump band's card and command; the race (paused) and the ladder (stopped) are gone, their money on "
+           "the one 'earlier bots' line (+0.37 + 0.04), every total and the cash still adding up: %r" % _bj[-900:])
+        _s2 = P(ph.handle(111, "/status"))
+        ck("Main account $500.00 (pin bot)" in _s2 and "coin race" not in _s2 and "Main account today" in _s2,
+           "/status with the race paused names the main account's pin bot only")
+        _fe = P(ph.handle(111, "/features"))
+        ck("Jump band (LIVE, subaccount 3)" in _fe and "started by hand on the server" in _fe
+           and "settings: up to 5 contracts a buy" in _fe and "Coin race (LIVE" not in _fe and "Penny ladder (LIVE" not in _fe
+           and "Weather dip-seller" not in _fe,
+           "/features: the jump band's block (started by hand, its settings), no block for a paused or stopped money bot")
+        os.remove(os.path.join(_bsdir, _bsm.SPEC["race"]["stop"]))
+        _hp2 = P(ph.handle(111, "/help"))
+        ck(ph.active() == ("pin", "race", "forecaster", "jumpband") and "/race" in _hp2 and "/racestats" in _hp2
+           and "COIN RACE · " in P(ph.handle(111, "/race")) and "COIN RACE · main account · /race" in P(ph.handle(111, "/bots")),
+           "the race's stop file removed (its process still --live): it is back in /help, /race and /bots, no code change")
+        ph.bs_procs = _bs_procs
+        os.remove(os.path.join(_bsdir, "jumpband-live.jsonl"))
+
         # /weather and /wx (2026-10-04): the weather dip-seller, subaccount 3, cash in POOL 0
         _wxdir = _bs_sandbox("botstats-weather")
         _bs_mode["m"] = "weather"
+        # v-tg-active (2026-10-30): this world is subaccount 3 as it was 10-04..10-29 (the weather pot, pool 0); since the
+        # jump band the number 3 trades in pool 2. The world runs on the old settings, restored below.
+        _wx_pool = (dict(_bsm.SUB_POOL), dict(_bsm.POT_POOL_ONLY))
+        _bsm.SUB_POOL["3"] = 0
+        _bsm.POT_POOL_ONLY.pop("3", None)
         with open(os.path.join(_wxdir, "dipsell-live-orders.jsonl"), "w", encoding="utf-8") as _fh:
             _fh.write(json.dumps({"t": "2026-09-15T07:56:53Z", "ev": "start", "pid": 3955508, "subaccount": 3,
                                   "live": True, "start_pot": 50.0,
@@ -7567,20 +7931,24 @@ def selftest():
         ck(any(_p == "/portfolio/balance" and _q == {"subaccount": "3", "exchange_index": 0}
                for _p, _q in _bs_asked[_wx_n0:])
            and not any(_p == "/portfolio/balance" and _q.get("subaccount") == "3" and _q.get("exchange_index") != 0
-                       for _p, _q in _bs_asked),
+                       for _p, _q in _bs_asked[_wx_n0:]),         # before this world: pool 2, the jump band's (10-30)
            "/weather: its cash is read from subaccount 3 in pool 0, never pool 2 (where Kalshi says $0.00)")
         wb_ = P(ph.handle(111, "/bots"))
         ck("WEATHER DIP-SELLER · subaccount 3 · /weather\nrunning since Sep 15 3:56 AM ET · v-dipsell-live" in wb_
            and "/weather" in wb_ and "| weather none" in wb_ and "weather +$0.80 (+1.6%)" in wb_
-           and "ladder $15.10, weather $49.70, FX taker $0.00 -- all pots $1,088.80." in wb_
-           and "The $88.80 sitting in the forecaster, ladder, weather and FX pots" in wb_
-           and "the ladder, the weather dip-seller and the FX taker are separate pots" in wb_,
-           "/bots: the weather bot's line, its share of yesterday, its cash in the all-pots cash (1000 + 24 + "
-           "15.10 + 49.70, each pot once -- the empty pool-0 rows of subaccounts 1 and 2 add $0), and that "
-           "Kalshi's app does not show it")
+           and "forecaster $24.00, weather $49.70, earlier bots' pots $15.10 -- all pots $1,088.80." in wb_
+           and "The $88.80 sitting in the other pots" in wb_ and "One bot in full: /pin /race /fc /weather ·" in wb_
+           and "JUMP BAND" not in wb_ and "FX TAKER" not in wb_,
+           "/bots: the weather bot's line while it runs, its share of yesterday, its cash in the all-pots cash (1000 + "
+           "24 + 49.70 + the stopped ladder's 15.10 on the 'earlier bots' pots' entry, each pot once -- the empty pool-0 "
+           "rows of subaccounts 1 and 2 add $0), and that Kalshi's app does not show it")
         ck(live_version(os.path.join(_wxdir, "VERSIONS.md"))[0] == "v-reopen98 + v-floor90" == _bsm.version_of("pin")[0],
            "/stats' pin version skips the weather entry, as botstats does")
         ph.bs_procs = _bs_procs
+        _bsm.SUB_POOL.clear()
+        _bsm.SUB_POOL.update(_wx_pool[0])
+        _bsm.POT_POOL_ONLY.clear()
+        _bsm.POT_POOL_ONLY.update(_wx_pool[1])
 
         # NULL (2026-10-02): the account's books unreadable -> the money stands, NO pot %, and the reason
         _bs_sandbox("botstats-noledger")
@@ -7590,7 +7958,7 @@ def selftest():
            and "of its bank (" not in n_ and "on money put in" not in n_ and "of its bank)" not in n_
            and "% of its bank: not shown -- transfers read failed (HTTP 404)." in n_
            and "Today: -$12.53 on $123.81 put in (-10.1%); 5 markets, 3 won, 2 lost\n"
-               "  pin -$10.40 | race +$0.37 | forecaster -$2.54 | ladder +$0.04 | weather none | fx none\n" in nb_
+               "  pin -$10.40 | race +$0.37 | forecaster -$2.54 | earlier +$0.04\n" in nb_   # v-tg-active: ladder stopped
            and "today -$10.40 (-10.4% on bets) · 7 days -$9.86 (-7.6% on bets) · all time -$9.86 (-7.6% on bets) ·" in nb_
            and "% of the pots: not shown -- main account: transfers read failed (HTTP 404)." in nb_,
            "NULL: the deposit/transfer listings unreadable -> every dollar figure still shown, NO percentage of "
@@ -7619,9 +7987,12 @@ def selftest():
            and "Cash: COULD NOT READ" in d_ and "$0.00" not in d_ and "nothing settled" not in d_,
            "DOWN /pin: a failed read is said as a failure -- never $0, never 'nothing settled', never 'not running'")
         ck("Today: unknown -- Kalshi could not be read" in db_ and "Last 7 days: unknown" in db_
-           and "PARTIAL: these totals leave out pin, race, forecaster, ladder, weather, fx, other" in db_
+           # v-tg-active: the process table unreadable (and no stop file in this sandbox), every bot is shown -- never
+           # hidden on a failed read
+           and "PARTIAL: these totals leave out pin, race, forecaster, ladder, weather, fx, jumpband, other" in db_
            and "running? could not tell" in db_ and "money: COULD NOT READ KALSHI" in db_
-           and "money: settlements read failed (HTTP 401): forecaster, fx, ladder, pin, race, weather" in db_
+           and "money: settlements read failed (HTTP 401): forecaster, fx, jumpband, ladder, pin, race, weather" in db_
+           and "JUMP BAND · subaccount 3 · /jb" in db_
            and "nothing settled" not in db_ and "Nothing settled" not in db_,
            "DOWN /bots: every total is 'unknown', the missing pots are named, each error said once")
         _lo = P(ph.handle(111, "/losses"))
@@ -8100,7 +8471,8 @@ def selftest():
 
         fa = []
         f_ = funds_read(fw_get(fa))
-        t_ = funds_text(f_, {}, now["t"])
+        _fw_act = ("pin", "race", "ladder")      # v-tg-active: the bots running in this world (the weather pot's stopped)
+        t_ = funds_text(f_, {}, now["t"], active=_fw_act)
         cprint("    --- /funds, the fake world (as the phone shows it) ---\n    " + P(t_).replace("\n", "\n    "))
         ck(sorted(f_["subs"]) == [0, 1, 3] and f_["list_err"] is None, "/funds: the 3 listed accounts, from Kalshi's list")
         ck(getattr(t_, "is_html", False) and not tg_html_problems(t_) and fits(t_), "/funds: Telegram-valid, one message")
@@ -8108,17 +8480,29 @@ def selftest():
         ck("MAIN ACCOUNT (0) -- main bot (pin) + coin race: $530.60" in tp_
            and "\ncash: weather pool $1.50, crypto pool $500.00; open bets: $29.10 on 1 market" in tp_,
            "/funds: main = cash in BOTH pools + what its open bet cost = $530.60 (a 0-contract row is not a bet)")
-        ck("SUBACCOUNT 1 -- penny ladder: $80.25" in tp_ and "SUBACCOUNT 3 -- weather pool: weather dip-seller (stopped); "
-           "crypto pool: empty: $41.10" in tp_, "/funds: each subaccount's total, and what runs in it from FUNDS_WHAT")
+        ck("SUBACCOUNT 1 -- penny ladder: $80.25" in tp_ and "SUBACCOUNT 3 -- weather pool: nothing runs here now "
+           "(stopped); crypto pool: nothing runs here now (stopped): $41.10" in tp_ and "weather dip-seller" not in tp_,
+           "/funds: each subaccount's total, and what runs in it from FUNDS_WHAT -- only the running bots named")
         ck(tp_.split("\n")[0] == "🏦 ALL ACCOUNTS: $651.95 = cash $621.75 + open bets $30.20.",
            "/funds: the grand total, 3 accounts x 2 pools, is the headline")
         ck(any(x.split() == ["0", "main+race", "530.60", "81.4%"] for x in tp_.split("\n"))
            and any(x.split() == ["1", "ladder", "80.25", "12.3%"] for x in tp_.split("\n"))
-           and any(x.split() == ["3", "weather", "41.10", "6.3%"] for x in tp_.split("\n")),
+           and any(x.split() == ["3", "idle", "41.10", "6.3%"] for x in tp_.split("\n")),
            "/funds: one row an account, its total and its share of all of them (530.60 / 651.95 = 81.4%)")
-        ck("💤 Idle: $41.10 (6.3% of all) sits in an account that runs nothing now (3: weather pool: weather "
-           "dip-seller (stopped); crypto pool: empty)." in tp_,
+        ck("💤 Idle: $41.10 (6.3% of all) sits in an account that runs nothing now (3: weather pool: nothing runs here "
+           "now (stopped); crypto pool: nothing runs here now (stopped))." in tp_,
            "/funds: money in an account whose bots are all stopped is named as idle, with its share")
+        # v-tg-active (2026-10-30): the jump band runs in subaccount 3's crypto pool; the coin race is paused
+        _tj = P(funds_text(f_, {3: ["jump band up to 5 contracts a buy"]}, now["t"], active=("pin", "ladder", "jumpband")))
+        ck("MAIN ACCOUNT (0) -- main bot (pin): $530.60" in _tj and "coin race" not in _tj
+           and "SUBACCOUNT 3 -- weather pool: nothing runs here now (stopped); crypto pool: jump band: BNB/HYPE/ZEC/NEAR "
+               "after a price jump (live stage 1, 2026-10-30): $41.10" in _tj
+           and any(x.split() == ["3", "jump", "band", "41.10", "6.3%"] for x in _tj.split("\n"))
+           and any(x.split() == ["0", "main", "530.60", "81.4%"] for x in _tj.split("\n"))
+           and "Idle" not in _tj and "bet size now: jump band up to 5 contracts a buy" in _tj
+           and funds_what(3) == FUNDS_WHAT[3] and funds_idle(2, ("pin",)) and not funds_idle(3, ("jumpband",)),
+           "/funds with the jump band running and the race paused: the main account names the pin bot only, subaccount 3 "
+           "its crypto pool's jump band and its bet size, no idle money: %r" % _tj[:400])
         ck("The cash adds up to Kalshi's own whole-account figure ($621.75)." in tp_,
            "/funds: checked against Kalshi's whole-account cash by pool")
         ck(not any(p == "/portfolio/balance" and (q["subaccount"], q["exchange_index"]) in ((1, 0), (3, 2)) for p, q in fa),
@@ -8163,8 +8547,9 @@ def selftest():
                                             pos={0: [{"ticker": "KXBTC15M-26SEP161115-15", "position_fp": "-30.00",
                                                       "market_exposure_dollars": "29.10"}],
                                                  1: [{"ticker": "KXNEAR15M-26SEP161115-15", "position_fp": "5.00",
-                                                      "market_exposure": 110}]})), {}, now["t"]))
-        ck("SUBACCOUNT 3 -- weather pool: weather dip-seller (stopped); crypto pool: empty: at least $40.00" in t_
+                                                      "market_exposure": 110}]})), {}, now["t"], active=_fw_act))
+        ck("SUBACCOUNT 3 -- weather pool: nothing runs here now (stopped); crypto pool: nothing runs here now (stopped): "
+           "at least $40.00" in t_
            and "open bets: COULD NOT READ (HTTP 500)" in t_
            and "open bets: COULD NOT READ (a bet came without market_exposure_dollars)" in t_
            and "ALL ACCOUNTS: at least $650.85 (cash $621.75 + open bets $29.10)\n" in t_
@@ -8427,9 +8812,9 @@ def selftest():
         fa = []
         ph.funds_getter = fw_get(fa)
         t_ = ph.handle(111, "/funds")
-        _own = funds_text(funds_read(fw_get([])), funds_sizes(ph.ledger.results), now["t"],
+        _own = funds_text(funds_read(fw_get([])), funds_sizes(ph.ledger.results, ph.active()), now["t"],
                           funds_settled(lambda p, q: _bs_fake(p, dict(q, subaccount=str(q["subaccount"]))), [0, 1, 3],
-                                        now["t"], memo={}))
+                                        now["t"], memo={}), active=ph.active())
         ck(str(t_) == str(_own) and not any(p == FUNDS_HIST_PATH for p, _q in fa) and not _FUNDS_HIST
            and "7 days: -$14.00 (2 of 5 lost)" in P(t_) and "7 days: +$0.04 (0 of 1 lost)" in P(t_),
            "/funds past days from botstats' rows: no settlements read of its own, and the same page (main -$14.00, "
@@ -8640,7 +9025,7 @@ def selftest():
         _t0 = time.time()
         _hsp = _sph.handle(111, "/speed")
         ck(P(_hsp).startswith("⏳ SPEED: too early to tell, 3 orders so far") and str(_hsp) == str(speed_html(
-            speed_gather(_tds, _pord, _snow), 1000.0)) and _sph.handle(333, "/speed") is None
+            speed_gather(_tds, _pord, _snow, active=_sph.active()), 1000.0)) and _sph.handle(333, "/speed") is None
            and time.time() - _t0 < 2.0,
            "/speed through handle(): the paired chat gets the page in under 2 s; a stranger gets nothing")
 
@@ -8681,9 +9066,19 @@ def selftest():
            and "budget $120.00 a month" in _pv1 and _awsq == [("PUT", AWS_IMDS + "/latest/api/token")],
            "/server with no metadata service (the call fails): AWS cost says not connected, points to /server help, and "
            "the price-list estimate shows, labelled; one metadata call, nothing else")
-        ck("Funds: all pots ?" in _pv1 and "main+race  1,246.86" in _pv1 and "forecaster        ?" in _pv1
-           and "⚠️ forecaster: the last cash read failed; its cash alone $129.49" in _pv1,
+        # v-tg-active: a pot is named for the bots running now (this Phone reads this machine's process table)
+        _sact = _sph.active()
+        _n0, _n2 = funds_short(0, _sact), funds_short(2, _sact)
+        ck("Funds: all pots ?" in _pv1 and any(x.split()[:2] == [_n0, "1,246.86"] for x in _pv1.split("\n"))
+           and any(x.split()[:2] == [_n2, "?"] for x in _pv1.split("\n"))
+           and "⚠️ %s: the last cash read failed; its cash alone $129.49" % _n2 in _pv1,
            "/server's funds from botstats' cache: a pot whose last read failed shows '?' and why, and no total is made up")
+        _spl = "\n".join(_server_pots_lines(_pots, _snow, ("pin", "ladder", "fx", "jumpband"))[0])
+        ck(any(x.split()[:2] == ["main", "1,246.86"] for x in _spl.split("\n"))
+           and any(x.split()[:2] == ["idle", "?"] for x in _spl.split("\n")) and "forecaster" not in _spl
+           and funds_short(3, ("pin", "jumpband")) == "jump band" and funds_short(0, ("pin", "race")) == "main+race",
+           "/server's pots with the coin race paused and the forecaster stopped: 'main' and 'idle', never a hidden bot's "
+           "name; subaccount 3 is the jump band's")
         _sph.handle(111, "/server")
         ck(len(_awsq) == 1, "/server: a missing metadata service is remembered for 5 minutes (no second call)")
         ck(not tg_html_problems(_sv1) and fits(_sv1) and len(split_html(_sv1)) == 1 and "\u2014" not in _pv1,

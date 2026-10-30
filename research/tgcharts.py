@@ -78,6 +78,7 @@ CMD_KIND = {"/status": "status", "/s": "status", "/today": "today", "/yesterday"
             "/bots": "funds", "/funds": "funds", "/bank": "funds", "/accounts": "funds",
             "/pin": "bot:pin", "/forecaster": "bot:forecaster", "/fc": "bot:forecaster",
             "/ladder": "bot:ladder", "/weather": "bot:weather", "/wx": "bot:weather", "/fx": "bot:fx",
+            "/jb": "bot:jumpband", "/jumpband": "bot:jumpband",
             "/race": "bot:race", "/racestats": "bot:race",
             "/losses": "losses", "/hedges": "hedges", "/fills": "fills", "/bets": "fills",
             "/market": "market", "/bars": "bars"}
@@ -431,10 +432,30 @@ def markets_of(ctx):
 
 
 def bot_stopped(bs, name, prows, ok):
-    """True when its stop file is set, or the process table was read and holds no live copy of it."""
+    """True when its stop file is set, or the process table was read and holds no live copy of it -- not ACTIVE
+    (botstats.is_active, v-tg-active 2026-10-30: the coin race RUNS with its stop file set and is stopped here)."""
+    if hasattr(bs, "is_active") and name not in getattr(bs, "ALWAYS_SHOWN", ()):
+        return not bs.is_active(name, prows, ok)
     if os.path.exists(os.path.join(bs.RESULTS, bs.SPEC[name]["stop"])):
         return True
     return bool(ok) and not any(bs.is_bot(name, r[2]) for r in (prows or []))
+
+
+def _fold(bs, name, prows, ok):
+    """v-tg-active: a bot that is not ACTIVE is drawn and counted as 'earlier' (one colour, one key, one row), never by
+    its own name; 'other' and the active bots keep theirs."""
+    if name in bs.SPEC and hasattr(bs, "is_active") and not bs.is_active(name, prows, ok):
+        return "earlier"
+    return name
+
+
+def main_words(ctx):
+    """'pin bot + coin race' or 'pin bot' -- the main account's bots the phone names now (pinphone.main_words)."""
+    pp_ = ctx.get("pp")
+    try:
+        return pp_.main_words(ctx.get("active")) if pp_ is not None and hasattr(pp_, "main_words") else "pin bot + coin race"
+    except Exception:                                   # noqa: BLE001
+        return "pin bot + coin race"
 
 
 def bs_load(ctx):
@@ -455,10 +476,12 @@ def _all_markets(ctx):
     out, missing = [], []
     for name in tuple(bs.BOTS) + ("other",):
         blk = bs._money_block(c, name, today, pctx_)
+        key = _fold(bs, name, prows, ok)                # a hidden bot's markets are 'earlier' (v-tg-active)
         if not blk.get("ok"):
-            missing.append(name)
+            if key not in missing:
+                missing.append(key)
             continue
-        out += [(name, m) for m in blk.get("markets") or [] if m["t"] is not None and m["day"]]
+        out += [(key, m) for m in blk.get("markets") or [] if m["t"] is not None and m["day"]]
     out.sort(key=lambda r: r[1]["t"])
     return bs, c, prows, ok, pctx_, out, missing
 
@@ -471,7 +494,7 @@ def all_day_markets(ctx):
 
 
 BOT_SHORT = {"pin": "Pin bot", "race": "Coin race", "forecaster": "Forecaster", "ladder": "Ladder",
-             "weather": "Weather", "fx": "FX taker", "other": "Other"}
+             "weather": "Weather", "fx": "FX taker", "jumpband": "Jump band", "earlier": "Earlier bots", "other": "Other"}
 # One colour a bot, the same in every picture that splits by bot (/stats /losses /bots, each bot's page). Green and red mean
 # gain and loss on these charts, so no bot is either (operator 10-26: "every bank in different colors"). The five
 # running bots pass the dataviz palette check on every pair, colour-blind included (validate_palette.js --pairs all).
@@ -481,8 +504,10 @@ BOT_COLOUR = {"pin": "#2a78d6",          # blue
               "ladder": "#1aa3a3",       # teal
               "weather": "#4b3fa0",      # indigo (stopped)
               "fx": "#8a5a00",           # brown-gold
+              "jumpband": "#c0399a",     # magenta (2026-10-30), 317 deg: off the red of a loss
+              "earlier": "#bdb8aa",      # light warm grey: every paused or retired bot together (v-tg-active)
               "other": "#8f8d86"}        # grey
-BOT_ORDER = ("pin", "race", "forecaster", "ladder", "weather", "fx", "other")
+BOT_ORDER = ("pin", "race", "forecaster", "ladder", "weather", "fx", "jumpband", "earlier", "other")
 LOSS_NAMES = 8                          # /today: the losing markets named on the picture (the biggest, when more)
 
 
@@ -514,7 +539,7 @@ def all_losses(ctx, week_days=7):
     for name in tuple(bs.BOTS) + ("other",):
         blk = bs._money_block(c, name, today, pctx_)
         if not blk.get("ok"):
-            missing.append(name)
+            missing.append(_fold(bs, name, _prows, _ok))
             continue
         subs = bs.bot_subs(name)
         key = subs if len(subs) > 1 else subs[0]
@@ -533,6 +558,23 @@ def all_losses(ctx, week_days=7):
                 pots[(key, m["day"])] = bs.day_pot(pctx_, key, m["day"]) if m["day"] else None
             pot = pots[(key, m["day"])]
             out.append(dict(m, bot=name, pot=pot, pct=(100.0 * m["money"] / pot) if pot else None))
+    # v-tg-active: every paused or retired bot's losses on ONE 'earlier' row (each loss keeps its own pot's %)
+    fold = {n: _fold(bs, n, _prows, _ok) for n in per}
+    if any(f != n for n, f in fold.items()):
+        merged = {}
+        for n, p in per.items():
+            q = merged.setdefault(fold[n], {"settled": 0, "lost": 0, "lost_7d": 0, "money_lost": 0.0, "worst": None,
+                                            "won_days": {}})
+            for k in ("settled", "lost", "lost_7d", "money_lost"):
+                q[k] = round(q[k] + p[k], 4) if k == "money_lost" else q[k] + p[k]
+            if p["worst"] is not None and (q["worst"] is None or p["worst"] < q["worst"]):
+                q["worst"] = p["worst"]
+            for d, v in p["won_days"].items():
+                q["won_days"][d] = q["won_days"].get(d, 0.0) + v
+        per = {n: q for n, q in merged.items() if n != "earlier" or q["settled"]}
+        for r in out:
+            r["bot"] = fold.get(r["bot"], r["bot"])
+    missing = sorted(set(missing), key=missing.index)
     out.sort(key=lambda r: (r["day"] or "", r["t"] or 0), reverse=True)
     return bs, out, per, missing
 
@@ -656,8 +698,8 @@ def chart_day(ctx, which):
     r = (net / b0) if b0 else None
     headline(fig, "%s %s%s · %d of %d markets won" % (label, usd(net), (" (%s of all pots)" % pctx(r, 2)) if r is not None else "",
                                                     won, len(ms)))
-    cap = ("%s: every bot's money market by market (pin, coin race, forecaster, ladder, FX taker; Kalshi's books, every pot; "
-           "a market counts on the ET day it closed). By bot: %s. Red dots: a losing market, named by its bot. Orange "
+    cap = ("%s: every bot's money market by market (every pot, Kalshi's books; a paused or retired bot's markets are "
+           "'earlier bots'; a market counts on the ET day it closed). By bot: %s. Red dots: a losing market, named by its bot. Orange "
            "dashes: the average day of the %d days before, on the same clock; slate dash-dots: of the %d days before. "
            "Right axis: the same dollars as %% of all pots at the start of the ET day.%s" % (
                label, by_bot, AVG_DAYS, LONG_DAYS, (" PARTIAL: leaves out %s (Kalshi could not be read)." % ", ".join(missing)) if missing else ""))
@@ -721,9 +763,9 @@ def chart_day_main(ctx, which):
     r = (s["net"] / b0) if b0 else None
     headline(fig, "%s %s%s · %d of %d closes won" % (label, usd(s["net"]), (" (%s of the bank)" % pctx(r, 2)) if r is not None else "",
                                                    s["won"], s["closes"]))
-    cap = ("%s: the day's money close by close, Kalshi's books, main account (pin + coin race). Orange dashes: the "
+    cap = ("%s: the day's money close by close, Kalshi's books, main account (%s). Orange dashes: the "
            "average day of the %d days before, on the same clock; slate dash-dots: of the %d days before. Right axis: "
-           "the same dollars as %% of the bank at the start of the ET day." % (label, AVG_DAYS, LONG_DAYS))
+           "the same dollars as %% of the bank at the start of the ET day." % (label, main_words(ctx), AVG_DAYS, LONG_DAYS))
     return png(fig), cap
 
 
@@ -777,7 +819,7 @@ def chart_days(ctx, src):
             s = Ledger.summary(led.settled)
             dep = led.deposited()
             head = "All time %s%s" % (usd(s["net"]), (" (%s on the %s put in)" % (pctx(s["net"] / dep, 2), usd(dep, False))) if dep else "")
-            src_words = "Kalshi's books, main account (pin + coin race), every ET day it traded"
+            src_words = "Kalshi's books, main account (%s), every ET day it traded" % main_words(ctx)
     else:
         fl = pp.FIRST_LIVE_DAY
         ms = [m for m in markets_of(ctx).values() if m["day"] >= fl]
@@ -1142,8 +1184,8 @@ def chart_funds(ctx):
     for key in sorted(groups, key=lambda k: bs.SUBS.index(k[0]) if k[0] in bs.SUBS else len(bs.SUBS)):
         bots = groups[key]
         live = [b for b in bots if not bot_stopped(bs, b, prows, ok)]
-        if not live:
-            stopped.append("%s (%s)" % (account_name(key).lower(), ", ".join(bs.SPEC[b]["label"].lower() for b in bots)))
+        if not live:                                    # v-tg-active: an account no active bot runs is not named
+            stopped.append(account_name(key).lower())
             continue
         pts, v, why, each = _account_series(bs, c, key if len(key) > 1 else key[0], now)
         if pts:
@@ -1152,7 +1194,7 @@ def chart_funds(ctx):
         if str(k) not in bs.SUBS:
             ws = " ".join(w.values()) if isinstance(w, dict) else str(w)
             if "stopped" in ws:
-                stopped.append("subaccount %s (%s)" % (k, ws.replace(" (stopped)", "")))
+                stopped.append("subaccount %s" % k)
     if not drawn:
         return None
     fig, axs = fig_new(len(drawn), 2.7 * len(drawn) + 1.0, sharex=True)
@@ -1183,7 +1225,7 @@ def chart_funds(ctx):
     headline(fig, "Every running account: %s%s" % ("" if whole else "about ", usd(total, False)))
     cap = ("Each running account's money over time = cash + open bets at cost, worked forward from Kalshi's own "
            "deposits, transfers and settlements (botstats); the dot is the account now.%s"
-           % ((" Stopped, not drawn: " + "; ".join(stopped) + ".") if stopped else ""))
+           % ((" Not drawn (no bot runs there now): " + "; ".join(stopped) + ".") if stopped else ""))
     return png(fig), cap
 
 
@@ -1437,7 +1479,7 @@ def chart_losses(ctx):
         return None
     now = ctx["now"]
     today = bs.et_day(now)
-    order = [b for b in tuple(bs.BOTS) + ("other",) if b in per]
+    order = [b for b in tuple(bs.BOTS) + ("earlier", "other") if b in per]     # all_losses folds hidden bots into 'earlier'
     first = min([r["day"] for r in rows] + [d for p in per.values() for d in p["won_days"]])
     weeks = [_week_of(today)]
     while len(weeks) < LOSS_WEEKS:
@@ -1662,11 +1704,11 @@ def chart_status(ctx):
     note(ax, X[-1], Y[-1], usd(Y[-1], False), dx=-4, ha="right")
     money_axis(ax, signed=False)
     date_axis(ax, 7)
-    ax.set_title("Main account (pin bot + coin race), hour by hour, last 7 days")
+    ax.set_title("Main account (%s), hour by hour, last 7 days" % main_words(ctx))
     if reads or mv:
         legend(ax)
     headline(fig, "Bank %s · 7 days ago %s" % (usd(Y[-1], False), usd(Y[0], False)))
-    cap = ("The main account's bank (pin bot + coin race) over the last 7 days: the pin bot's last bank read plus every settlement since "
+    cap = ("The main account's bank (" + main_words(ctx) + ") over the last 7 days: the pin bot's last bank read plus every settlement since "
            "(pindesk's bank_at, the figure /status shows). A deposit or withdrawal moves it too -- never profit.")
     return png(fig), cap
 
@@ -2034,10 +2076,11 @@ def selftest():
             BS._load = lambda now_, getter, procs_: (c, BS._norm_procs(procs), True)
             ctx3 = {"now": now, "pp": PP, "funds_what": {4: {0: "FX taker: the 5 currency pairs", 2: "coin-race reward test (stopped)"}}}
             got = build("funds", ctx3)
-            ck(is_png(got) and "subaccount 3 (weather dip-seller)" in got[1] and "subaccounts 5 + 4 (fx taker)" in got[1]
-               and "4 ()" not in got[1],
+            ck(is_png(got) and "subaccount 3;" in got[1] and "subaccounts 5 + 4." in got[1]
+               and "4 ()" not in got[1] and "weather" not in got[1] and "fx taker" not in got[1].lower(),
                "/funds: a PNG of the running accounts; the stopped weather account and the stopped FX taker's two pots are "
-               "named, not drawn: %s" % (got[1] if got else None))
+               "not drawn, and named by account only -- never by a paused or retired bot (v-tg-active): %s"
+               % (got[1] if got else None))
             ck(build("bot:fx", ctx3) is None, "/fx: not in the process table -> no picture")
             procs.append((5, "x", "python research/cleanroom/fxtake_live.py --subaccount 5 --fx-subaccount 4 --live"))
             got = build("funds", ctx3)
@@ -2092,23 +2135,25 @@ def selftest():
             try:
                 c["subs"]["3"]["rows"] = {k_: dict(r_, market_result="no", revenue=0, value=0) for k_, r_ in sv_w.items()}
                 _r4 = all_day_markets(ctx3)[2]
-                _wx = sum(v for _d, _t, v, b_ in _r4 if b_ == "weather")
+                # v-tg-active (2026-10-30): the stopped weather bot is drawn and named as 'Earlier bots', never by name
+                _wx = sum(v for _d, _t, v, b_ in _r4 if b_ == "earlier")
                 got = build("stats", ctx3)
-                n_with = _px(got[0], BOT_COLOUR["weather"]) if is_png(got) else 0
+                n_with = _px(got[0], BOT_COLOUR["earlier"]) if is_png(got) else 0
                 c["subs"]["3"]["rows"] = {}
                 got0 = build("stats", ctx3)
-                n_without = _px(got0[0], BOT_COLOUR["weather"]) if is_png(got0) else -1
+                n_without = _px(got0[0], BOT_COLOUR["earlier"]) if is_png(got0) else -1
             finally:
                 c["subs"]["3"]["rows"] = sv_w
             ck(is_png(got) and "every bot, every pot" in got[1] and _wx < 0
-               and all(v < 0 for _d, _t, v, b_ in _r4 if b_ == "weather")
-               and ("Weather (stopped) %s" % usd(_wx)) in got[1]
+               and all(v < 0 for _d, _t, v, b_ in _r4 if b_ == "earlier") and not any(b_ == "weather" for *_x, b_ in _r4)
+               and ("Earlier bots %s" % usd(_wx)) in got[1] and "Weather" not in got[1]
                and all(BOT_SHORT[b_] in got[1] for b_ in ("pin", "race", "forecaster", "ladder", "fx"))
                and n_with > 400 and 0 <= n_without < 30,
-               "/stats (10-26): every bot, every pot, one colour a bot; the weather bot with ONLY losses (%s) draws "
-               "(%d px of its colour; %d with no market) and is named stopped: %r" % (usd(_wx), n_with, n_without,
-                                                                                    got[1][:90] if got else None))
-            ck(is_png(got0) and "Weather" not in got0[1], "/stats: a bot with no market at all is neither drawn nor named")
+               "/stats (10-26): every bot, every pot, one colour a bot; the stopped weather bot with ONLY losses (%s) "
+               "draws as 'Earlier bots' (%d px of that colour; %d with no market), never by its name (v-tg-active): %r"
+               % (usd(_wx), n_with, n_without, got[1][:90] if got else None))
+            ck(is_png(got0) and "Weather" not in got0[1] and "Earlier bots" not in got0[1],
+               "/stats: a bot with no market at all is neither drawn nor named")
             # the 30-day lines on the botstats pictures: drawn where the record has more days than the 7-day line
             # averages (the planted pin bot: ~14 days), not drawn for a bot younger than that (the FX taker: ~1 day)
             _pc_pin = pace_curves(BS, BS.pot_context(c, et_day(now)), "0",
@@ -2137,6 +2182,31 @@ def selftest():
             ck(build("bot:weather", ctx3) is None, "/weather: its stop file is set -> no picture of a stopped bot")
             procs.pop(3)
             ck(build("bot:ladder", ctx3) is None, "/ladder: not in the process table -> no picture")
+            # v-tg-active (2026-10-30): the jump band (subaccount 3's coin markets) runs live, beside its paper arm; the coin
+            # race RUNS with its stop file set -> no picture of its own, its markets drawn and counted as 'Earlier bots'
+            for k in range(8):
+                tk = "KXBNB15M-26OCT18%04d-45" % k
+                c["subs"]["3"]["rows"]["%s|jb" % tk] = {
+                    "ticker": tk, "settled_time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - k * 3000)),
+                    "market_result": "no" if k != 2 else "yes", "yes_count_fp": "0.00", "no_count_fp": "5.00",
+                    "yes_total_cost_dollars": "0.00", "no_total_cost_dollars": "4.40", "fee_cost": "0.04",
+                    "revenue": 0, "value": 0 if k != 2 else 100}
+            procs += [(6, "x", "python research/cleanroom/jumpband_live.py --live --subaccount 3 --max-contracts 5"),
+                      (7, "x", "python research/cleanroom/jumpband_live.py --minutes 20160")]
+            open(os.path.join(td, BS.SPEC["race"]["stop"]), "w").close()
+            _jb = build("bot:jumpband", ctx3)
+            _bl, _lr, _lp, _lm = all_losses(ctx3)
+            _st = build("stats", ctx3)
+            ck(kind_of("/jb") == kind_of("/jumpband") == "bot:jumpband" and is_png(_jb) and "Jump band" in _jb[1]
+               and build("bot:race", ctx3) is None and "race" not in _lp and "earlier" in _lp
+               and "jumpband" in _lp and not any(r["bot"] in ("race", "weather") for r in _lr)
+               and is_png(_st) and "Coin race" not in _st[1] and "Earlier bots" in _st[1] and "Jump band" in _st[1],
+               "v-tg-active: /jb draws the jump band (its own colour); the paused race gets no picture, and on /losses and "
+               "/stats its markets (and the stopped weather bot's) are 'Earlier bots', never named: %r" % (_st[1][:200] if _st else None))
+            os.remove(os.path.join(td, BS.SPEC["race"]["stop"]))
+            ck(is_png(build("bot:race", ctx3)) and "race" in all_losses(ctx3)[2],
+               "v-tg-active: the race's stop file removed -> its picture and its own /losses row are back")
+            procs[:] = [p_ for p_ in procs if p_[0] not in (6, 7)]
         finally:
             BS.RESULTS, BS._load = sv
 
