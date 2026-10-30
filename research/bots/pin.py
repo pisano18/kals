@@ -1,0 +1,118 @@
+"""The pin bot: 15-minute coin markets + hourly Bitcoin, main account (subaccount 0). Every fact copied verbatim from
+botstats.py / pinphone.py / tgcharts.py at 8a9c5e1 (v-tg-rebuild step 1, 2026-10-30)."""
+from bots.spec import Bot, Feature, Logs, Pot, Records, VersionRule, live_flag, opt, toks
+from botdata.clock import et_clock, utc_epoch
+from botdata.fmt import cents as _c, num as _num, usd
+
+# The hourly ladders pinrun knows (v-ladder7); only KXBTCD trades live today. A new series in
+# subaccount 0 that is in neither list lands in `other`, loudly -- never folded into a bot.  (botstats.PIN_HOURLY)
+PIN_HOURLY = frozenset(["KXBTCD", "KXETHD", "KXSOLD", "KXXRPD", "KXDOGED", "KXBNBD", "KXHYPED"])
+WX_VER = r"dipsell|dip.?sell"                       # botstats.WX_VER (the pin bot's combined-heading exclusion uses it)
+
+
+def _claims(series, ticker):
+    """botstats.owner, subaccount 0 after the race: the 15-minute coins and the hourly ladders."""
+    import pinday
+    return series in pinday.CRYPTO or series in PIN_HOURLY
+
+
+def settings_pin(start, cl, sizef):
+    """(botstats.settings_pin, verbatim)"""
+    s = {}
+    if start:
+        for k in ("size", "price_ceiling", "tau_max", "early_tau_max", "early_frac", "early_min_price",
+                  "early_max_price", "hedge_belief", "loss_abort", "loss_cap", "max_positions",
+                  "ladder_series", "late_tau", "late_mult", "bank_brake", "code_sha"):
+            if k in start:
+                s[k] = start[k]
+    if cl:
+        for flag in ("--series-size", "--max-losses"):
+            v = opt(cl, flag)
+            if v is not None:
+                s[flag[2:].replace("-", "_")] = _num(v)
+        for flag in ("--one-full-bet", "--toxic-fresh", "--jump-gate", "--no-hedge-prop"):
+            s[flag[2:].replace("-", "_")] = flag in toks(cl)
+    if sizef:
+        s["bet_now"] = sizef.get("size")
+        s["bank_at_sizing"] = sizef.get("bank")
+        s["sized_at_et"] = et_clock(_num(sizef.get("epoch")) or utc_epoch(sizef.get("at")))
+    bits = []
+    bet = s.get("bet_now") or s.get("size")
+    if bet is not None:
+        bits.append("bet %g contracts" % bet + (" (sized on a %s bank)" % usd(s["bank_at_sizing"]).lstrip("+")
+                                                  if s.get("bank_at_sizing") else ""))
+    if s.get("price_ceiling") is not None:
+        bits.append("buys up to %s with %s s or less left" % (_c(s["price_ceiling"]), s.get("tau_max", "?")))
+    if s.get("early_tau_max"):
+        frac = s.get("early_frac")
+        size = ("a third of a bet" if frac is not None and abs(float(frac) - 0.333) < 0.01
+                else "%g of a bet" % frac if frac is not None else "?")
+        bits.append("early bet from %s s left: %s, %s to %s" % (s["early_tau_max"], size, _c(s.get("early_min_price")),
+                                                              _c(s.get("early_max_price") or s.get("price_ceiling"))))
+    if s.get("hedge_belief") is not None:
+        bits.append("hedges if our odds fall under %d%%" % round(100 * float(s["hedge_belief"])))
+    stops = []
+    if s.get("max_losses"):
+        stops.append("%d losing bets" % s["max_losses"])
+    if s.get("loss_cap"):
+        stops.append("a %s run loss" % usd(float(s["loss_cap"])).lstrip("+"))
+    if stops:
+        bits.append("halts after " + " or ".join(stops))
+    if s.get("ladder_series"):
+        bits.append("hourly %s: %g contract a market" % ("/".join(s["ladder_series"]), s.get("series_size") or 1))
+    return s, "; ".join(bits)
+
+
+def settings(si):
+    """botstats.running's pin branch: its newest log's first record + results/pinrun-live-size.json."""
+    return settings_pin(si.start, si.cmdline, si.read_json("pinrun-live-size.json"))
+
+
+def activity(k, r, out, why, st):
+    """botstats.activity's pin branch (verbatim)."""
+    import pinledger
+    if k == "order":
+        out["sent"] += 1
+        f = pinledger.money(r, "filled")
+        out["filled" if f > 0 else "not_filled"] += 1
+        out["contracts_filled"] += f
+    elif k == "hedge":
+        out["hedges"] += 1
+    elif k in ("refused", "late_refused"):
+        out["refused"] += 1
+        g = str(r.get("gate") or k)
+        why[g] = why.get(g, 0) + 1
+
+
+BOT = Bot(
+    name="pin", label="Pin bot", short="Pin bot", word="pin bot",
+    what="15-minute coin markets + hourly Bitcoin",
+    help=("/pin — the pin bot: running or not and why, version, settings, money by window, worst, open bets, cash, "
+          "last markets",),
+    command="/pin", commands=("/pin",),
+    pots=(Pot("0", 2, claims=_claims, priority=20, what="main bot (pin)", short="main"),),
+    script="pinrun.py", is_live=live_flag("--live"), stop_file="pinrun-live.stop",
+    logs=Logs(glob="pinrun-live-*.jsonl", start_rule="first_line"),
+    records=Records(fills=("order", "hedge"), fill_qty="filled", fill_side="want", hedge="hedge",
+                    halts=("halt", "entries_stopped", "pause")),
+    settings=settings,
+    # botstats.version_of: the pin bot's is every heading no other bot claims -- except a combined one naming the
+    # clean-room / penny / jump band / weather words, or a single one naming the clean-room bots
+    version=VersionRule(default=True, combined_not=r"cleanroom|clean-room|bettor|penny|jumpband|" + WX_VER,
+                        single_not=r"cleanroom|clean-room|bettor|forecaster|ladder_live|penny"),
+    colour="#2a78d6",          # blue
+    order=1,
+    keepalive="watch_bot.ps1 restarts it unless the stop file is there",
+    always_shown=True,         # /status, /pause and /start are about it (v-tg-active)
+    page_footer="More on pin: /stats (win rate vs break-even), /fills (today's orders), /open, /losses, /hedges.",
+    activity=activity,
+    funds_size=True,
+    speed=None,                # /speed's pin section is its own (speed_gather)
+    features=(
+        Feature("pinrun.py", "--live", None, "Pin bot (LIVE, main account)",
+                "Buys the near-certain side of a 15-minute coin market in its last seconds, when the price has pinned.",
+                pos=0, hides=True),
+        Feature("pinrun.py", None, "--live", "Pin bot paper arms",
+                "The pin rule under variant settings (bands, early leg, confidence), on paper; no orders.", pos=9),
+    ),
+)
