@@ -164,7 +164,7 @@ SPEC = {
                 "log": "dipsell-live-orders.jsonl",
                 "keepalive": "boot_all.ps1 (every 10 min) restarts it unless the stop file is there"},
     # 2026-10-25: the FX / commodity 15-minute TAKER, a live penny test (research/cleanroom/fxtake_live.py, ledger LS10)
-    "fx": {"label": "FX taker", "what": "buys the side already bid 98c+ at 99c or less in the last 30 s of the 15-minute markets: the 5 currency pairs (subaccount 4) and the 8 commodities (subaccount 5), 10 contracts a market",
+    "fx": {"label": "FX taker", "what": "buys the side already bid 98c+ at 99c or less 45 to 15 s before the close of the 15-minute markets (30 to 15 s until 10-30, v-fx-from45): the 5 currency pairs (subaccount 4) and the 8 commodities (subaccount 5), 10 contracts a market",
            "sub": "5", "also": ("4",),            # 5 = commodities (pool 2), 4 = the 5 currency pairs (pool 0), since 10-25
            "script": "fxtake_live.py", "stop": "fxtake-live.stop", "log": "fxtake-live-orders.jsonl",
            "keepalive": "boot_all.ps1 (every 10 min) restarts it unless the stop file is there"},     # since 10-26 (add_fx_keepalive.ps1)
@@ -208,9 +208,12 @@ def et_day(epoch):
 
 
 def day_start(day):
-    """Epoch of midnight ET at the start of 'YYYY-MM-DD' (pindesk.et_day_start)."""
+    """Epoch of midnight ET at the start of 'YYYY-MM-DD' (pindesk.et_day_start).
+
+    2026-10-30: the offset is read at 05:00Z of that date (00:00 EST or 01:00 EDT, always before the 2 AM clock
+    change), not at noon, which put 2026-11-01's midnight an hour late and 2026-03-08's an hour early."""
     y, m, d = (int(x) for x in day.split("-"))
-    return calendar.timegm((y, m, d, 0, 0, 0)) - pinday.et_offset(calendar.timegm((y, m, d, 12, 0, 0)))
+    return calendar.timegm((y, m, d, 0, 0, 0)) - pinday.et_offset(calendar.timegm((y, m, d, 5, 0, 0)))
 
 
 def shift_day(day, k):
@@ -3035,6 +3038,22 @@ def selftest():
        and "first loss" not in _t40, "v-race40: the race's rules read 40 a bet and the daily 2-loss stop")
     _s1, _t1 = settings_race({"live_rails": {"stop_on_loss": True}}, "python -u research/pinracearm.py --live")
     ck("stops after its first loss" in _t1, "NULL: without --live-max-losses the old first-loss stop is still described")
+
+    # 2026-10-30: the clock-change days. day_start read the ET offset at NOON until today: on 2026-11-01 (clocks back
+    # at 2 AM, so noon is EST but midnight was EDT) that put midnight at 05:00Z, an hour late, and every day total,
+    # pace and 'since midnight' figure for Nov 1 would have missed its first hour; on 2026-03-08 an hour early.
+    _starts = {"2026-10-29": (2026, 10, 29, 4), "2026-11-01": (2026, 11, 1, 4), "2026-11-02": (2026, 11, 2, 5),
+               "2026-03-08": (2026, 3, 8, 5), "2026-03-09": (2026, 3, 9, 4)}
+    ck(all(day_start(k) == calendar.timegm(v + (0, 0)) for k, v in _starts.items()),
+       "day_start across both clock changes: Oct 29 04:00Z, Nov 1 04:00Z, Nov 2 05:00Z, Mar 8 05:00Z, Mar 9 04:00Z")
+    ck(all(et_day(day_start(k)) == k and et_day(day_start(k) - 1) == shift_day(k, -1) for k in _starts),
+       "midnight belongs to its day and the second before it to the day before, on every one of them")
+    _len = {k: (day_start(shift_day(k, 1)) - day_start(k)) / 3600.0 for k in _starts}
+    ck(_len == {"2026-10-29": 24.0, "2026-11-01": 25.0, "2026-11-02": 24.0, "2026-03-08": 23.0, "2026-03-09": 24.0}
+       and all(shift_day(shift_day(k, 1), -1) == k for k in _starts)
+       and shift_day("2026-10-31", 1) == "2026-11-01" and shift_day("2026-11-02", -1) == "2026-11-01",
+       "shift_day walks the calendar across both changes and the days join up: Nov 1 is 25 hours, Mar 8 is 23, the "
+       "rest 24 (%s)" % _len)
     print("botstats selftest: OK")
 
 

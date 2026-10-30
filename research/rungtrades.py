@@ -165,9 +165,10 @@ def run(days, get, band_max=700, sleep=0.05, log=print):
     closes, misses = [], []
     for d in days:
         y, mo, da = (int(x) for x in d.split("-"))
-        # every UTC hour whose close falls on this ET calendar day
-        noon = calendar.timegm((y, mo, da, 16, 0, 0))
-        off = et_offset(noon)
+        # every UTC hour whose close falls on this ET calendar day. 2026-10-30: the offset is read at 05:00Z of the
+        # date (00:00 EST or 01:00 EDT, always before the 2 AM clock change), not at noon ET, which put the Nov 1
+        # midnight an hour late and the March one an hour early.
+        off = et_offset(calendar.timegm((y, mo, da, 5, 0, 0)))
         day0 = calendar.timegm((y, mo, da, 0, 0, 0)) - off * 3600   # ET midnight in UTC
         for h in range(1, 25):
             close_s = day0 + h * 3600

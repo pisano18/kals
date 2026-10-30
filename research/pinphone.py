@@ -3345,7 +3345,7 @@ FEATURES = (
     ("dipsell_live.py", None, None, "Weather dip-seller (LIVE, subaccount 3)",
      "Sells daily high-temperature markets (KXHIGH) into dips, in Kalshi's weather cash pool."),
     ("fxtake_live.py", "--live", None, "FX taker (LIVE, subaccounts 5 + 4)",
-     "In the last 30 to 15 seconds of each 15-minute currency and commodity market, buys the side already bid 98c "
+     "In the last 45 to 15 seconds of each 15-minute currency and commodity market (30 to 15 until 10-30), buys the side already bid 98c "
      "or more at 99c or less, 10 contracts: the 5 currency pairs from subaccount 4, the 8 commodities from subaccount 5."),
     ("pinracearm.py", None, "--live", "Coin race paper arms",
      "Watch the same coin races on paper with other entry rules; no orders."),
@@ -8785,6 +8785,23 @@ def selftest():
        "machine_read on this machine (ctypes, no psutil): CPU %.0f%%, memory %s%%, %s free on C:, %d python "
        "process(es), up %s; errors: %s" % (_mr["cpu"] or -1, _mr["mem_load"], _gb(_mr["disk_free"]), _mr["py_n"] or 0,
                                           _span_words(_mr["uptime_s"] or 0), _mr["errs"] or "none"))
+
+    # 2026-10-30: the clock-change days. Every 'today', 'yesterday', 'since midnight' and 7-day window on the phone
+    # starts at et_day_start / bs.day_start, which read the ET offset at NOON until today: on 2026-11-01 (clocks back
+    # at 2 AM) that put midnight at 05:00Z, an hour late (the 12-1 AM hour booked to Oct 31, the 8 AM brief an hour
+    # late); on 2026-03-08 an hour early.
+    import botstats as _bsd
+    _starts = {"2026-10-29": (2026, 10, 29, 4), "2026-11-01": (2026, 11, 1, 4), "2026-11-02": (2026, 11, 2, 5),
+               "2026-03-08": (2026, 3, 8, 5), "2026-03-09": (2026, 3, 9, 4)}
+    ck(all(et_day_start(k) == _bsd.day_start(k) == calendar.timegm(v + (0, 0)) for k, v in _starts.items()),
+       "et_day_start and bs.day_start across both clock changes: Oct 29 04:00Z, Nov 1 04:00Z, Nov 2 05:00Z, Mar 8 "
+       "05:00Z, Mar 9 04:00Z")
+    ck(all(et_day(et_day_start(k)) == k and et_day(et_day_start(k) - 1) == day_minus(k, 1) == _bsd.shift_day(k, -1)
+           for k in _starts)
+       and {k: (et_day_start(day_minus(k, -1)) - et_day_start(k)) / 3600.0 for k in _starts}
+       == {"2026-10-29": 24.0, "2026-11-01": 25.0, "2026-11-02": 24.0, "2026-03-08": 23.0, "2026-03-09": 24.0},
+       "day_minus and shift_day agree with the clock across both changes and the days join up: Nov 1 is 25 hours, "
+       "Mar 8 is 23, the rest 24")
     print("pinphone selftest: OK")
 
 

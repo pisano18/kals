@@ -142,10 +142,15 @@ def et_day(epoch):
 
 
 def et_day_start(day):
-    """Epoch of midnight ET at the start of 'YYYY-MM-DD'."""
+    """Epoch of midnight ET at the start of 'YYYY-MM-DD'.
+
+    2026-10-30: the offset is read at 05:00Z of that date, not at noon. 05:00Z is 00:00 EST or 01:00 EDT of the
+    same ET date, always before the 2 AM clock change, so it carries the offset midnight had. Noon was wrong twice
+    a year: on 2026-11-01 noon is EST but midnight was EDT (midnight landed at 05:00Z, an hour late), and on
+    2026-03-08 noon is EDT but midnight was EST (an hour early)."""
     y, m, d = (int(x) for x in day.split("-"))
-    noon = calendar.timegm((y, m, d, 12, 0, 0))
-    return calendar.timegm((y, m, d, 0, 0, 0)) - et_offset(noon)
+    five_z = calendar.timegm((y, m, d, 5, 0, 0))
+    return calendar.timegm((y, m, d, 0, 0, 0)) - et_offset(five_z)
 
 
 def et_str(epoch, fmt="%I:%M %p"):
@@ -5396,6 +5401,21 @@ def selftest():
     ck(et_day(e) == "2026-09-16", "03:00Z on the 17th is still the 16th in ET")
     ck(et_str(e) == "11:00 PM", "and reads 11:00 PM")
     ck(et_day_start("2026-09-16") == calendar.timegm((2026, 9, 16, 4, 0, 0)), "an ET day starts at 04:00Z in September")
+    # 2026-10-30: the clock-change days. et_day_start read the ET offset at NOON until today: on 2026-11-01 (clocks
+    # back at 2 AM, so noon is EST but midnight was EDT) that put midnight at 05:00Z, an hour late; on 2026-03-08
+    # (clocks forward) an hour early. The offset is now read at 05:00Z of the date, which is 00:00 EST or 01:00 EDT
+    # of that same date and always before the change.
+    _starts = {"2026-10-29": (2026, 10, 29, 4), "2026-11-01": (2026, 11, 1, 4), "2026-11-02": (2026, 11, 2, 5),
+               "2026-03-08": (2026, 3, 8, 5), "2026-03-09": (2026, 3, 9, 4)}
+    ck(all(et_day_start(k) == calendar.timegm(v + (0, 0)) for k, v in _starts.items()),
+       "et_day_start across both clock changes: Oct 29 04:00Z, Nov 1 04:00Z, Nov 2 05:00Z, Mar 8 05:00Z, Mar 9 04:00Z")
+    ck(all(et_day(et_day_start(k)) == k and et_day(et_day_start(k) - 1) < k for k in _starts)
+       and et_day(et_day_start("2026-11-02") - 1) == "2026-11-01" and et_day(et_day_start("2026-11-01") - 1) == "2026-10-31"
+       and et_day(et_day_start("2026-03-09") - 1) == "2026-03-08" and et_day(et_day_start("2026-03-08") - 1) == "2026-03-07"
+       and (et_day_start("2026-11-02") - et_day_start("2026-11-01")) == 25 * 3600
+       and (et_day_start("2026-03-09") - et_day_start("2026-03-08")) == 23 * 3600,
+       "midnight belongs to its day, the second before it to the day before, and the days join up: Nov 1 is 25 hours, "
+       "Mar 8 is 23")
     ck(coin("KXBNB15M-26SEP161000-00") == "BNB" and coin("KXBTC15M-26SEP161000-00") == "BTC", "coin from ticker")
     ck(close_et("KXBNB15M-26SEP161000-00") == "10:00 AM", "the ticker clock is ET: 26SEP161000 closes 10:00 AM ET")
     ck(et_day(pinflat.close_epoch("KXXRP15M-26SEP170000-00")) == "2026-09-17",

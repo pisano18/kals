@@ -153,7 +153,9 @@ def brief(day=None, ledger=None, results=None, now=None):
     # what changed, today and in the week behind it
     vs, bad = versions()
     out["versions_unparsed"] = bad
-    cutoff = pindesk.et_day(pindesk.et_day_start(day) - 7 * 86400)
+    # 2026-10-30: the week back is counted from NOON of `day` (et_day_start + 12 h), so the hour the clocks move
+    # cannot push the cutoff a day early (from midnight, Mar 9 - 7 x 24 h landed at 11 PM on Mar 1).
+    cutoff = pindesk.et_day(pindesk.et_day_start(day) + 43200 - 7 * 86400)
     for v in vs:
         if v["day"] == day:
             out["changed_today"].append(v)
@@ -418,6 +420,23 @@ some prose
        "the newer 'v-a + v-b -- LIVE <date> <time>Z -- what' headings parse (01:45Z on 10-24 is the EASTERN day "
        "10-23; headline = the first sentence); "
        "INSTALLED is not a change yet; a heading of neither shape is counted")
+
+    # 2026-10-30: the clock-change days. The briefing's 'yesterday' and 'the week behind' come from et_day_start,
+    # which read the ET offset at noon until today: on 2026-11-01 (clocks back at 2 AM) that put midnight at 05:00Z,
+    # an hour late, and on 2026-03-08 (clocks forward) an hour early.
+    import calendar as _cal
+    _starts = {"2026-10-29": (2026, 10, 29, 4), "2026-11-01": (2026, 11, 1, 4), "2026-11-02": (2026, 11, 2, 5),
+               "2026-03-08": (2026, 3, 8, 5), "2026-03-09": (2026, 3, 9, 4)}
+    ck(all(pindesk.et_day_start(k) == _cal.timegm(v + (0, 0)) for k, v in _starts.items()),
+       "et_day_start across both clock changes: Oct 29 04:00Z, Nov 1 04:00Z, Nov 2 05:00Z, Mar 8 05:00Z, Mar 9 04:00Z")
+    _prev = {k: pindesk.et_day(pindesk.et_day_start(k) - 3600) for k in _starts}
+    ck(_prev == {"2026-10-29": "2026-10-28", "2026-11-01": "2026-10-31", "2026-11-02": "2026-11-01",
+                 "2026-03-08": "2026-03-07", "2026-03-09": "2026-03-08"},
+       "the briefing's 'yesterday' (an hour before midnight) is the calendar day before on every one of them: %s" % _prev)
+    _cut = {k: pindesk.et_day(pindesk.et_day_start(k) + 43200 - 7 * 86400) for k in _starts}
+    ck(_cut == {"2026-10-29": "2026-10-22", "2026-11-01": "2026-10-25", "2026-11-02": "2026-10-26",
+                "2026-03-08": "2026-03-01", "2026-03-09": "2026-03-02"},
+       "the week-behind cutoff is exactly 7 calendar days back across both changes: %s" % _cut)
     print("pinbrief selftest: OK")
 
 

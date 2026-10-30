@@ -2167,6 +2167,21 @@ def selftest():
        and all(s_ < 0.25 or (min(h_, 360.0 - h_) >= 20 and abs(h_ - 120.0) >= 40) for h_, s_ in hs.values()),
        "one colour a bot, none of them the red or green of a loss or gain: %s"
        % ", ".join("%s %.0f deg" % (b, h_) for b, (h_, _s) in hs.items()))
+
+    # 2026-10-30: the clock-change days. Every chart's day boundary is et_day_start / bs.day_start, which read the ET
+    # offset at NOON until today: on 2026-11-01 (clocks back at 2 AM) that put midnight at 05:00Z, an hour late, so
+    # /today and /yesterday on Nov 1 would have dropped the 12-1 AM hour; on 2026-03-08 an hour early.
+    import botstats as _bsc
+    _starts = {"2026-10-29": (2026, 10, 29, 4), "2026-11-01": (2026, 11, 1, 4), "2026-11-02": (2026, 11, 2, 5),
+               "2026-03-08": (2026, 3, 8, 5), "2026-03-09": (2026, 3, 9, 4)}
+    ck(all(et_day_start(k) == _bsc.day_start(k) == calendar.timegm(v + (0, 0)) for k, v in _starts.items()),
+       "et_day_start and bs.day_start across both clock changes: Oct 29 04:00Z, Nov 1 04:00Z, Nov 2 05:00Z, Mar 8 "
+       "05:00Z, Mar 9 04:00Z")
+    _len = {k: (et_day_start(_bsc.shift_day(k, 1)) - et_day_start(k)) / 3600.0 for k in _starts}
+    ck(_len == {"2026-10-29": 24.0, "2026-11-01": 25.0, "2026-11-02": 24.0, "2026-03-08": 23.0, "2026-03-09": 24.0}
+       and all(prev_day(_bsc.shift_day(k, 1)) == k and et_day(et_day_start(k) - 1) == prev_day(k) for k in _starts),
+       "prev_day and shift_day agree with the clock across both changes and the days join up (Nov 1 is 25 hours, "
+       "Mar 8 is 23): %s" % _len)
     print("tgcharts selftest: OK (matplotlib %s)" % mpl()["version"])
 
 

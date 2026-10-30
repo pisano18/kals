@@ -7,7 +7,8 @@ once it's discovered."
 WHAT IT DOES
   Watches the order books of the 13 FX / commodity 15-minute series (KXWTI15M, KXBRENT15M, KXNATGAS15M, KXGOLD15M,
   KXSILVER15M, KXCOPPER15M, KXPLATINUM15M, KXPALLADIUM15M, KXEURUSD15M, KXGBPUSD15M, KXUSDJPY15M, KXAUDUSD15M,
-  KXUSDCAD15M). In the last ENTRY_FROM..ENTRY_TO seconds of a market (default 30..15), when one side's best BID is
+  KXUSDCAD15M). In the last ENTRY_FROM..ENTRY_TO seconds of a market (default 45..15; 30..15 from 10-25 to 10-30,
+  see v-fx-from45 at ENTRY_FROM), when one side's best BID is
   already >= FAV (0.98) -- and has STAYED there at least HOLD_S (5) seconds (v-fx-hold5, 2026-10-26: every loser was
   bought within 2 s of the bid first reaching 98c) -- and that side is OFFERED at <= CAP (0.99), it buys SIZE contracts of that side with ONE
   immediate-or-cancel limit at CAP. One order per market, ever. Nothing is held past the close; Kalshi settles.
@@ -69,7 +70,15 @@ SIZE = 10
 SIZE_MAX = 50
 FAV = 0.98
 CAP = 0.99
-ENTRY_FROM = 30.0
+ENTRY_FROM = 45.0            # v-fx-from45 (2026-10-30 FX read; 30.0 from 10-25 to 10-30). Replay of ALL the FX tape (61 hours,
+                             # 2,734 markets, 10 contracts, fees in), hold5 rule: from T-30 305 buys / 1 lost / +$22.30; from
+                             # T-45 494 / 1 / +$39.70; from T-60 657 / 3 / +$35.35 (two new losers bought the instant the window
+                             # opened). The 189 extra T-45 buys lost 0, had fewer scares (6.9% vs 9.5%), made +$16.77 and never
+                             # hit the per-close or MAX_HELD caps. Break-even loss rate 0.93%; exact 95% upper bound at 45 s
+                             # 1.12% (1.81% at 30 s on fewer buys). Live 10-25..10-30 at 30 s: 549 buys, 3 lost, +$20.32; the
+                             # 10-30 AUDUSD loss (bought at T-30.0, 98c held 29 s) would have been bought by both windows.
+                             # Expected ~$11-14 a day at 10 contracts vs $7-8 at 30 s. Operator's rule: more money, loss rate
+                             # not worse -> widen to 45, not 60. Read again ~11-03 after ~600 live buys: 3+ losses -> back to 30.
 ENTRY_TO = 15.0
 LATE_S = 1.0
 STALE_S = 5.0
@@ -784,11 +793,26 @@ def selftest():
     ck(subs_sent == {("C", 5, 2), ("F", 4, 0)} and all(v.get("sub") == (4 if tk.startswith("F") else 5) for tk, v in trs.held.items()),
        "commodity orders carry subaccount 5 / pool 2, FX orders subaccount 4 / pool 0: %s" % sorted(subs_sent))
     ck(not body_ok(order_body("F0-1", "yes", 0.99, 10, 0, "fxt-9-f", pool=0), 0, 0), "an FX order for the primary account is refused")
+    # the entry window's far edge, written against ENTRY_FROM so --from keeps the suite true (v-fx-from45: 45 s default,
+    # so 55 and 50 s are outside, 40 s is inside, and 20 s was inside under every window)
     tr2 = Trader(log, 4, False, lambda *a: (201, {}), now=lambda: T[0])
-    tr2.markets["X-1"] = {"close_s": now + 40, "series": "X"}; tr2.books["X-1"] = tr.books["KXS015M-26OCT261015-15"]
-    ck(tr2.decide(now) == [], "40 s before the close is outside the 30..15 s window")
+    tr2.markets["X-1"] = {"close_s": now + ENTRY_FROM + 10, "series": "X"}; tr2.books["X-1"] = tr.books["KXS015M-26OCT261015-15"]
+    ck(tr2.decide(now) == [] and "X-1" not in tr2.ordered,
+       "%g s before the close is outside the %g..%g s window (not decided, looked at again)" % (ENTRY_FROM + 10, ENTRY_FROM, ENTRY_TO))
+    ck(tr2.decide(now + 5) == [] and "X-1" not in tr2.ordered,
+       "%g s before the close is still outside the %g..%g s window" % (ENTRY_FROM + 5, ENTRY_FROM, ENTRY_TO))
+    d2e = tr2.decide(now + 10 + 1e-9)                                 # tau = ENTRY_FROM exactly: the edge is inside
+    ck(len(d2e) == 1 and d2e[0][1] == "yes" and d2e[0][2] == SIZE and abs(d2e[0][3]["tau"] - ENTRY_FROM) < 0.01,
+       "%g s before the close (the window's far edge) -> one yes order of SIZE at tau %g" % (ENTRY_FROM, d2e[0][3]["tau"] if d2e else -1))
+    tr2b = Trader(log, 4, False, lambda *a: (201, {}), now=lambda: T[0])
+    tr2b.markets["X-2"] = {"close_s": now + ENTRY_FROM - 5, "series": "X"}; tr2b.books["X-2"] = tr.books["KXS015M-26OCT261015-15"]
+    d2b = tr2b.decide(now)
+    ck(len(d2b) == 1 and d2b[0][1] == "yes" and d2b[0][2] == SIZE,
+       "%g s before the close is inside the %g..%g s window -> one yes order of SIZE" % (ENTRY_FROM - 5, ENTRY_FROM, ENTRY_TO))
+    tr2c = Trader(log, 4, False, lambda *a: (201, {}), now=lambda: T[0])
+    tr2c.markets["X-3"] = {"close_s": now + 20, "series": "X"}; tr2c.books["X-3"] = tr.books["KXS015M-26OCT261015-15"]
     T[0] = now + 20
-    d2 = tr2.decide(now + 20)
+    d2 = tr2c.decide(now)
     ck(len(d2) == 1 and d2[0][1] == "yes" and d2[0][2] == SIZE, "20 s before the close -> one yes order of SIZE")
     # place + fill + settle + day stop
     def filled_at_cap(m, p, b, q):

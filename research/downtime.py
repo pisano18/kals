@@ -77,6 +77,17 @@ def et_offset(epoch):
     return -4 * 3600 if dst_start <= t < dst_end else -5 * 3600
 
 
+def et_day_start(day):
+    """UTC epoch of midnight ET at the start of 'YYYY-MM-DD'.
+
+    The offset is read at 05:00Z of that date: 05:00Z is 00:00 EST or 01:00 EDT of the same ET date and always
+    before the 2 AM clock change, so it is the offset midnight had, on every day of the year. Reading it at noon
+    (the first version) was wrong twice a year: 2026-11-01 noon is EST but midnight was EDT (midnight landed at
+    05:00Z, an hour late); 2026-03-08 noon is EDT but midnight was EST (an hour early)."""
+    y, m, d = (int(x) for x in day.split("-"))
+    return calendar.timegm((y, m, d, 0, 0, 0)) - et_offset(calendar.timegm((y, m, d, 5, 0, 0)))
+
+
 def lost_by_et_day(spans=None):
     """{'YYYY-MM-DD' (Eastern): lost_hours}."""
     spans = load() if spans is None else spans
@@ -106,11 +117,12 @@ def hours_up_et_day(day, now_epoch=None, spans=None):
     import time as _time
     spans = load() if spans is None else spans
     now = _time.time() if now_epoch is None else now_epoch
-    y, m, d = (int(x) for x in day.split("-"))
-    noon_utc = calendar.timegm((y, m, d, 12, 0, 0))
-    off = et_offset(noon_utc)
-    start = calendar.timegm((y, m, d, 0, 0, 0)) - off
-    end = min(start + 86400, now)
+    # 2026-10-30: the offset is read at 05:00Z of the date (00:00 EST or 01:00 EDT, always before the 2 AM clock
+    # change), not at noon, which put 2026-11-01's midnight an hour late and 2026-03-08's an hour early. The day
+    # ends where the next ET day starts (25 hours on the November change day, 23 in March), not start + 24 h.
+    start = et_day_start(day)
+    nxt = dt.date.fromisoformat(day) + dt.timedelta(days=1)
+    end = min(et_day_start(nxt.isoformat()), now)
     if end <= start:
         return 0.0
     return max(0.0, (end - start - lost_seconds(start, end, spans)) / 3600.0)
@@ -165,6 +177,19 @@ def selftest():
     d = lost_by_et_day([(_epoch("2026-09-16T02:00:00Z"), _epoch("2026-09-16T06:00:00Z"), "x")])
     ck(abs(d.get("2026-09-15", 0) - 2.0) < 1e-9 and abs(d.get("2026-09-16", 0) - 2.0) < 1e-9,
        "an outage from 10 PM to 2 AM Eastern splits 2 hours to each Eastern day")
+    # 2026-10-30: the clock-change days. 2026-11-01 (EDT -> EST at 06:00Z) starts at 04:00Z and is 25 hours long;
+    # 2026-03-08 (EST -> EDT at 07:00Z) starts at 05:00Z and is 23 hours long. The noon rule said 05:00Z and 04:00Z.
+    _want = {"2026-10-29": (2026, 10, 29, 4), "2026-11-01": (2026, 11, 1, 4), "2026-11-02": (2026, 11, 2, 5),
+             "2026-03-08": (2026, 3, 8, 5), "2026-03-09": (2026, 3, 9, 4)}
+    _got = {k: et_day_start(k) for k in _want}
+    ck(all(_got[k] == calendar.timegm(v + (0, 0)) for k, v in _want.items()),
+       "et_day_start across both clock changes: Oct 29 04:00Z, Nov 1 04:00Z, Nov 2 05:00Z, Mar 8 05:00Z, Mar 9 04:00Z")
+    ck(abs(hours_up_et_day("2026-11-01", _epoch("2026-11-03T00:00:00Z"), []) - 25.0) < 1e-9
+       and abs(hours_up_et_day("2026-03-08", _epoch("2026-03-10T00:00:00Z"), []) - 23.0) < 1e-9
+       and abs(hours_up_et_day("2026-10-29", _epoch("2026-10-31T00:00:00Z"), []) - 24.0) < 1e-9,
+       "a finished Nov 1 has 25 hours up, a finished Mar 8 has 23, an ordinary day 24")
+    ck(abs(hours_up_et_day("2026-11-01", _epoch("2026-11-01T05:30:00Z"), []) - 1.5) < 1e-9,
+       "at 01:30 EDT on Nov 1 (05:30Z) the day has 1.5 hours up, not 0.5 (the noon rule started it at 05:00Z)")
     real = load()
     sep = lost_by_et_day(real).get("2026-09-15")
     if sep is not None:

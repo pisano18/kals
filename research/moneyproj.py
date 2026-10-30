@@ -137,7 +137,10 @@ def close_of_ticker(tk):
     except (IndexError, KeyError, ValueError, AttributeError):
         return None
     naive = calendar.timegm((2000 + yy, mon, dd, hh, mm, 0))
-    epoch = naive - et_offset(naive)          # ET wall clock -> UTC epoch
+    # ET wall clock -> UTC epoch. 2026-10-30: the offset is read at the EDT guess of the instant (naive + 4 h), as
+    # timeedge.close_epoch_of does, not at the wall time read as UTC, which was an hour off for the wall hours
+    # 02:00-05:59 on the November change day and 03:00-06:59 on the March one.
+    epoch = naive - et_offset(naive + 4 * 3600)
     return "%04d-%02d-%02d" % (2000 + yy, mon, dd), "%02d%02d" % (hh, mm), epoch
 
 
