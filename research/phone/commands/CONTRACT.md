@@ -163,3 +163,15 @@ Before you finish: `C:\Python314\python.exe research\phone\tests\test_context.py
 `pinphone.py --selftest`, `botstats.py --selftest`, `tgcharts.py --selftest` all pass (unchanged: you only added files),
 and shadow is identical in all 8 worlds for every module you wrote. Report: commit, files, shadow's last line, and any
 helper you copied or anything the integrator must change.
+
+## 6. Pictures: new charts must use base.money_axis / time_axis (10-30)
+
+A command's picture is a `chart=` kind drawn by a module in `research\phone\charts\` (one function per kind, wired in
+`phone/charts/__init__.py: build`). Every axis goes through the layout engine in `phone/charts/base.py` (its docstring
+is the reference): `money_axis` / `value_axis` / `pct_axis` for values (the scale from the data's own range and typical
+move, nice 1/2/2.5/5 ticks, never an offset or 1e6), `time_axis` / `clock_axis` / `category_axis` for x (each panel
+its own span), and `mark_last` / `annotate_change` / `ref` / `shade` for the words on the data. A chart module never
+calls `set_xlim` / `set_ylim` / `set_*ticks*` / locators / formatters itself: `phone/charts/tests/test_layout_rules.py`
+(run by `tgcharts.py --selftest`) scans the sources for that and checks every picture the tests draw (base.audit: 4-7
+ticks, the data fill 60% of each axis, no overlapping tick labels, under 300 KB). A golden replay with
+`KALS_CHART_STRICT=1` set raises on any broken rule, so the fixture's real pictures are checked the same way.

@@ -7,8 +7,9 @@ chart_market). /hedges' markets come from the ChartCtx (ctx.main_account_markets
 """
 from pindesk import Ledger, et_day, et_day_start
 from botdata import series
-from phone.charts.base import (BLUE, BOT_COLOUR, GREY, INK, INK2, MUTED, SURF, date_axis, etdt, fig_new, headline,
-                               legend, money_axis, mpl, note, png, usd, zero_line)
+from phone.charts.base import (BLUE, BOT_COLOUR, GREY, INK, INK2, MUTED, SURF, annotate_change, etdt, fig_new,
+                               headline, legend, mark_last, money_axis, note, png, time_axis,
+                               usd, value_axis)
 
 
 def chart_hedges(ctx):
@@ -29,9 +30,10 @@ def chart_hedges(ctx):
         tot = cum
         X = [etdt(m["close"]) for m in hm]
         ax.step(X, run, where="post", color=BLUE, lw=2.0, zorder=3)
-        note(ax, X[-1], run[-1], usd(run[-1]), dx=-4, ha="right")
-    zero_line(ax)
-    money_axis(ax)
+        money_axis(ax, run, xs=X, room_top=0.1)
+        mark_last(ax, X[-1], run[-1], usd(run[-1]), color=BLUE)
+    else:
+        money_axis(ax, [])
     ax.set_title("What the insurance legs made on their own, running total")
     ax = axs[1]
     for verdict, col, lab in (("WASTED", GREY, "WASTED (the bet held)"), ("NEEDED", BLUE, "NEEDED (the bet lost)"),
@@ -40,12 +42,11 @@ def chart_hedges(ctx):
         if g:
             ax.scatter([etdt(x["t"]) for x in g], [x["net"] for x in g], s=30, color=col, edgecolor=SURF, linewidth=1.0,
                        zorder=4, label="%s: %d" % (lab, len(g)))
-    zero_line(ax)
-    money_axis(ax)
+    money_axis(ax, [x["net"] for x in ho])
     if ho:
         legend(ax)
     ax.set_title("Each hedged bet: what the whole market netted")
-    date_axis(axs[-1])
+    time_axis(axs[-1], xs=[etdt(m["close"]) for m in hm] + [etdt(x["t"]) for x in ho])
     headline(fig, "Pin bot insurance: %s all time on %d hedged markets" % (usd(tot), len(hm)))
     cap = ("The pin bot's insurance. Top: each hedged market's other side, on its own (pinphone.markets_from's "
            "hedge_pnl, Kalshi's books, main account), added up. Bottom: every executed hedge (the pin bot's records) "
@@ -74,14 +75,12 @@ def chart_status(ctx):
     mv = [e for e in led.external if e.get("t") and e["t"] >= t0 and abs(float(e.get("amount") or 0)) >= Ledger.TRANSFER_MIN]
     for e in mv:
         ax.axvline(etdt(e["t"]), color=INK2, lw=1.2, ls=":", zorder=2)
-    if mv:
-        ax.plot([], [], color=INK2, lw=1.2, ls=":", label="money moved in or out (left out of the line)")
-    note(ax, X[-1], Y[-1], usd(Y[-1], False), dx=-4, ha="right")
-    money_axis(ax, signed=False)
-    date_axis(ax, 7)
+    money_axis(ax, Y, kind="balance", xs=X, room_top=0.1)
+    time_axis(ax, X[0], X[-1])
+    mark_last(ax, X[-1], Y[-1], usd(Y[-1], False), color=BLUE)
+    # the dotted lines' key goes in the same box as the change (one box, never two fighting for a corner)
+    annotate_change(ax, X, Y, ends=True, extra=["dotted: money moved in or out (left out of the line)"] if mv else ())
     ax.set_title("Main account (%s), hour by hour, last 7 days, trading only" % ctx.words_main())
-    if mv:
-        legend(ax)
     headline(fig, "Bank %s · trading, last 7 days %s" % (usd(Y[-1], False), usd(Y[-1] - Y[0])))
     cap = ("The main account's bank (" + ctx.words_main() + ") over the last 7 days, " + series.NEUTRAL_NOTE + ": the "
            "bank now (the pin bot's last bank read plus every settlement since -- pindesk's bank_at, the figure /status "
@@ -119,12 +118,8 @@ def chart_fills(ctx):
         ax.scatter([etdt(o["t"]) for o, _p in z], [p for _o, p in z], marker="x", s=40, color=INK, linewidth=1.8,
                    zorder=5, label="filled nothing: %d (at the price it saw)" % len(zero))
     d0 = et_day_start(day)
-    ax.set_xlim(etdt(d0), etdt(d0 + 86400))
-    date_axis(ax, 1)
-    T = mpl()["ticker"]
-    ax.yaxis.set_major_locator(T.MaxNLocator(nbins=7, steps=[1, 2, 5, 10]))
-    ax.yaxis.set_major_formatter(T.FuncFormatter(lambda v, _p: ("%.1fc" if abs(ax.get_ylim()[1] - ax.get_ylim()[0]) < 6
-                                                               else "%.0fc") % v))
+    time_axis(ax, d0, d0 + 86400, clock=True)
+    value_axis(ax, [p for _o, p in g + z], unit="c", kind="level", floor=0.0, cap=100.0)
     ax.set_title("Each order today: the price, by time sent (ET) · got %g of %g contracts" % (
         sum(float(o.get("filled") or 0) for o in rows), sum(float(o.get("asked") or 0) for o in rows)))
     legend(ax)
@@ -155,8 +150,9 @@ def chart_market(ctx):
             ax.axhline(100.0 * act[k], color=MUTED, lw=1.1, ls=ls, zorder=2)
             note(ax, X[0], 100.0 * act[k], "%s %.0f%%" % (lab, 100.0 * act[k]), dx=2, dy=2, ha="left", color=INK2,
                  weight="normal", size=8.5)
-    ax.yaxis.set_major_formatter(mpl()["ticker"].FuncFormatter(lambda v, _p: "%.0f%%" % v))
-    date_axis(ax, (pts[-1][0]["close"] - pts[0][0]["close"]) / 86400.0)
+    value_axis(ax, Y + [100.0 * act[k] for k in ("p25", "median", "p75") if act.get(k) is not None], unit="%",
+               kind="level", floor=0.0, cap=100.0)
+    time_axis(ax, X[0], X[-1])
     ax.set_title("Share of looks with someone selling the winning side, each quarter-hour")
     if f:
         legend(ax)

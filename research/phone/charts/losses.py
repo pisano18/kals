@@ -9,8 +9,8 @@ import datetime as _dt
 import pindesk
 from pindesk import Ledger
 from botdata import series
-from phone.charts.base import (AVG30, BOT_COLOUR, BOT_SHORT, DOWN, GREY, GRID, INK, INK2, SURF, UP, date_axis,
-                               et_short, etdt, fig_new, headline, money_axis, note, pct_ticks, png, usd, zero_line)
+from phone.charts.base import (AVG30, BOT_COLOUR, BOT_SHORT, DOWN, GREY, GRID, INK, INK2, SURF, UP, category_axis,
+                               et_short, etdt, fig_new, headline, money_axis, note, pct_axis, png, time_axis, usd)
 
 LONG_DAYS = series.LONG_DAYS
 LOSS_WEEKS = 8                          # /losses: the weekly bars
@@ -75,8 +75,6 @@ def chart_losses(ctx):
         ax.bar(xs, lost[b], width=0.62, bottom=base, color=BOT_COLOUR.get(b, GREY), zorder=3,
                label=BOT_SHORT.get(b, b))
         base = [x + y for x, y in zip(base, lost[b])]
-    zero_line(ax)
-    span = max(max(won or [0]), -min(base or [0]), 1.0)
     for k in xs:
         if nlost[k]:
             ax.annotate("%s\n%d lost" % (usd(base[k]), nlost[k]), (k, base[k]), xytext=(0, -3),
@@ -95,12 +93,11 @@ def chart_losses(ctx):
         wk30 = 7.0 * sum(r["money"] for r in rows if d_lo <= r["day"] <= d_hi) / n30
         ax.axhline(wk30, color=AVG30, lw=1.6, ls="-.", zorder=2.5,      # behind the bars and their words
                    label="lost in an average week, last %d days (%s)" % (n30, usd(wk30)))
-    ax.set_ylim(min(base or [0]) - 0.32 * span, max(won or [0]) + 0.45 * span)      # headroom: the key, 2 rows
-    ax.set_xticks(xs)
-    ax.set_xticklabels([(lambda d: d.strftime("%b ") + str(d.day))(_dt.date.fromisoformat(w))
-                        + ("\nso far" if k == len(weeks) - 1 else "") for k, w in enumerate(weeks)], fontsize=9.5)
-    ax.grid(False, axis="x")
-    money_axis(ax)
+    # room under the bars for each week's loss words, over them for the key (2 rows)
+    money_axis(ax, won + base + ([wk30] if n30 > 7 else []), room_bottom=0.12, room_top=0.24)
+    category_axis(ax, [(lambda d: d.strftime("%b ") + str(d.day))(_dt.date.fromisoformat(w))
+                       + ("\nso far" if k == len(weeks) - 1 else "") for k, w in enumerate(weeks)], axis="x",
+                  pad=0.6)
     ax.set_title("Each week (Mon-Sun ET): won by every bot, up; lost, down, by bot")
     ax.legend(loc="upper center", fontsize=8.5, ncol=4, frameon=True, facecolor=SURF, edgecolor="none", framealpha=0.92,
               columnspacing=1.0, handlelength=1.2)
@@ -130,15 +127,11 @@ def chart_losses(ctx):
         rs = [r for r in lane if r["bot"] == b]
         labels.append("%s\n%s" % (BOT_SHORT.get(b, b), ("%d lost, %s" % (len(rs), usd(sum(r["money"] for r in rs))))
                                   if rs else "no losses"))
-    ax.set_yticks(range(len(active)))
-    ax.set_yticklabels(labels, fontsize=9)
-    ax.set_ylim(len(active) - 0.4, -0.75)                                    # first bot on top
-    ax.set_xlim(etdt(t_lo), etdt(now + 0.6 * 86400))
+    category_axis(ax, labels, axis="y", fontsize=9, top_first=True, pad=0.6, lo_pad=0.75)   # first bot on top
     ax.grid(True, axis="x", color=GRID, lw=0.6)
-    ax.grid(False, axis="y")
     for k in range(len(active)):
         ax.axhline(k, color=GRID, lw=0.6, zorder=1)
-    date_axis(ax, LOSS_LANE_DAYS)
+    time_axis(ax, t_lo, now + 0.6 * 86400, pad=0.0, fixed=True)              # the last 30 days, whatever they hold
     ax.set_title("Every loss, last %d days (circle size = dollars)" % LOSS_LANE_DAYS)
 
     d7 = bs.shift_day(today, -6)                       # the last 7 ET days, today in -- the words' '7d' count
@@ -183,18 +176,16 @@ def chart_losses_main(ctx):
         left = lc[i][0] < mid
         note(ax, X[i], Y[i], "%s %s %s" % (coins, et_short(lc[i][0], "%m/%d"), usd(Y[i])), dx=6 if left else -6,
              dy=4 + 13 * r, ha="left" if left else "right", size=8.5, weight="normal")
-    zero_line(ax)
-    money_axis(ax)
+    money_axis(ax, Y)
     ax.set_title("Each losing close, dollars")
     ax = axs[1]
     px = [x for x, p in zip(X, P) if p is not None]
     pv = [p for p in P if p is not None]
     ax.vlines(px, 0, pv, color=DOWN, lw=1.4, zorder=3)
     ax.scatter(px, pv, s=26, color=DOWN, edgecolor=SURF, linewidth=1.0, zorder=4)
-    zero_line(ax)
-    pct_ticks(ax)
+    pct_axis(ax, pv)
     ax.set_title("The same loss as % of the bank at that moment")
-    date_axis(axs[-1])
+    time_axis(axs[-1], xs=X)
     headline(fig, "%d losing closes of %d (%.1f%%) · worst %s" % (s["lost"], s["closes"], s["loss_rate"] or 0.0, usd(min(Y))))
     cap = ("Every losing close, all time (Kalshi's books, main account; one close = every market settling at that "
            "quarter-hour, as /losses counts them). Bottom: the loss as % of the bank then (pindesk's bank_at).")
