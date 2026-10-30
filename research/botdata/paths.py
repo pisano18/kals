@@ -6,8 +6,8 @@ string botstats always computed (<repo>\\results, the repo being the folder abov
 to it changes nothing. pinflat's hardcoded path is NOT re-bound: from another worktree it would point somewhere else.
 
 INJECTABLE: set_results(path) moves RESULTS for code that reads it through this module (paths.RESULTS / results()).
-A module that copied the string at import (botstats.RESULTS = paths.RESULTS) keeps its own copy until step 7 makes it
-read through here; tests that patch botstats.RESULTS keep working exactly as before.
+Since step 4 (2026-10-30) botstats and every botdata module read paths.RESULTS at call time, and botstats.RESULTS is a
+property over it: a test that sets botstats.RESULTS = <temp dir> calls set_results.
 
 THE WRITE FENCE (DESIGN risk 2). When the environment says KALS_TESTING=1, check_write(path) refuses -- raises
 WriteFenced, a PermissionError, so every caller that already survives an OSError survives this -- any write under the

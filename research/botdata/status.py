@@ -134,8 +134,8 @@ def fleet_from(rows, ok, now=None):
 
 def _cached_table(t):
     """botstats' cached process table (botstats_cache.json 'procs'), when under PROC_STALE_S old, else None."""
-    import botstats                                             # (step 7 moves the cache to botdata.kalshi)
-    p = botstats.load_cache().get("procs") or {}
+    from botdata import kalshi as _kalshi                       # (lazy: status is imported by modules kalshi needs)
+    p = _kalshi.load_cache().get("procs") or {}
     if p.get("rows") is not None and 0.0 <= t - float(p.get("t") or 0) < _procs.PROC_STALE_S:
         return p["rows"]
     return None
