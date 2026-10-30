@@ -26,6 +26,18 @@ from phone import router as R                                       # noqa: E402
 from phone.html import Html                                          # noqa: E402
 import phone.commands.day as D                                       # noqa: E402
 
+def _new_since_legacy(line):
+    """A /help line of a command the legacy phone never had (step 12 adds /week /month /quiet /alive ...): its first
+    /name is nowhere in the legacy template. The legacy comparisons below leave those lines out."""
+    import re
+    m = re.match(r"(?:<code>)?(/[a-z_]+)", line)
+    return bool(m) and not re.search(re.escape(m.group(1)) + r"\b", str(OLD.help_text(None)))
+
+
+def _legacy_only(text):
+    return "\n".join(x for x in str(text).split("\n") if not _new_since_legacy(x))
+
+
 try:                                                                 # the runtime's module (step 11: phone.app)
     import phone.app as NEW_PHONE_MOD                                # noqa: E402
 except ModuleNotFoundError:                                          # step 10: the runtime was pinphone's Phone
@@ -83,6 +95,7 @@ def test_routing_rules_like_the_legacy_handle():
         for text in texts:
             old, new = _phones()
             a, b = old.handle(7, text), new.handle(7, text)
+            b = type(b)(_legacy_only(b)) if b is not None else b             # step 12: new commands' /help lines
             assert _view(a) == _view(b), (text, _view(a), _view(b))
             assert old.muted == new.muted, text
             # another chat, and no paired chat: silence on both
@@ -106,6 +119,7 @@ def test_pair_first_with_the_messages_chat():
             refreshed = []
             new.ledger.refresh = lambda: refreshed.append(1)
             a, b = old.handle(chat, text), new.handle(chat, text)
+            b = type(b)(_legacy_only(b)) if b is not None else b             # step 12: new commands' /help lines
             assert _view(a) == _view(b), (text, _view(a), _view(b))
             assert old.cfg.get("chat_id") == new.cfg.get("chat_id"), text
             assert not refreshed, "/pair runs before the ledger refresh"
@@ -131,9 +145,10 @@ def test_ledger_refreshed_for_commands_and_unknown_text():
 def test_help_template_is_the_legacy_one():
     from phone.commands import help_cmd as H
     R.discover()
-    assert H._TPL[0] == OLD._HELP_TPL, "/help off the declared commands differs from the legacy HELP_TEXT template"
+    assert _legacy_only(H._TPL[0]) == OLD._HELP_TPL, \
+        "/help off the declared commands differs from the legacy HELP_TEXT template"
     for act in ((), ("pin",), ("pin", "race", "fx", "jumpband"), None):
-        assert str(NEW.help_text(act)) == str(OLD.help_text(act)), act
+        assert _legacy_only(NEW.help_text(act)) == str(OLD.help_text(act)), act
 
 
 def _broken_pkg(body):

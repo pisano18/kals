@@ -13,7 +13,7 @@ import os
 import sys
 import time
 
-TICKS = ["alerts-down", "alerts-stops", "alerts-balance"]
+TICKS = ["alerts-down", "alerts-stops", "alerts-balance", "alerts-reports"]
 
 
 def _iso(t):
@@ -105,25 +105,42 @@ def run(rt, ph, which, tick):
         at(122, "the jump band trips both (urgent)")
         at(190, "nothing more")
         return {"ticks": ticks}
-    if which == "alerts-balance":
-        import gl_worlds
-        path = sys.modules["botdata.kalshi"].cache_path()
+    import gl_worlds
+    path = sys.modules["botdata.kalshi"].cache_path()
+    try:
         with open(path, encoding="utf-8") as fh:
             c0 = json.load(fh)
-        new0 = gl_worlds.newest_read(c0)
+    except (OSError, ValueError):
+        c0 = {}
+    new0 = gl_worlds.newest_read(c0)
 
-        def put(read_t, short):
-            """botstats' cache as if every pot was read at read_t; the ladder's pot `short` dollars light."""
-            c = gl_worlds.shift_cache_dict(copy.deepcopy(c0), read_t - new0) if new0 is not None else copy.deepcopy(c0)
-            x = (c.get("subs") or {}).get("1") or {}
-            if short and x.get("balance") is not None:
-                x["balance"] = round(float(x["balance"]) - short, 4)
-                for r in (c.get("ledgers") or {}).get("subaccount_balances") or []:
-                    if str(r.get("subaccount_number")) == "1" and str(r.get("exchange_index")) == "2":
-                        r["balance"] = "%.4f" % (float(r["balance"]) - short)
-            with open(path, "w", encoding="utf-8") as fh:
-                json.dump(c, fh, separators=(",", ":"))
-            os.utime(path, (read_t, read_t))
+    def put(read_t, short=0.0):
+        """botstats' cache as if every pot was read at read_t (so nothing asks Kalshi at the moved clock); the ladder's
+        pot `short` dollars light."""
+        c = gl_worlds.shift_cache_dict(copy.deepcopy(c0), read_t - new0) if new0 is not None else copy.deepcopy(c0)
+        x = (c.get("subs") or {}).get("1") or {}
+        if short and x.get("balance") is not None:
+            x["balance"] = round(float(x["balance"]) - short, 4)
+            for r in (c.get("ledgers") or {}).get("subaccount_balances") or []:
+                if str(r.get("subaccount_number")) == "1" and str(r.get("exchange_index")) == "2":
+                    r["balance"] = "%.4f" % (float(r["balance"]) - short)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(c, fh, separators=(",", ":"))
+        os.utime(path, (read_t, read_t))
+
+    if which == "alerts-reports":
+        import calendar
+        for utc, label in (((2026, 11, 1, 12, 55), "Sun Nov 1 7:55 AM EST: first (learns; the 8 AM summary is already "
+                                                   "due by the elapsed clock of this 25-hour day: marked done)"),
+                           ((2026, 11, 1, 13, 5), "8:05 AM: the monthly report (October against September)"),
+                           ((2026, 11, 2, 0, 55), "7:55 PM: nothing"),
+                           ((2026, 11, 2, 1, 5), "8:05 PM: the weekly report (Mon Oct 26 to Sun Nov 1)"),
+                           ((2026, 11, 2, 2, 0), "9:00 PM: nothing more")):
+            t = float(calendar.timegm(utc + (0,)))
+            put(t - 5)
+            at(int(t - T0), label)
+        return {"ticks": ticks}
+    if which == "alerts-balance":
         at(0, "first (judges the fixture's own read; never refreshes Kalshi on the first tick)")
         put(T0 + 55, 25.0)
         at(60, "Kalshi read 1: the ladder's pot $25 light (no alert yet)")

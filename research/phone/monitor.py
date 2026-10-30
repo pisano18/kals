@@ -20,6 +20,8 @@ self-tests and the golden harness turn it on only where they test it):
              its books do not have, the rest unexplained), and one when they agree again. A read taken within FLUX_S of
              the bot's own fill or settle is skipped (in flight). botstats' cache is refreshed through its own read at
              most every BAL_REFRESH_S (never on the first tick); a pot with no trading bot, or two, is not checked.
+  REPORTS    the weekly report (Sunday 8 PM ET, this Mon..Sun week) and the monthly one (the 1st, 8 AM ET, the month just
+             ended), next to the 8 AM daily: phone/reports.py, the same page as /week and /month last.
 
 Every alert leads with what happened and what it means in $; every one goes through `send(msg, urgent)` (alerts.py:
 muted -> nothing; quiet hours hold what is not urgent). Each check is inside its own try: one failing never costs the
@@ -45,6 +47,8 @@ GAUGE_EVERY_S = 60                      # the stops are read at most this often 
 BAL_REFRESH_S = 600                     # botstats' Kalshi cache is brought up to date at most this often by the monitor
 FLUX_S = 90                             # a Kalshi read this close to the bot's own fill / settle is not judged
 BAL_READS = 2                           # the gap must be there on this many reads in a row
+WEEKLY_AT_S = 20 * 3600                 # the weekly report: Sunday 8 PM ET (this Mon..Sun week)
+MONTHLY_AT_S = 8 * 3600                 # the monthly report: the 1st, 8 AM ET (the month just ended)
 
 
 @dataclass
@@ -57,6 +61,9 @@ class MonitorState:
     bal: dict = field(default_factory=dict)         # (bot, sub) -> {"read", "streak", "sent", "reads"}
     bal_next: float = None                          # when the monitor next refreshes botstats' Kalshi cache
     bal_key: tuple = None                           # the cache file's (mtime, size) last judged
+    weekly: str = None                              # the Sunday (ET day) whose weekly report went (or was due at start)
+    monthly: str = None                             # the 'YYYY-MM' whose monthly report went (or was due at start)
+    reports_learnt: bool = False
 
 
 def state_of(st):
@@ -343,6 +350,36 @@ def check_balance(ctx, m, send, now):
             e.update(streak=0, sent=False, reads=[])
 
 
+# ---- the weekly and monthly reports ---------------------------------------------------------------------------------------
+def report_msg(ctx, now, kind, which):
+    from phone import reports as _reports
+    return _reports.report_html(_reports.build(ctx.bs(), now, kind, which, getter=ctx.bs_getter, procs=ctx.bs_procs))
+
+
+def check_reports(ctx, m, send, now):
+    """Sunday 8 PM ET: this week's report; the 1st at 8 AM ET: the month just ended. A report already due when the
+    phone (re)starts is marked done, never sent late (the 8 AM summary's rule)."""
+    import datetime
+    today = et_day(now)
+    hh, mm = (int(x) for x in et_str(now, "%H %M").split())
+    into = hh * 3600 + mm * 60                      # the ET wall clock (on the day the clocks change too)
+    week_due = datetime.date.fromisoformat(today).weekday() == 6 and into >= WEEKLY_AT_S
+    month_due = today[8:] == "01" and into >= MONTHLY_AT_S
+    if not m.reports_learnt:
+        m.reports_learnt = True
+        m.weekly = today if week_due else None
+        m.monthly = today[:7] if month_due else None
+        return
+    if week_due and m.weekly != today:
+        m.weekly = today
+        send(fmt(lambda: report_msg(ctx, now, "week", "this"),
+                 lambda: "The weekly report could not be built -- /week tries again."))
+    if month_due and m.monthly != today[:7]:
+        m.monthly = today[:7]
+        send(fmt(lambda: report_msg(ctx, now, "month", "last"),
+                 lambda: "The monthly report could not be built -- /month last tries again."))
+
+
 # ---- the tick ------------------------------------------------------------------------------------------------------------
 def fmt(build, plain):
     """An alert laid out, or its plain words if the layout fails (alerts.fmt_or_plain's rule)."""
@@ -353,7 +390,7 @@ def fmt(build, plain):
         return plain()
 
 
-CHECKS = (("down", check_down), ("stops", check_gauges), ("balance", check_balance))
+CHECKS = (("down", check_down), ("stops", check_gauges), ("balance", check_balance), ("reports", check_reports))
 
 
 def tick(ctx, st, send, now=None):
