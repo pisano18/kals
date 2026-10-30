@@ -5,10 +5,10 @@
 v-tg-rebuild step 9 (2026-10-30, lane D4): MOVED VERBATIM out of research/pinphone.py, which re-exports every name here
 (pinphone.funds_read, pinphone._FUNDS_HIST, ... are these very objects: its self-test and Phone.text_funds keep working
 unchanged). The only edits: imports instead of pinphone's globals (_f from botdata.fmt, log from phone.log, the
-registry as bots) and two small helpers copied verbatim (_bs, read_json). Kalshi is read only through the `getter` the
+registry as bots); its two copied helpers are shared since rebuild step 12 (_bs: phone.render.botcards, read_json:
+botdata.paths). Kalshi is read only through the `getter` the
 caller passes (GET only; ctx.funds_get() -- botstats.default_getter(), kauth.get -- in production).
 """
-import json
 import re
 import time
 import traceback
@@ -18,24 +18,11 @@ import pinday
 import pinledger
 from botdata import paths as _paths
 from botdata.fmt import _f
+from botdata.paths import read_json                                # noqa: F401  (step 12: was a copy)
+from phone.render.botcards import _bs                               # noqa: F401  (step 12: was a copy)
 from phone.log import log
 
 RESULTS = _paths.RESULTS                            # = pinphone.RESULTS (funds_sizes' default folder)
-
-
-def _bs():                                          # from pinphone._bs, verbatim
-    """botstats, imported late: a broken edit there costs these commands, never the phone."""
-    import botstats
-    return botstats
-
-
-def read_json(path):                                # from pinphone.read_json, verbatim (the bet-size readers get it)
-    try:
-        with open(path, encoding="utf-8") as fh:
-            d = json.load(fh)
-        return d if isinstance(d, dict) else None
-    except (OSError, ValueError):
-        return None
 
 
 # /funds (/bank /accounts): WHAT RUNS IN EACH KALSHI ACCOUNT (the bots' Pot.what, bots.EXTRA_POOLS for a pool no bot

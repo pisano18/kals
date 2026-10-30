@@ -19,6 +19,10 @@ step 12 decides (each change then accepted in golden/CHANGES.md with a reason):
   plural     botstats._n: '%d word(s)' (an int count; nof is the pinphone one, which takes fractions).
   cash       pinphone._cash and botstats.text_summary's inner cash(): '?' or the unsigned usd.
   num / cents / fmt_g   botstats._num / _c / _fmt_g (settings words: 0.978 -> '97.8c').
+
+Rebuild step 12 (lane P, 2026-10-30): the number words the command modules had COPIED from pinphone are here once
+(identical code, so identical words): dot (pinphone.dot / botcards.dot / speed.dot), pct_of (pinphone.pct_of /
+funds.page / speed), pct1, ret (pinphone.ret / botcards.ret / speed.ret), of100 (pinphone._of100 / speed._of100).
 """
 
 
@@ -119,3 +123,42 @@ def fmt_g(x):
         return "%g" % float(x)
     except (TypeError, ValueError):
         return "?"
+
+
+def dot(x):
+    """A colour for a money figure: up, down, or nothing either way / not known.  (pinphone.dot)"""
+    if x is None:
+        return "⚪"
+    return "🟢" if x > 0.004 else ("🔴" if x < -0.004 else "⚪")
+
+
+def pct_of(part, whole, digits=0):
+    """'40%' -- a count's share of its total, or '' when the total is zero.  (pinphone.pct_of)"""
+    if not whole:
+        return ""
+    return ("%." + str(digits) + "f%%") % (100.0 * part / whole)
+
+
+def pct1(part, whole):
+    """A count's share with one decimal for a table, but '100%' and '0%' when it is all or none (keeps a
+    column narrow on a phone); '-' when the total is zero.  (pinphone.pct1)"""
+    if not whole:
+        return "-"
+    if part >= whole:
+        return "100%"
+    if part <= 0:
+        return "0%"
+    return "%.1f%%" % (100.0 * part / whole)
+
+
+def ret(money_, base, digits=1):
+    """'+2.7%' -- money as a share of what bought it (the bets' cost, a bank), signed; '' when the base is
+    unknown or not positive. Worked from the two figures shown, never from anything else.  (pinphone.ret)"""
+    if money_ is None or not base or base <= 0:
+        return ""
+    return ("%+." + str(digits) + "f%%") % (100.0 * money_ / base)
+
+
+def of100(x):
+    """A fraction as 'n of 100' with one decimal: 0.965 -> '96.5'; None -> '-'.  (pinphone._of100)"""
+    return "-" if x is None else "%.1f" % (100.0 * x)

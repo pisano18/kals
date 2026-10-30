@@ -13,7 +13,7 @@ import time
 
 import bots as _bots
 import pinday
-from botdata.fmt import _f, cnt as _cnt, dollars, usd
+from botdata.fmt import _f, cnt as _cnt, dollars, dot, ret, usd   # dot, ret: one copy since step 12
 from phone.html import details, elines, esc, hbar, i_, norm_money, pre, table
 from pindesk import coin
 
@@ -38,21 +38,6 @@ def main_sharers(present=None):
 def main_shared(present=None, joiner=" + "):
     """'pin + race' (main_sharers joined by `joiner`) while the main account is shared among `present`, else ''."""
     return joiner.join(main_sharers(present))
-
-
-def dot(x):
-    """A colour for a money figure: up, down, or nothing either way / not known."""
-    if x is None:
-        return "⚪"
-    return "🟢" if x > 0.004 else ("🔴" if x < -0.004 else "⚪")
-
-
-def ret(money_, base, digits=1):
-    """'+2.7%' -- money as a share of what bought it (the bets' cost, a bank), signed; '' when the base is
-    unknown or not positive. Worked from the two figures shown, never from anything else."""
-    if money_ is None or not base or base <= 0:
-        return ""
-    return ("%+." + str(digits) + "f%%") % (100.0 * money_ / base)
 
 
 HALT_WORDS = [   # 2026-10-23: a stop in a bot's own log, in plain words (the raw text stays in the log)

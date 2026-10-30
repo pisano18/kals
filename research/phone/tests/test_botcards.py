@@ -31,8 +31,10 @@ def test_pinphone_reexports_every_name():
     names = _defined()
     assert len(names) >= 60, names
     for n in ("bs_bot_html", "bs_all_html", "bs_all_text", "bs_money_table", "bs_days_table", "bs_headline",
-              "bots_window_table", "bots_avg_table", "earlier_lines", "main_words", "nice_coin", "halt_words", "dot", "ret"):
+              "bots_window_table", "bots_avg_table", "earlier_lines", "main_words", "nice_coin", "halt_words"):
         assert n in names, n
+    from botdata import fmt                             # step 12: dot and ret are botdata.fmt's (one copy)
+    assert pp.dot is B.dot is fmt.dot and pp.ret is B.ret is fmt.ret
     for n in names:
         assert getattr(pp, n) is getattr(B, n), "pinphone.%s is not botcards.%s" % (n, n)
 

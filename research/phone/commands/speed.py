@@ -4,8 +4,8 @@ server, what speed added in $ (an estimate), and a line for each other bot whose
 v-tg-rebuild step 9 (2026-10-30, lane D5): Phone.text_speed as a command module, its code MOVED VERBATIM out of
 research/pinphone.py (the /speed half of the "/speed and /server" section, the short number words /server shares, and
 tail_rows), which re-exports every name here. The only edits: imports instead of pinphone's globals (usd, dollars, _f,
-_cnt, _nof, _fnum from botdata.fmt; the HTML helpers from phone.html) and five tiny formatters copied verbatim
-(dot, pct_of, pct1, ret, _of100 -- pinphone keeps its own: many pages use them).
+_cnt, _nof, _fnum from botdata.fmt; the HTML helpers from phone.html). Rebuild step 12: the five tiny formatters it had
+copied (dot, pct_of, pct1, ret, _of100) are botdata.fmt's now (the same code), imported here under the same names.
 """
 import calendar
 import json
@@ -16,46 +16,9 @@ import bots as _bots
 import pindesk
 import pinday
 from botdata.fmt import _f, cnt as _cnt, dollars, nof as _nof, num as _fnum, usd
+from botdata.fmt import dot, of100 as _of100, pct1, pct_of, ret              # noqa: F401  (step 12: merged into botdata.fmt)
 from phone.command import Command, declare
 from phone.html import Html, details, elines, esc, i_, pre, table
-
-
-def dot(x):                                         # from pinphone.dot, verbatim
-    """A colour for a money figure: up, down, or nothing either way / not known."""
-    if x is None:
-        return "⚪"
-    return "🟢" if x > 0.004 else ("🔴" if x < -0.004 else "⚪")
-
-
-def pct_of(part, whole, digits=0):                 # from pinphone.pct_of, verbatim (pinphone keeps its own: shared)
-    """'40%' -- a count's share of its total, or '' when the total is zero."""
-    if not whole:
-        return ""
-    return ("%." + str(digits) + "f%%") % (100.0 * part / whole)
-
-
-def pct1(part, whole):                              # from pinphone.pct1, verbatim
-    """A count's share with one decimal for a table, but '100%' and '0%' when it is all or none (keeps a
-    column narrow on a phone); '-' when the total is zero."""
-    if not whole:
-        return "-"
-    if part >= whole:
-        return "100%"
-    if part <= 0:
-        return "0%"
-    return "%.1f%%" % (100.0 * part / whole)
-
-
-def ret(money_, base, digits=1):                    # from pinphone.ret, verbatim
-    """'+2.7%' -- money as a share of what bought it (the bets' cost, a bank), signed; '' when the base is
-    unknown or not positive. Worked from the two figures shown, never from anything else."""
-    if money_ is None or not base or base <= 0:
-        return ""
-    return ("%+." + str(digits) + "f%%") % (100.0 * money_ / base)
-
-
-def _of100(x):                                      # from pinphone._of100, verbatim
-    return "-" if x is None else "%.1f" % (100.0 * x)
 
 
 # ===========================================================================
@@ -411,7 +374,7 @@ def speed_html(d, bank=None, min_orders=None, min_other=None):
         "Other bots: only orders Kalshi took count (a refusal such as 'market not found' is no race); their time is the "
         "bot's own send-to-answer time (rtt).%s" % (" The coin race keeps none." if any(x.get("bot") == "race"
                                                                                        for x in d["others"]) else ""),
-        "Home = the %d days before the move (SERVER_SINCE = %s, a constant in pinphone.py); server = since. Read from "
+        "Home = the %d days before the move (SERVER_SINCE = %s, a constant in research/phone/commands/speed.py); server = since. Read from "
         "the bots' own logs; nothing is asked of Kalshi." % (SPEED_HOME_DAYS, SERVER_SINCE)]),
         "🔎 How each figure is worked (tap)"))
     L.append(i_("/server: the machine, the time to Kalshi, the funds and the AWS bill"))

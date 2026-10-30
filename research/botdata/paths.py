@@ -16,6 +16,7 @@ REAL results folder or C:\\kals. Why: when a path moves during the rebuild, an o
 results\\pinphone.update, append to pinphone.log, overwrite botstats_cache.json. With KALS_TESTING unset (the live phone,
 the desktop, server_sync) check_write does nothing at all.
 """
+import json
 import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))               # <repo>\research\botdata
@@ -75,3 +76,14 @@ def check_write(path):
     """Raise WriteFenced when this is a test run (KALS_TESTING=1) and `path` is a live file; else nothing."""
     if testing() and is_live_path(path):
         raise WriteFenced("KALS_TESTING=1: refusing to write the live file %s" % path)
+
+
+def read_json(path):
+    """A JSON object file -> dict, or None when it is missing, unreadable or not an object.  (pinphone.read_json; rebuild
+    step 12: /funds' bet-size readers had a copy)"""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            d = json.load(fh)
+        return d if isinstance(d, dict) else None
+    except (OSError, ValueError):
+        return None

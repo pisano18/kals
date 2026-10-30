@@ -3,23 +3,16 @@ cash, open bets, bet size and its last FUNDS_DAYS ET days (funds_text -> _funds_
 
 v-tg-rebuild step 9 (2026-10-30, lane D4): MOVED VERBATIM out of research/pinphone.py, which re-exports every name here.
 The only edits: imports instead of pinphone's globals (usd / _nof from botdata.fmt, the HTML helpers from phone.html,
-the readers from read.py) and pct_of copied verbatim.
+the readers from read.py); pct_of is botdata.fmt's since rebuild step 12 (it was a verbatim copy).
 """
 import time
 
 import bots as _bots
 import pinday
-from botdata.fmt import nof as _nof, usd
+from botdata.fmt import nof as _nof, pct_of, usd                 # pct_of: botdata.fmt's since step 12
 from phone.html import MAX_LEN, Html, details, elines, esc, i_, pre, table
 from phone.commands.funds.read import (FUNDS_BOOKS, FUNDS_DAYS, FUNDS_SHOW_DAYS, FUNDS_WHAT, _bs, _pool_name,  # noqa: F401
                                        _usd2, funds_books, funds_days, funds_what)
-
-
-def pct_of(part, whole, digits=0):                 # from pinphone.pct_of, verbatim (pinphone keeps its own: shared)
-    """'40%' -- a count's share of its total, or '' when the total is zero."""
-    if not whole:
-        return ""
-    return ("%." + str(digits) + "f%%") % (100.0 * part / whole)
 
 
 def _funds_hist_lines(n, res, today, show, held, active=None):
@@ -209,7 +202,7 @@ def _funds_page(f, sizes, now, hist, show, active=None):
         s = f["subs"][n]
         what = funds_what(n, active)
         if what is None:
-            what = "unknown (not in FUNDS_WHAT in pinphone.py)"
+            what = "unknown (no bot or pool in the registry, research/bots, names it)"
         if isinstance(what, dict):
             what = "; ".join("%s: %s" % (_pool_name(ix), w) for ix, w in sorted(what.items()))
         name = "MAIN ACCOUNT (0)" if n == 0 else "SUBACCOUNT %d" % n
