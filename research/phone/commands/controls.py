@@ -9,6 +9,11 @@ each step through ctx.say ('pause: ...'), sleeps 3 s, then sends the /status pag
 another control answer 'Still working on the last command.'. /stop alone only explains (STOP_ASK); '/stop yes' stops.
 HAZARD KEPT (DESIGN 1.1): /start means 'trade again', and Telegram clients send /start when a chat is first opened; only
 the paired chat is answered, so this is mitigated -- do not change it silently.
+
+v-tg-step12 (2026-10-30, lane R): ONE bot by name. '/pause <bot>' and '/start <bot>' for any bot but the pin bot go to
+phone/commands/botctl.py (its stop file, asked first; /resume and /play are declared there). Plain /pause and /start,
+and '/pause pin' / '/start pin', are the pin bot's controls exactly as before. A word after /pause or /start that names
+no bot ('/pause now') used to pause / start the pin bot; it now answers 'No bot is called ...' and changes nothing.
 """
 import importlib
 import threading
@@ -67,11 +72,23 @@ def control(ctx, which):
     return CONTROL_REPLY[which]
 
 
+def _other_bot(ctx):
+    """True when the message names a bot other than the pin bot ('/pause jb', '/start fx yes', '/pause now')."""
+    words = ctx.arg.split()
+    return bool(words) and words[0].lower().lstrip("/") != "pin"
+
+
 def pause(ctx):
+    if _other_bot(ctx):
+        from phone.commands import botctl
+        return botctl.pause_cmd(ctx)
     return control(ctx, "pause")
 
 
 def start(ctx):
+    if _other_bot(ctx):
+        from phone.commands import botctl
+        return botctl.resume_cmd(ctx)
     return control(ctx, "start")
 
 
@@ -83,7 +100,7 @@ def stop(ctx):
 
 COMMANDS = declare(
     Command(names=("/pause",), section="controls", order=10, help_line="/pause — no new bets, wait for open ones, then stop",
-            chart=None, handle=pause, runs_in_worker=True),
+            chart=None, handle=pause, runs_in_worker=True, examples=("/pause jb", "/pause now", "/pause pin")),
     Command(names=("/start",), section="controls", order=20, help_line="/start — trade again",
             chart=None, handle=start, runs_in_worker=True, examples=("/start@kalsbot", "/start@")),
     Command(names=("/stop",), section="controls", order=30, help_line="<code>/stop yes</code> — stop right now",

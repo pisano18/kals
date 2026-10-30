@@ -140,3 +140,8 @@ results/server_status.json
 results/server_bots.json
 results/_laptop_before_sync/
 results/desk_actions/
+
+# v-tg-step12 (2026-10-30): the phone's runtime state -- which approvals ran, every phone action (server-side, never committed)
+results/approvals/state.json
+results/approvals/state.json.tmp
+results/phone_actions.jsonl

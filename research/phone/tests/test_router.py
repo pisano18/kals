@@ -25,6 +25,7 @@ from _legacy import NEW, OLD                                         # noqa: E40
 from phone import router as R                                       # noqa: E402
 from phone.html import Html                                          # noqa: E402
 import phone.commands.day as D                                       # noqa: E402
+from _step12 import with_step12                                      # noqa: E402  (step 12's added /help lines)
 
 try:                                                                 # the runtime's module (step 11: phone.app)
     import phone.app as NEW_PHONE_MOD                                # noqa: E402
@@ -83,7 +84,8 @@ def test_routing_rules_like_the_legacy_handle():
         for text in texts:
             old, new = _phones()
             a, b = old.handle(7, text), new.handle(7, text)
-            assert _view(a) == _view(b), (text, _view(a), _view(b))
+            va = (_view(a)[0], None if a is None else with_step12(a))       # /help and the unknown answer: + step 12
+            assert va == _view(b), (text, va, _view(b))
             assert old.muted == new.muted, text
             # another chat, and no paired chat: silence on both
             assert old.handle(8, text) is None and new.handle(8, text) is None, text
@@ -106,7 +108,8 @@ def test_pair_first_with_the_messages_chat():
             refreshed = []
             new.ledger.refresh = lambda: refreshed.append(1)
             a, b = old.handle(chat, text), new.handle(chat, text)
-            assert _view(a) == _view(b), (text, _view(a), _view(b))
+            va = (_view(a)[0], None if a is None else with_step12(a))       # 'Paired.' + /help: + step 12's lines
+            assert va == _view(b), (text, va, _view(b))
             assert old.cfg.get("chat_id") == new.cfg.get("chat_id"), text
             assert not refreshed, "/pair runs before the ledger refresh"
             if b is not None:
@@ -131,9 +134,11 @@ def test_ledger_refreshed_for_commands_and_unknown_text():
 def test_help_template_is_the_legacy_one():
     from phone.commands import help_cmd as H
     R.discover()
-    assert H._TPL[0] == OLD._HELP_TPL, "/help off the declared commands differs from the legacy HELP_TEXT template"
+    # v-tg-step12 (lane R): the legacy template plus the step-12 control lines (/resume, /approve, /move), nothing else
+    assert H._TPL[0] == with_step12(OLD._HELP_TPL), "/help off the declared commands differs from the legacy template"
+    assert H._TPL[0] != OLD._HELP_TPL
     for act in ((), ("pin",), ("pin", "race", "fx", "jumpband"), None):
-        assert str(NEW.help_text(act)) == str(OLD.help_text(act)), act
+        assert str(NEW.help_text(act)) == with_step12(OLD.help_text(act)), act
 
 
 def _broken_pkg(body):

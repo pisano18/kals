@@ -1,0 +1,16 @@
+{
+ "about": "Changes waiting for the operator's yes, run once from the phone: /approve lists them, /approve <id> shows one and a code, /approve <id> yes <code> runs it (powershell -File <script>, no arguments, detached through WMI). research/phone/actions/approvals.py says what may be listed. sha256 is of the script's text (CRLF -> LF, no BOM): an edited script is not run until this entry is updated.",
+ "items": [
+  {
+   "id": "pin15",
+   "title": "Pin: drop the jump hedge and move to a 1.33x bet (trial)",
+   "description": "Two edits to the pin bot's launcher (C:\\kals-live-0925n\\restart_bot.ps1). 1) The jump hedge (--hedge-jump 6) is switched off: the 10-30 read found 7 of its 8 hedges insured bets that won anyway and it caught none of the 3 real losses (about +$2-4 a day without it). 2) The bet goes from --bank-brake 4.00 to 3.00, about 1.33 times today's size (about +$2 a day on the 22 recorded days; the operator asked for caution, so not 1.5x). The script keeps a backup, checks the edited file still parses (else restores it and stops), then restarts pin through restart_bot.ps1, which waits until pin holds no open bet.",
+   "stop_rule": "Back to --bank-brake 4.00 if any pin day during the trial is worse than -$100, or if the 11-10 read shows the extra contracts earning under 0c each (over +0.5c each -> consider 2.00).",
+   "script": "pin_size15_nohedgejump.ps1",
+   "log": "pin_size15.out",
+   "added_by": "Claude (assistant), for the operator",
+   "date": "2026-10-30",
+   "sha256": "e216593c377b9f8251daf5939e33b4f7c112ca2167064b6653d014c8300b7bcf"
+  }
+ ]
+}

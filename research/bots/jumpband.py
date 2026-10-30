@@ -4,7 +4,7 @@ bot; --live --dry-run sends nothing and is not it either. Every fact copied verb
 tgcharts.py at 8a9c5e1 (v-tg-rebuild step 1, 2026-10-30)."""
 import re
 
-from bots.spec import Bot, Feature, Logs, Pot, Records, Speed, VersionRule, live_flag
+from bots.spec import Bot, Feature, Logs, Pot, Records, Speed, Start, VersionRule, live_flag
 from botdata.fmt import cents as _c, fmt_g as _fmt_g, num as _num, plural as _n, usd
 
 # the jump band's coins (jumpband_live.SLOW): in subaccount 3 a 15-minute coin market is the jump band's, a KXHIGH the weather's
@@ -127,6 +127,11 @@ BOT = Bot(
     colour="#c0399a",          # magenta (2026-10-30), 317 deg: off the red of a loss
     order=7,
     keepalive=None,            # started by hand on the server (results/jb_deploy.ps1); not in boot_all
+    # v-tg-step12 (2026-10-30): the phone's /resume jb starts it the way the operator's deploy did -- jb_deploy.ps1
+    # -Stage live, WMI-launched and detached; that script refuses when a live copy runs or the stop file is set
+    start=Start(script="jb_deploy.ps1", args=("-Stage", "live"), log="jb_deploy.out", wait_s=45,
+                words="results\\jb_deploy.ps1 -Stage live, started detached through WMI (it refuses if a live copy "
+                      "already runs or the stop file is still there; 5 contracts, subaccount 3)"),
     page_footer="Every bot: /bots · its pot (subaccount 3, crypto pool): /funds.",
     activity=activity, activity_note=activity_note, halt_why=jb_why,
     funds_size=size_words,
