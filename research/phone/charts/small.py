@@ -79,7 +79,7 @@ def chart_status(ctx):
     note(ax, X[-1], Y[-1], usd(Y[-1], False), dx=-4, ha="right")
     money_axis(ax, signed=False)
     date_axis(ax, 7)
-    ax.set_title("Main account (%s), hour by hour, last 7 days (%s)" % (ctx.words_main(), series.NEUTRAL_NOTE))
+    ax.set_title("Main account (%s), hour by hour, last 7 days, trading only" % ctx.words_main())
     if mv:
         legend(ax)
     headline(fig, "Bank %s · trading, last 7 days %s" % (usd(Y[-1], False), usd(Y[-1] - Y[0])))
