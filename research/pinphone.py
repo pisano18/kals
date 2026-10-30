@@ -111,7 +111,6 @@ RESULTS = _paths.RESULTS
 HEARTBEAT = os.path.join(RESULTS, "pinphone.heartbeat")
 UPDATE_FLAG = os.path.join(RESULTS, "pinphone.update")    # its presence = /update (update_flag_tick, 10-26)
 LOG = os.path.join(RESULTS, "pinphone.log")
-MAX_LEN = 3900
 LOSSES_SHOWN = 30               # /losses lists this many (operator 10-26: "a bit more than just the last ten")
 CHART_QUEUE = 2                 # pictures waiting to be drawn; one more is dropped (logged), never waited for
 CHART_MAX_BYTES = 9_500_000     # Telegram takes photos up to 10 MB
@@ -187,107 +186,16 @@ def _tgc():
     return tgcharts
 
 
-def split_text(s, limit=MAX_LEN):
-    """Chunks of at most `limit` chars for Telegram, cut at a blank line when
-    one sits in the second half of the chunk, else at a line, else hard --
-    so a /bars block is not sliced mid-sentence."""
-    s = str(s)
-    out = []
-    while len(s) > limit:
-        cut = s.rfind("\n\n", 0, limit)
-        if cut < limit // 2:
-            cut = s.rfind("\n", 0, limit)
-        if cut < limit // 2:
-            cut = limit
-        out.append(s[:cut].rstrip("\n"))
-        s = s[cut:].lstrip("\n")
-    if s or not out:
-        out.append(s)
-    return out
-
-
-def log(msg):
-    """One line to stdout and to LOG. NEVER RAISES (2026-10-18): boot_all starts this program with stdout
-    redirected to results/pinphone.out, and a redirected stdout on this box is cp1252 -- the emoji and box
-    characters the phone's replies carry cannot be written there. Before this fix a raise here came out of
-    say() AFTER the message had gone, and out of poll_once() BEFORE Telegram was told the update was
-    handled: the process died, and the restart answered the same command again. So the console copy falls
-    back to escapes; the log file (utf-8) keeps the real characters."""
-    line = "%s  %s" % (time.strftime("%Y-%m-%dT%H:%M:%S"), msg)
-    try:
-        print(line, flush=True)
-    except Exception:                                           # noqa: BLE001
-        try:
-            print(line.encode("ascii", "backslashreplace").decode("ascii"), flush=True)
-        except Exception:                                       # noqa: BLE001
-            pass
-    try:
-        _paths.check_write(LOG)              # v-tg-rebuild step 2: never the live log under KALS_TESTING=1 (an OSError)
-        with open(LOG, "a", encoding="utf-8") as fh:
-            fh.write(line + "\n")
-    except OSError:
-        pass
-
-
-def cprint(s):
-    """print() that never raises on a console that cannot show a character (the self-test's and --preview's
-    output carries emoji; a redirected console here is cp1252): the line falls back to escapes."""
-    try:
-        print(s, flush=True)
-    except UnicodeEncodeError:
-        print(str(s).encode("ascii", "backslashreplace").decode("ascii"), flush=True)
-
-
-# ===========================================================================
-# PRESENTATION (2026-10-18). THE OPERATOR: "Make the telegram responses better to read and more pleasant
-# and human friendly to look at. They're blobs of text and hard to find my numbers. Charts and graphs
-# included would be neat only if possible. Also make sure numbers include their percentages next to them
-# wherever possible."
-#
-# A reply is Telegram HTML (parse_mode=HTML): its FIRST LINE is a headline with the number that matters
-# (e.g. "Today +$7.10 (+0.55% of the bank)"), then short sections under bold headers, small aligned tables
-# in <pre> (at most about 36 characters a line, a phone's monospace width), money with its percentage
-# beside it, and the long sentences the bot always wrote kept whole behind a tap (<blockquote
-# expandable>, one per reply where possible, so a reply stays one message). ONLY THE LAYOUT CHANGED:
-# every figure is the one the plain text carried, from the same source, or a percentage worked from two
-# of those figures (money / what the bets cost; a count / its total). One money style: +$1,234.56 / -$4.57.
-#
-# SAFE BY CONSTRUCTION: every piece of data goes through esc() before it meets a tag; a reply built here
-# is an Html (a str marked is_html) and only an Html is sent as HTML -- a plain str (an error, a control
-# callback's words) goes exactly as before. Telegram's nesting rules are kept (tg_html_problems, run by the
-# self-test over every reply): <pre>/<code> never inside a quote or a bold, a quote never inside a quote.
-# split_html never leaves a tag open across messages, and if Telegram refuses the markup anyway the
-# transport re-sends that part as plain text: a formatting slip can never cost an alert. log() never
-# raises (the redirected console is cp1252 and cannot print an emoji).
-#
-# CHARTS are drawn with text (block characters in <pre>, a sparkline in <code>): no plotting library is
-# installed for C:\Python314 (matplotlib, PIL, numpy: none -- checked 2026-10-18), and none is added, so
-# nothing here sends a photo.
-# ===========================================================================
-class Html(str):
-    """A reply written in Telegram HTML; every piece of data inside went through esc()."""
-    is_html = True
-
-
-def esc(x):
-    """Text made safe inside Telegram HTML: & < > become entities (quotes may stay)."""
-    return _html.escape(str(x), quote=False)
-
-
-def html_to_plain(s):
-    """What the phone shows for an Html reply: the tags dropped, the entities decoded."""
-    return _html.unescape(re.sub(r"<[^<>]+>", "", str(s)))
-
-
-_MONEY_SIGN = re.compile(r"\$([+-])(?=\d)")
-_MONEY_BIG = re.compile(r"(?<![\d,.])\$(\d{4,})(?![\d,])")
-
-
-def norm_money(s):
-    """The one money style, for lines written by other modules: '$+1008.55' -> '+$1,008.55',
-    '$-4.57' -> '-$4.57'. Only the dress changes -- the digits are the same digits."""
-    s = _MONEY_SIGN.sub(lambda m: m.group(1) + "$", str(s))
-    return _MONEY_BIG.sub(lambda m: "$" + "{:,}".format(int(m.group(1))), s)
+# v-tg-rebuild step 6 (2026-10-30): the log line, the HTML layout helpers and the message splitters live in
+# research/phone/ (log.py, html.py), moved there verbatim; every name is re-exported here (bars.py, the golden harness and
+# the self-test use them as pinphone.<name>). log() writes to THIS module's LOG, read at each call: a test that patches
+# pinphone.LOG still moves every line (phone.log.set_path below).
+from phone import log as _plog                                       # noqa: E402
+from phone.log import log, cprint                                    # noqa: E402,F401
+from phone.html import (MAX_LEN, Html, esc, html_to_plain, _MONEY_SIGN, _MONEY_BIG, norm_money, b_, i_,   # noqa: E402,F401
+                        table, pre, details, elines, _EIGHTHS, hbar, _SPARK, spark, _TG_TAGS, _TG_STYLE, _TG_TOK,
+                        tg_html_problems, _TAG, _open_after, _closers, _openers, _cut_long_line, split_html, split_text)
+_plog.set_path(lambda: LOG)
 
 
 def usd(x):
@@ -309,85 +217,6 @@ def dot(x):
     if x is None:
         return "⚪"
     return "🟢" if x > 0.004 else ("🔴" if x < -0.004 else "⚪")
-
-
-def b_(x):
-    return "<b>%s</b>" % esc(x)
-
-
-def i_(x):
-    return "<i>%s</i>" % esc(x)
-
-
-def table(rows, align=None):
-    """Rows of cells -> aligned lines for pre(). The first column is left-aligned, the rest right-aligned
-    (or `align`, one 'l'/'r' a column). A row with fewer cells than the widest (a day heading, 'nothing
-    settled yet') is written as its first cell padded, then the rest, and does not widen the columns."""
-    n = max(len(r) for r in rows) if rows else 0
-    align = align or ("l" + "r" * (n - 1))
-    w = [0] * n
-    for r in rows:
-        if len(r) == n:
-            for k, c in enumerate(r):
-                w[k] = max(w[k], len(str(c)))
-    out = []
-    for r in rows:
-        if len(r) != n:
-            out.append((str(r[0]).ljust(w[0]) + (" " + " ".join(str(c) for c in r[1:]) if len(r) > 1 else ""))
-                       .rstrip())
-            continue
-        out.append(" ".join(str(c).ljust(w[k]) if align[k] == "l" else str(c).rjust(w[k])
-                            for k, c in enumerate(r)).rstrip())
-    return out
-
-
-def pre(lines):
-    return "<pre>%s</pre>" % esc("\n".join(lines))
-
-
-def details(html_lines, title=None):
-    """Long lines behind a tap: Telegram shows the first lines of an expandable quote and opens the rest
-    when it is tapped. `html_lines` are already escaped (elines)."""
-    body = "\n".join(html_lines)
-    if not body.strip():
-        return ""
-    return "<blockquote expandable>%s%s</blockquote>" % (("<b>%s</b>\n" % esc(title)) if title else "", body)
-
-
-def elines(lines):
-    """Another module's plain lines, in this file's money style, escaped for HTML."""
-    return [esc(norm_money(x)) for x in lines]
-
-
-_EIGHTHS = "▏▎▍▌▋▊▉"
-
-
-def hbar(v, mx, width=10):
-    """A text bar for one figure against the biggest one shown: full blocks plus an eighth, light shade
-    for a negative figure. '' when there is nothing to draw against."""
-    if v is None or not mx:
-        return ""
-    n = min(abs(v) / float(mx), 1.0) * width
-    if v < -0.004:
-        return "░" * max(1, int(round(n)))
-    if v <= 0.004:
-        return ""
-    full = int(n)
-    k = int((n - full) * 8)
-    return ("█" * full + (_EIGHTHS[k - 1] if k else "")) or "▏"
-
-
-_SPARK = "▁▂▃▄▅▆▇█"
-
-
-def spark(vals):
-    """A one-line chart of a series (lowest = ▁, highest = █)."""
-    if len(vals) < 2:
-        return ""
-    lo, hi = min(vals), max(vals)
-    if hi - lo < 1e-9:
-        return _SPARK[0] * len(vals)
-    return "".join(_SPARK[int(round((v - lo) / (hi - lo) * 7))] for v in vals)
 
 
 def hm(epoch):
@@ -425,219 +254,9 @@ def ret(money_, base, digits=1):
     return ("%+." + str(digits) + "f%%") % (100.0 * money_ / base)
 
 
-# Telegram's HTML rules (Bot API, "Formatting options"), checked by the self-test over every reply. A
-# reply that breaks one is refused (HTTP 400) and goes again as plain text -- readable, but unformatted.
-_TG_TAGS = {"b", "strong", "i", "em", "u", "ins", "s", "strike", "del", "code", "pre", "a", "blockquote",
-            "tg-spoiler", "span"}
-_TG_STYLE = {"b", "strong", "i", "em", "u", "ins", "s", "strike", "del", "tg-spoiler", "span"}
-_TG_TOK = re.compile(r"<[^<>]*>|&[#a-zA-Z0-9]*;|[<>&]")
-
-
-def tg_html_problems(s):
-    """What Telegram would refuse in `s`: an unknown tag, a raw < > &, an unknown entity, a tag closed out
-    of order or left open, <pre>/<code> inside a quote or a bold/italic, a quote inside a quote."""
-    bad, stack = [], []
-    for m in _TG_TOK.finditer(str(s)):
-        t = m.group(0)
-        if t in ("<", ">", "&"):
-            bad.append("raw %r" % t)
-            continue
-        if t.startswith("&"):
-            if t not in ("&lt;", "&gt;", "&amp;", "&quot;") and not re.match(r"^&#(\d+|x[0-9a-fA-F]+);$", t):
-                bad.append("entity %s" % t)
-            continue
-        mm = re.match(r"^<(/?)([a-zA-Z][a-zA-Z0-9-]*)(\s[^<>]*)?>$", t)
-        if not mm:
-            bad.append("tag %r" % t)
-            continue
-        close, name, attrs = mm.group(1) == "/", mm.group(2).lower(), (mm.group(3) or "").strip()
-        if name not in _TG_TAGS:
-            bad.append("<%s> is not a Telegram tag" % name)
-        if close:
-            if not stack or stack[-1] != name:
-                bad.append("</%s> closes %s" % (name, stack[-1] if stack else "nothing"))
-            else:
-                stack.pop()
-            continue
-        inside = set(stack)
-        if name == "blockquote" and attrs not in ("", "expandable"):
-            bad.append("<blockquote %s>" % attrs)
-        if "code" in inside or ("pre" in inside and name != "code"):
-            bad.append("<%s> inside pre/code" % name)
-        if name in ("pre", "code") and inside & (_TG_STYLE | {"blockquote", "a"}):
-            bad.append("<%s> inside %s" % (name, "/".join(sorted(inside))))
-        if name == "blockquote" and "blockquote" in inside:
-            bad.append("a quote inside a quote")
-        stack.append(name)
-    if stack:
-        bad.append("left open: %s" % ", ".join(stack))
-    return bad
-
-
-_TAG = re.compile(r"<(/?)([a-zA-Z][a-zA-Z0-9-]*)(?:\s[^<>]*)?>")
-
-
-def _open_after(stack, text):
-    st = list(stack)
-    for m in _TAG.finditer(text):
-        name = m.group(2).lower()
-        if m.group(1):
-            for k in range(len(st) - 1, -1, -1):
-                if st[k][0] == name:
-                    del st[k]
-                    break
-        else:
-            st.append((name, m.group(0)))
-    return st
-
-
-def _closers(stack):
-    return "".join("</%s>" % n for n, _o in reversed(stack))
-
-
-def _openers(stack):
-    return "".join(o for _n, o in stack)
-
-
-def _cut_long_line(line, room):
-    """A single line longer than a message: cut at a space outside any tag or entity."""
-    out = []
-    while len(line) > room:
-        spaces, inside = [], False
-        for k, ch in enumerate(line[:room]):
-            if ch == "<":
-                inside = True
-            elif ch == ">":
-                inside = False
-            elif ch == " " and not inside:
-                spaces.append(k)
-        cut = spaces[-1] if spaces and spaces[-1] > room // 2 else -1
-        if cut < 0:
-            cut = room
-            lt, amp = line.rfind("<", 0, cut), line.rfind("&", 0, cut)
-            if lt > line.rfind(">", 0, cut):
-                cut = lt
-            if amp > line.rfind(";", 0, cut) and cut - amp < 10:
-                cut = amp
-            cut = max(cut, 1)
-        out.append(line[:cut])
-        line = line[cut:].lstrip(" ")
-    out.append(line)
-    return out
-
-
-def split_html(s, limit=MAX_LEN):
-    """split_text for an Html reply: chunks of at most `limit` chars, cut at the last blank line when one
-    sits past the first quarter of the chunk (so a section -- a table, a tap-to-open quote -- moves whole to
-    the next message rather than being cut), else at a line. Every chunk stands on its own: a tag open at
-    a cut is closed at the end of the chunk and opened again at the start of the next, so Telegram never
-    sees half a tag."""
-    s = str(s)
-    if len(s) <= limit:
-        return [s]
-    lines = []
-    for ln in s.split("\n"):
-        lines.extend(_cut_long_line(ln, limit - 400) if len(ln) > limit - 400 else [ln])
-    out = []
-    start = []                              # tags open where the current chunk begins
-    cur = []                                # [(line, tags open after it)]
-
-    def body(items):
-        return "\n".join(x for x, _st in items)
-
-    def emit(k):
-        nonlocal start, cur
-        part, end = cur[:k], (cur[k - 1][1] if k else start)
-        text = (_openers(start) + body(part)).rstrip("\n") + _closers(end)
-        if html_to_plain(text).strip():
-            out.append(text)
-        start, cur = end, cur[k:]
-        while cur and not cur[0][0].strip():
-            cur = cur[1:]
-    for ln in lines:
-        while True:
-            st_after = _open_after(cur[-1][1] if cur else start, ln)
-            if not (cur and len(_openers(start)) + len(body(cur + [(ln, st_after)])) + len(_closers(st_after))
-                    > limit):
-                break
-            k = len(cur)
-            for j in range(len(cur) - 1, 0, -1):     # the last blank line, if it is past the first quarter
-                if not cur[j][0].strip():
-                    if len(body(cur[:j])) >= limit // 4:
-                        k = j
-                    break
-            emit(k)                                   # takes at least one line off `cur`
-        if cur or ln.strip():
-            cur.append((ln, st_after))
-    if cur:
-        emit(len(cur))
-    return out or [""]
-
-
-# ===========================================================================
-# transport
-# ===========================================================================
-class Telegram:
-    def __init__(self, token):
-        self.base = "https://api.telegram.org/bot%s/" % token
-
-    def _call(self, method, params, http_timeout=45):
-        data = urllib.parse.urlencode({k: v for k, v in params.items() if v is not None}).encode()
-        req = urllib.request.Request(self.base + method, data=data)
-        with urllib.request.urlopen(req, timeout=http_timeout) as r:
-            return json.loads(r.read().decode("utf-8", "replace"))
-
-    def get_updates(self, offset, timeout=25):
-        d = self._call("getUpdates", {"offset": offset, "timeout": timeout, "allowed_updates": '["message"]'},
-                       http_timeout=timeout + 15)
-        return d.get("result", []) if d.get("ok") else []
-
-    def send(self, chat_id, text):
-        """A plain str goes exactly as it always did. An Html reply goes with parse_mode=HTML, cut by
-        split_html; if Telegram refuses a part's markup (HTTP 400, "can't parse entities") that part is
-        sent again as plain text, so a formatting slip never costs a message. Any other failure is
-        raised as before (say() logs it)."""
-        if not getattr(text, "is_html", False):
-            for chunk in split_text(text, MAX_LEN):
-                self._call("sendMessage", {"chat_id": chat_id, "text": chunk})
-            return
-        for chunk in split_html(text, MAX_LEN):
-            try:
-                self._call("sendMessage", {"chat_id": chat_id, "text": chunk, "parse_mode": "HTML"})
-            except urllib.error.HTTPError as e:
-                if e.code != 400:
-                    raise
-                log("Telegram refused the HTML of one part (%s); sent it again as plain text" % e)
-                for part in split_text(html_to_plain(chunk), MAX_LEN):
-                    self._call("sendMessage", {"chat_id": chat_id, "text": part})
-
-    def _post(self, method, body, ctype, http_timeout=60):
-        req = urllib.request.Request(self.base + method, data=body, headers={"Content-Type": ctype})
-        with urllib.request.urlopen(req, timeout=http_timeout) as r:
-            return json.loads(r.read().decode("utf-8", "replace"))
-
-    def send_photo(self, chat_id, png, caption=None):
-        """One chart: sendPhoto, multipart (photo_body). The caption is plain text (no markup to refuse)."""
-        boundary = "pinphone" + os.urandom(12).hex()
-        d = self._post("sendPhoto", photo_body(chat_id, png, caption, boundary),
-                       "multipart/form-data; boundary=" + boundary)
-        if not (isinstance(d, dict) and d.get("ok")):
-            raise RuntimeError("sendPhoto refused: %s" % (str(d)[:200],))
-
-
-def photo_body(chat_id, png, caption, boundary):
-    """multipart/form-data for sendPhoto: chat_id, caption (cut to Telegram's 1024), the PNG as `photo`."""
-    B = boundary.encode()
-    crlf = b"\r\n"
-    out = []
-    for k, v in (("chat_id", str(chat_id)), ("caption", (caption or "")[:1024] or None)):
-        if v is not None:
-            out.append(b"--" + B + crlf + b'Content-Disposition: form-data; name="' + k.encode() + b'"' + crlf + crlf
-                       + v.encode("utf-8") + crlf)
-    out.append(b"--" + B + crlf + b'Content-Disposition: form-data; name="photo"; filename="chart.png"' + crlf
-               + b"Content-Type: image/png" + crlf + crlf + bytes(png) + crlf)
-    out.append(b"--" + B + b"--" + crlf)
-    return b"".join(out)
+# v-tg-rebuild step 6 (2026-10-30): Telegram, photo_body, net_error and FakeTelegram live in research/phone/transport.py
+# (moved verbatim); re-exported here (phone_alert.py uses pinphone.Telegram).
+from phone.transport import Telegram, photo_body, net_error, FakeTelegram   # noqa: E402,F401
 
 
 SUPPLY_STALE_D = 3.0        # /market: an opportunity trend measured longer ago than this is left out (2026-10-23)
@@ -665,38 +284,6 @@ RESEND_FOR_S = 15 * 60      # 2026-10-23: a send the connection dropped is tried
 RESEND_GAP_S = 30           # ... this far apart
 RESEND_KEEP = 20            # at most this many wait (the newest)
 PHOTO_TRIES = (5, 20)       # a chart the connection dropped: sent again after these many seconds
-
-
-def net_error(e):
-    """True when a send failed on the CONNECTION (no answer, reset, TLS timeout, Telegram 5xx or 429) -- worth
-    sending again. False when Telegram refused the message itself (HTTP 4xx), which a resend would only repeat."""
-    if isinstance(e, urllib.error.HTTPError):
-        return e.code >= 500 or e.code == 429
-    import http.client
-    return isinstance(e, (OSError, http.client.HTTPException))
-
-
-class FakeTelegram:
-    """For the self-test: a queue of incoming messages and a list of sent ones."""
-    def __init__(self):
-        self.incoming = []
-        self.sent = []
-        self.photos = []
-        self.n = 0
-
-    def push(self, chat_id, text):
-        self.n += 1
-        self.incoming.append({"update_id": self.n, "message": {"chat": {"id": chat_id}, "text": text}})
-
-    def get_updates(self, offset, timeout=25):
-        out = [u for u in self.incoming if u["update_id"] >= (offset or 0)]
-        return out
-
-    def send(self, chat_id, text):
-        self.sent.append((chat_id, text))
-
-    def send_photo(self, chat_id, png, caption=None):
-        self.photos.append((chat_id, png, caption))
 
 
 # ===========================================================================
