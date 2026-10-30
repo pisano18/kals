@@ -10,18 +10,33 @@ grouped by event, botdata.series.race_rows): drawn for the bot whose unit is a l
 import bots
 from botdata import series
 from phone.charts.base import (AVG30, AXIS, BLUE, BOT_COLOUR, DOWN, GREY, MUTED, ORANGE, ROLL, SURF, WINDOW_DAYS,
-                               date_axis, etdt, fig_new, headline, legend, money_axis, mpl, note, pct_of_axis,
-                               pct_ticks, pctx, png, roll, usd, zero_line)
+                               annotate_change, clock_axis, etdt, fig_new, free_corner, headline, mark_empty, mark_last,
+                               money_axis, note, pct_axis, pct_of_axis, pctx, png, ref, roll, time_axis, usd,
+                               value_axis)
 
 PACE_DAYS, LONG_DAYS = series.PACE_DAYS, series.LONG_DAYS
 _at_h = series.at_hour
 
 
-def draw_pace(ax, pc, now_h, goal=None):
+def stop_refs(name, now, today_dist=None):
+    """The bot's own stop lines (its registry stop_gauges: the jump band's stop line and day stop, the ladder's day-stop
+    rail, the pin bot's loss abort), as how far each is below where the bot stands now: [(gauge, dollars to go)].
+    A day's stop goes on the pace panel, the others on the running total. Nothing when the log cannot be read."""
+    try:
+        from botdata import watch
+        return [(g, g.money - g.line) for g in watch.gauges(name, now) if not g.tripped]
+    except Exception:                                   # noqa: BLE001 -- a stop line never costs the picture
+        return []
+
+
+def _is_day(g):
+    return g.key == "day" or g.counted == "settled today"
+
+
+def draw_pace(ax, pc, now_h, goal=None, stops=(), base=None):
     """Today (blue, to now) over yesterday (grey), the 7-day average day (orange dashes) and the 30-day one (slate
     dash-dots, when it counts more days than the 7), as % of the bank --
     or in dollars when the bank could not be read (pc['unit'] == '$')."""
-    T = mpl()["ticker"]
     dollars = pc.get("unit") == "$"
 
     def f(v):
@@ -44,17 +59,24 @@ def draw_pace(ax, pc, now_h, goal=None):
     if goal is not None:
         ax.plot([0, 24], [0, goal], color=MUTED, lw=1.0, ls=":", zorder=1, label="goal %s a day, spread evenly" % pctx(goal / 100.0, 1, False))
     ax.axvline(now_h, color=AXIS, lw=1.0, ls=":", zorder=1)
-    zero_line(ax)
-    ax.set_xlim(0, 24)
-    ax.xaxis.set_major_locator(T.FixedLocator(list(range(0, 25, 3))))
-    ax.xaxis.set_major_formatter(T.FuncFormatter(lambda v, _p: "%d %s" % ((int(v) % 12) or 12, "AM" if int(v) % 24 < 12 else "PM")))
+    ys = [v for k in ("avg7", "avg30", "yesterday", "today") for _h, v in (pc.get(k) or [])]
+    if goal is not None:
+        ys += [0.0, goal]
+    refs = []
+    now_v = pc["today"][-1][1] if pc["today"] else 0.0
+    for g, dist in stops:                               # a day stop: where today's line would trip it
+        if _is_day(g) and (dollars or base):
+            y = now_v - (dist if dollars else 100.0 * dist / base)
+            refs.append(ref(y, "%s: %s below now" % (g.what, usd(dist, False)), color=DOWN, ls=":", optional=True))
+    lim = value_axis(ax, ys, unit="$" if dollars else "%", kind="pnl", xs=[h for h, _v in (pc["today"] or [])],
+                     refs=refs, room_top=0.32)
+    clock_axis(ax)
     if dollars:
-        money_axis(ax)
         ax.set_title("Today's pace in dollars, by ET clock (its bank could not be read for the %)")
     else:
-        ax.yaxis.set_major_formatter(T.FuncFormatter(lambda v, _p: "%+.2f%%" % v if abs(v) >= 0.005 else "0%"))
         ax.set_title("Today's pace, % of its bank, by ET clock (dotted line = now)")
-    legend(ax)
+    ax.legend(loc="best", frameon=True, facecolor=SURF, edgecolor="none", framealpha=0.92)
+    return lim
 
 
 def chart_bot(ctx, name):
@@ -74,11 +96,14 @@ def chart_bot(ctx, name):
     sub = subs if len(subs) > 1 else subs[0]
     label = bs.SPEC[name]["label"]
     fig, axs3 = fig_new(3, 11.0, ratios=[1.15, 1.25, 1])
+    stops = stop_refs(name, now)
     try:
         pc = series.pace_curves(bs, pctx_, sub, ms, today, now)
-        draw_pace(axs3[0], pc, (now - bs.day_start(today)) / 3600.0, goal=reg.goal_pct if reg is not None else None)
+        draw_pace(axs3[0], pc, (now - bs.day_start(today)) / 3600.0, goal=reg.goal_pct if reg is not None else None,
+                  stops=[(g, d) for g, d in stops if _is_day(g)], base=series.day_base(bs, pctx_, sub, today))
     except Exception as e:                              # noqa: BLE001 -- the pace panel never costs the rest
         axs3[0].set_title("Today's pace: could not be drawn (%s)" % str(e)[:60])
+        mark_empty(axs3[0], "")
     axs = axs3[1:]
     axs[0].sharex(axs[1])
     ax = axs[0]
@@ -90,35 +115,42 @@ def chart_bot(ctx, name):
     i0 = next((i for i, m in enumerate(ms) if m["t"] >= cut), len(ms) - 1)
     Xall = [etdt(m["t"]) for m in ms]
     X, R, W = Xall[i0:], run[i0:], ms[i0:]
-    ax.step(X, R, where="post", color=BOT_COLOUR.get(name, BLUE), lw=2.0, zorder=3)    # its /stats colour (10-26)
+    col = BOT_COLOUR.get(name, BLUE)                    # its /stats colour (10-26)
+    # 10-30: the line starts where the total stood before the first market drawn ($0 for a young bot), so the change
+    # written on it is the change over what is drawn
+    X0, R0 = [X[0]] + X, [R[0] - W[0]["money"]] + R
+    ax.step(X0, R0, where="post", color=col, lw=2.0, zorder=3, marker="o" if len(X) < 3 else None, ms=4)
     lx = [x for x, m in zip(X, W) if m["money"] < -0.004]
     ly = [y for y, m in zip(R, W) if m["money"] < -0.004]
-    run = R
+    base, _k, _why = bs.pot_for(pctx_, sub, "all_time")
+    refs = [ref(R[-1] - dist, "%s: %s below now" % (g.what, usd(dist, False)), color=DOWN, ls=":", optional=True)
+            for g, dist in stops if not _is_day(g)]
+    lim = money_axis(ax, R0, kind="pnl", xs=X0, refs=refs, room_top=0.12)
+    mark_last(ax, X[-1], R[-1], usd(R[-1]), color=col)
+    annotate_change(ax, X0, R0, base=base or False, extra=[r["label"] for r in lim["far"]], lows=False)
     if lx:
         ax.scatter(lx, ly, s=22, color=DOWN, edgecolor=SURF, linewidth=1.0, zorder=4, label="a losing %s" % unit)
-        legend(ax)
-    zero_line(ax)
-    money_axis(ax)
-    note(ax, X[-1], run[-1], usd(run[-1]), dx=-4, ha="right")
-    base, _k, _why = bs.pot_for(pctx_, sub, "all_time")
+        ax.legend(loc=free_corner(ax), frameon=True, facecolor=SURF, edgecolor="none", framealpha=0.92)
     pct_of_axis(ax, base, (("%% of the %s's %s put in" % (bs.SUB_NAME[sub], usd(base, False))) if len(subs) == 1 else
                            ("%% of the %s put into %s" % (usd(base, False), bs.sub_name(sub)))) if base else "")
     ax.set_title("Running total, market by market (Kalshi's books, %s)" % bs.sub_name(sub))
     ax = axs[1]
     # a rolling rate is drawn only where its window is full (n markets / races behind it)
+    wy = []
     if unit == "leg":                                   # the race: a race = the legs of one event
         races = series.race_rows(bs, c, name)
         n = min(ROLL, max(5, len(races) // 4))
         rr = roll([100.0 if w else 0.0 for _t, _v, w, _tie in races], n)
         j0 = max(n - 1, next((i for i, r in enumerate(races) if r[0] >= cut), len(races)))
-        ax.plot([etdt(r[0]) for r in races[j0:]], rr[j0:], color=BOT_COLOUR.get(name, BLUE), lw=2.0,
+        ax.plot([etdt(r[0]) for r in races[j0:]], rr[j0:], color=col, lw=2.0,
                 label="won %% of the last %d races" % n, zorder=3)
-        what = "races (a tie counts as not won)"
+        wy = rr[j0:]
+        have, what = len(races), "races (a tie counts as not won)"
     else:
         n = min(ROLL, max(5, len(ms) // 4))
         j0 = max(n - 1, i0)
-        ax.plot(Xall[j0:], roll([100.0 if m["money"] > 0.004 else 0.0 for m in ms], n)[j0:], color=BOT_COLOUR.get(name, BLUE),
-                lw=2.0, label="won %% of the last %d markets" % n, zorder=3)
+        wr = roll([100.0 if m["money"] > 0.004 else 0.0 for m in ms], n)[j0:]
+        ax.plot(Xall[j0:], wr, color=col, lw=2.0, label="won %% of the last %d markets" % n, zorder=3)
         pe = [((m["put_in"] + m["fees"]) / m["contracts"], 1.0) if m["contracts"] > 0 else (0.0, 0.0) for m in ms]
         acc = []
         sv = sw = 0.0
@@ -129,13 +161,18 @@ def chart_bot(ctx, name):
                 sv -= pe[i - n][0]
                 sw -= pe[i - n][1]
             acc.append(100.0 * sv / sw if sw else None)
-        ax.plot([x for x, a in zip(Xall[j0:], acc[j0:]) if a is not None], [a for a in acc[j0:] if a is not None],
+        be = [a for a in acc[j0:] if a is not None]
+        ax.plot([x for x, a in zip(Xall[j0:], acc[j0:]) if a is not None], be,
                 color=MUTED, lw=1.6, ls="--", label="break-even % (what its prices needed)", zorder=2)
-        what = "markets"
-    pct_ticks(ax, signed=False)
+        wy = wr + be
+        have, what = len(ms), "markets"
     ax.set_title("Win rate over time (%s)" % what)
-    legend(ax)
-    date_axis(axs[-1])
+    if wy:
+        value_axis(ax, wy, unit="%", kind="level", floor=0.0, cap=100.0, room_bottom=0.25)
+        ax.legend(loc="lower left", frameon=True, facecolor=SURF, edgecolor="none", framealpha=0.92)
+    else:                                               # 10-30: never an empty frame dated Jan 1
+        mark_empty(ax, "a win rate needs %d %s; it has %d so far" % (n, "races" if unit == "leg" else "markets", have))
+    time_axis(axs[-1], X0[0], X0[-1])
     at, td = blk.get("all_time") or {}, blk.get("today") or {}
     headline(fig, "%s: all time %s%s · today %s" % (
         label, usd(at.get("money")), (" (%+.1f%% of its bank)" % at["pot_pct"]) if at.get("pot_pct") is not None else "",

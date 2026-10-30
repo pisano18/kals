@@ -5,9 +5,8 @@ botdata.series, the ctx is a ChartCtx.
 """
 from pindesk import Ledger, et_day, et_day_start
 from botdata import series
-from phone.charts.base import (AVG30, DOWN, BLUE, GREY, INK, ORANGE, SURF, BOT_SHORT, date_axis, etdt, fig_new,
-                               headline, legend, money_axis, note, pct_of_axis, pctx, place_notes, png, usd, wrap,
-                               zero_line)
+from phone.charts.base import (AVG30, DOWN, BLUE, GREY, INK, ORANGE, SURF, BOT_SHORT, etdt, fig_new, headline, legend,
+                               mark_last, money_axis, pct_of_axis, pctx, place_notes, png, time_axis, usd, wrap)
 
 AVG_DAYS, LONG_DAYS = series.AVG_DAYS, series.LONG_DAYS
 LOSS_NAMES = 8                          # /today: the losing markets named on the picture (the biggest, when more)
@@ -91,15 +90,13 @@ def chart_day(ctx, which):
                    edgecolor=SURF, linewidth=1.5, zorder=5,
                    label="a losing market, named by bot" if len(named) == len(lost)
                    else "a losing market (the %d biggest named)" % len(named))
-        lo, hi = ax.get_ylim()                          # room under the lowest loss for its name
-        low = min(c for _s, c, _v, _b in named)
-        if low - lo < 0.12 * (hi - lo):
-            ax.set_ylim(low - 0.12 * (hi - lo), hi)
-    zero_line(ax)
-    ax.set_xlim(etdt(d0), etdt(d0 + 86400))
-    date_axis(ax, 1)
-    money_axis(ax)
-    note(ax, X[-1], Y[-1], usd(Y[-1]), dx=-4, ha="right")
+    ys = [y for ln in ax.get_lines() for y in ln.get_ydata()]
+    lo_all, hi_all = min(ys + [0.0]), max(ys + [0.0])
+    low = min([c for _s, c, _v, _b in named] or [hi_all])
+    # room under the lowest named loss for its name, when it sits at the bottom
+    money_axis(ax, ys, room_bottom=0.12 if low - lo_all < 0.06 * ((hi_all - lo_all) or 1.0) else 0.0, room_top=0.1)
+    time_axis(ax, d0, d0 + 86400, clock=True)
+    mark_last(ax, X[-1], Y[-1], usd(Y[-1]), color=INK)
     pct_of_axis(ax, b0, "%% of all pots at midnight ET (%s)" % usd(b0, False) if b0 else "")
     each = {}                                           # each bot's money that day: who made the day
     for _d, _t, v, b in ms:
@@ -165,11 +162,9 @@ def chart_day_main(ctx, which):
     if lost:
         ax.scatter([etdt(k) for k, _c in lost], [c for _k, c in lost], s=46, color=DOWN, edgecolor=SURF,
                    linewidth=1.5, zorder=5, label="a losing close")
-    zero_line(ax)
-    ax.set_xlim(etdt(d0), etdt(d0 + 86400))
-    date_axis(ax, 1)
-    money_axis(ax)
-    note(ax, X[-1], Y[-1], usd(Y[-1]), dx=-4, ha="right")
+    money_axis(ax, [y for ln in ax.get_lines() for y in ln.get_ydata()], room_top=0.1)
+    time_axis(ax, d0, d0 + 86400, clock=True)
+    mark_last(ax, X[-1], Y[-1], usd(Y[-1]), color=BLUE)
     pct_of_axis(ax, b0, "%% of the %s bank at midnight ET" % usd(b0, False) if b0 else "")
     ax.set_title("Running total, close by close (ET)")
     legend(ax)

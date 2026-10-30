@@ -13,18 +13,27 @@ RESEARCH = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.pa
 if RESEARCH not in sys.path:
     sys.path.insert(0, RESEARCH)
 
-MODULES = ("test_main_account", "test_series", "test_botstats_charts", "test_kinds_palette_bars", "test_ctx")
+MODULES = ("test_main_account", "test_series", "test_botstats_charts", "test_kinds_palette_bars", "test_ctx",
+           "test_layout_rules")
 
 
 def main():
     os.environ.setdefault("KALS_TESTING", "1")
     import importlib
+    from phone.charts import base
     from phone.charts.base import mpl
+    from phone.charts.tests.planted import ck
     for name in MODULES:
         mod = importlib.import_module("phone.charts.tests." + name)
         for fn in mod.TESTS:
             print("-- %s.%s" % (name, fn.__name__), flush=True)
-            fn()
+            base.AUDIT = []                             # 10-30: every picture any test draws keeps the layout rules
+            try:
+                fn()
+            finally:
+                found, base.AUDIT = base.AUDIT, None
+            ck(not found, "%s.%s: every picture it drew keeps the layout rules (base.audit)%s"
+               % (name, fn.__name__, ("\n      " + "\n      ".join(found)) if found else ""))
     print("tgcharts selftest: OK (matplotlib %s)" % mpl()["version"])
 
 

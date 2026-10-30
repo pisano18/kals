@@ -5,8 +5,8 @@ v-tg-rebuild step 8 (2026-10-30): moved verbatim out of tgcharts.py (chart_funds
 botdata.series.account_series (was tgcharts._account_series).
 """
 from botdata import series
-from phone.charts.base import (BLUE, BOT_COLOUR, GRID, INK, INK2, POT_WHAT, SURF, account_name, date_axis, etdt,
-                               fig_new, headline, money_axis, note, png, usd)
+from phone.charts.base import (BLUE, BOT_COLOUR, INK, POT_WHAT, account_name, annotate_change, etdt, fig_new, headline,
+                               mark_last, money_axis, png, time_axis, usd)
 
 
 def chart_funds(ctx):
@@ -32,31 +32,29 @@ def chart_funds(ctx):
                 stopped.append("subaccount %s" % k)
     if not drawn:
         return None
-    fig, axs = fig_new(len(drawn), 2.7 * len(drawn) + 1.0, sharex=True)
+    # 10-30 (operator: "ladder chart is 0-800 ... only goes up a tiny tiny bit"): each panel is its own account on its
+    # own scale -- the y axis zoomed to that account's money and the way it moves, the time axis to that account's own
+    # span (a pot live for 5 days gets 5 days), its start, its end and the change between them written on it
+    fig, axs = fig_new(len(drawn), 2.7 * len(drawn) + 1.0)
     total, whole = 0.0, True
     for ax, (key, live, pts, v, why, each) in zip(axs, drawn):
         X = [etdt(t) for t, _y in pts]
         Y = [y for _t, y in pts]
         col = BOT_COLOUR.get(live[0], BLUE)             # the account's (first) bot's colour, as on /stats (10-26)
-        ax.plot(X, Y, color=col, lw=2.0, zorder=3)
-        ax.fill_between(X, Y, 0, color=col, alpha=0.08, lw=0)
         nowv = v if v is not None else Y[-1]
         total += nowv
         whole = whole and v is not None
-        ax.scatter([X[-1]], [nowv], s=50, color=col, edgecolor=SURF, linewidth=1.5, zorder=5)
-        note(ax, X[-1], nowv, usd(nowv, False), dx=-4, ha="right")
-        lo = min(Y + [nowv])
-        ax.set_ylim(bottom=min(0.0, lo))
-        money_axis(ax, signed=False)
-        if each:                                        # each pot's part, inside the panel (the title has no room)
-            ax.text(0.01, 0.95, " + ".join("%s (%s) %s" % (POT_WHAT.get(k, "subaccount " + k), k, usd(x, False))
-                                           for k, x in zip(key, each)),
-                    transform=ax.transAxes, va="top", ha="left", fontsize=9.5, color=INK2, zorder=6,
-                    bbox=dict(facecolor=SURF, edgecolor=GRID, boxstyle="round,pad=0.3"))
+        ax.plot(X, Y, color=col, lw=2.0, zorder=3)
+        money_axis(ax, Y + [nowv], kind="balance", xs=X, room_top=0.12)
+        ax.fill_between(X, Y, min(Y + [nowv]), color=col, alpha=0.07, lw=0)       # to the panel's own low, never $0
+        time_axis(ax, X[0], X[-1])
+        mark_last(ax, X[-1], nowv, usd(nowv, False), color=col)
+        parts = (" + ".join("%s (%s) %s" % (POT_WHAT.get(k, "subaccount " + k), k, usd(x, False))
+                            for k, x in zip(key, each)),) if each and None not in each else ()   # each pot's part
+        annotate_change(ax, X, Y[:-1] + [nowv], extra=parts, ends=True)
         ax.set_title("%s · %s: %s%s" % (account_name(key), " + ".join(bs.SPEC[b]["label"].lower() for b in live),
                                         usd(nowv, False), " now" if v is not None else " (from the books)"),
                      color=INK, fontsize=11)
-    date_axis(axs[-1])
     headline(fig, "Every running account: %s%s" % ("" if whole else "about ", usd(total, False)))
     # v-tg-neutral (step 12, the operator: "Robinhood ... a withdrawal or deposit doesn't spike or change it at all"):
     # each line is the account now minus the trading after each hour (botdata.series.trading_only)

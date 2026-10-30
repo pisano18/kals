@@ -3,9 +3,9 @@
 v-tg-rebuild step 8 (2026-10-30): moved verbatim out of tgcharts.py (chart_stats); data from botdata.series.
 """
 from botdata import series
-from phone.charts.base import (AVG30, BOT_COLOUR, BOT_ORDER, BOT_SHORT, GREY, INK, INK2, MUTED, SURF, WINDOW_DAYS,
-                               date_axis, etdt, fig_new, headline, legend, money_axis, note, pct_of_axis, pct_ticks,
-                               pctx, png, ups_downs, usd, zero_line)
+from phone.charts.base import (AVG30, BOT_COLOUR, BOT_ORDER, BOT_SHORT, GREY, INK, INK2, SURF, WINDOW_DAYS, etdt,
+                               fig_new, headline, legend, mark_empty, mark_last, money_axis, note, pct_axis, pct_of_axis,
+                               pctx, png, time_axis, ups_downs, usd)
 from phone.charts.days import chart_stats_main
 
 AVG_DAYS, LONG_DAYS = series.AVG_DAYS, series.LONG_DAYS
@@ -84,12 +84,8 @@ def chart_stats(ctx):
         up = [a + x for a, x in zip(up, pv)]
         dn = [a + x for a, x in zip(dn, nv)]
     ax.scatter(xs, nets, s=16, color=INK, edgecolor=SURF, linewidth=0.8, zorder=5, label="net, every bot")
-    zero_line(ax)
-    hi, lo = max(up + [0.0]), min(dn + [0.0])
-    span = max(hi - lo, 1.0)
-    ax.set_ylim(lo - 0.08 * span, hi + 0.28 * span)     # headroom: the key, two rows
+    money_axis(ax, up + dn + nets, room_top=0.24)       # headroom: the key, two rows
     note(ax, xs[-1], nets[-1], usd(nets[-1]), dy=8 if nets[-1] >= 0 else -8, ha="right", dx=4)
-    money_axis(ax)
     ax.set_title("$ each ET day, by bot: gains up, losses down (dot = the day's net)")
     ax.legend(loc="upper left", fontsize=8.5, ncol=4, frameon=True, facecolor=SURF, edgecolor="none", framealpha=0.92,
               columnspacing=1.0, handlelength=1.2)
@@ -127,11 +123,9 @@ def chart_stats(ctx):
                         label="%d-day average, to yesterday (%+.2f%% a day)" % (n_, ax_v[-1]))
         if ax.get_lines():
             legend(ax)
+        pct_axis(ax, pv + [y for ln in ax.get_lines() for y in ln.get_ydata()], room_top=0.1)
     else:
-        ax.text(0.5, 0.5, "what the pots held could not be worked out", transform=ax.transAxes, ha="center",
-                va="center", color=MUTED, fontsize=10)
-    zero_line(ax)
-    pct_ticks(ax)
+        mark_empty(ax, "what the pots held could not be worked out")
     ax.set_title("% of all pots each day (what they held when that ET day began)")
 
     # the running totals: every bot (dark) and the big bots; then the small ones on their own scale
@@ -147,12 +141,8 @@ def chart_stats(ctx):
     ax = axs[2]
     vals = lines(ax, big)
     ax.plot(xs, allv, color=INK, lw=2.8, zorder=4, label="Every bot %s" % usd(total))
-    note(ax, xs[-1], allv[-1], usd(allv[-1]), dx=-4, ha="right")
-    zero_line(ax)
-    lo_r, hi_r = min([0.0] + allv + vals), max([0.0] + allv + vals)
-    span = max(hi_r - lo_r, 1.0)
-    ax.set_ylim(lo_r - 0.06 * span, hi_r + 0.14 * span)
-    money_axis(ax)
+    money_axis(ax, allv + vals, xs=xs, room_top=0.1)
+    mark_last(ax, xs[-1], allv[-1], usd(allv[-1]), color=INK)
     dep = bs.pot_for(pctx_, None, "all_time")[0] if not missing else None
     pct_of_axis(ax, dep, "%% of the %s put in" % usd(dep, False) if dep else "")
     bign = ["the " + BOT_SHORT.get(b, b).lower() for b in big]
@@ -164,15 +154,11 @@ def chart_stats(ctx):
     if small:
         ax = axs[3]
         vals = lines(ax, small)
-        zero_line(ax)
-        lo_r, hi_r = min([0.0] + vals), max([0.0] + vals)
-        span = max(hi_r - lo_r, 1.0)
-        ax.set_ylim(lo_r - 0.08 * span, hi_r + 0.42 * span)     # headroom: the key
-        money_axis(ax)
+        money_axis(ax, vals, room_top=0.36)                      # headroom: the key
         ax.set_title("Running total of the other bots, on their own scale")
         ax.legend(loc="upper left", fontsize=8.5, ncol=2, frameon=True, facecolor=SURF, edgecolor="none",
                   framealpha=0.92, columnspacing=1.0, handlelength=1.4)
-    date_axis(axs[-1])
+    time_axis(axs[-1], xs[0], xs[-1], pad_days=0.6)
     headline(fig, "Every bot, all time %s%s" % (usd(total), (" (%s on the %s put in)" % (pctx(total / dep, 1), usd(dep, False)))
                                                 if dep else ""))
     cap = ("/stats: every bot, every pot (Kalshi's books through botstats), one colour a bot; the last %d days drawn, "

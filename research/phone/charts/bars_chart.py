@@ -3,7 +3,7 @@
 v-tg-rebuild step 8 (2026-10-30): moved verbatim out of tgcharts.py (_crit, bars_tests, chart_bars). Not named bars.py:
 research/bars.py is the module this picture reads (DESIGN 2: module names avoid open, bars, brief, help).
 """
-from phone.charts.base import (DOWN, DOWN_T, INK, INK2, SURF, UP, UP_T, fig_new, headline, money_axis, mpl, png)
+from phone.charts.base import (DOWN, DOWN_T, INK, INK2, SURF, UP, UP_T, fig_new, headline, no_axis, png, value_axis)
 
 
 def crit(name, value, unit, lines, good, bad, show=None):
@@ -75,11 +75,11 @@ def chart_bars(ctx):
     for ax, (title, c) in zip(axs, rows):
         v = float(c["value"])
         xs = [v] + [x for x, _w in c["lines"]]
-        lo, hi = min(xs + [0.0]), max(xs + [0.0])
-        pad = max(1.0, 0.15 * (hi - lo))
-        lo, hi = lo - pad, hi + pad
-        ax.set_xlim(lo, hi)
-        ax.set_ylim(0, 1)
+        # the strip's scale: the value, its bar lines and 0, through the engine (nice ticks, the unit's own labels)
+        lim = value_axis(ax, xs + [0.0], unit="$" if c["unit"] == "$" else "", kind="level", axis="x",
+                         integer=c["unit"] == "", signed=c["unit"] == "$")
+        lo, hi = lim["lo"], lim["hi"]
+        no_axis(ax, "y", 0, 1)
         for zone, col in ((c["good"], UP_T), (c["bad"], DOWN_T)):
             if zone:
                 a = lo if zone[0] is None else zone[0]
@@ -95,13 +95,7 @@ def chart_bars(ctx):
         bar_w = "; ".join("%s %s" % (w, (("%s$%g" % ("-" if x < 0 else "+", abs(x))) if c["unit"] == "$" else "%g" % x))
                           for x, w in c["lines"])
         ax.set_title("%s: %s  (%s)" % (c["name"], vs, bar_w), fontsize=10, color=INK)
-        ax.set_yticks([])
         ax.grid(False)
-        ax.spines["left"].set_visible(False)
-        if c["unit"] == "$":
-            money_axis(ax, axis="x")
-        elif c["unit"] == "":
-            ax.xaxis.set_major_locator(mpl()["ticker"].MaxNLocator(integer=True))
         if title:
             ax.annotate(title, xy=(0, 1), xycoords="axes fraction", xytext=(0, 22), textcoords="offset points",
                         fontsize=11.5, fontweight="bold", color=INK2, va="bottom", annotation_clip=False)
