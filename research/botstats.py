@@ -103,8 +103,11 @@ if HERE not in sys.path:
 import pinday                                                    # noqa: E402
 import pinledger                                                 # noqa: E402
 import pinxfer                                                   # noqa: E402  (deposit rules: finished, net of fee)
+from botdata import paths as _paths                              # noqa: E402
 
-RESULTS = os.path.join(os.path.dirname(HERE), "results")
+# v-tg-rebuild step 2 (2026-10-30): RESULTS comes from the one place (botdata/paths.py) -- the same <repo>\results string
+# this line always computed. Tests still patch botstats.RESULTS as before (a copy, read by every function here).
+RESULTS = _paths.RESULTS
 REPO = os.path.dirname(HERE)
 CACHE_NAME = "botstats_cache.json"
 VERSIONS_NAME = "VERSIONS.md"
@@ -495,6 +498,9 @@ def save_cache(c):
     c["written"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     tmp = "%s.%d.tmp" % (p, os.getpid())
     try:
+        # v-tg-rebuild step 2 (2026-10-30): under KALS_TESTING=1 the LIVE cache is never written (a test that patched a
+        # dead name would overwrite it); WriteFenced is an OSError, so this returns False like any failed write
+        _paths.check_write(p)
         with open(tmp, "w", encoding="utf-8") as fh:
             json.dump(c, fh, separators=(",", ":"))
         for _ in range(3):
@@ -2512,6 +2518,10 @@ def pot_check_lines(pc):
 def selftest():
     import shutil
     import tempfile
+    # v-tg-rebuild step 2 (2026-10-30): a self-test never writes a LIVE file -- botdata/paths.py's fence refuses any
+    # write under the real results\ or C:\kals while KALS_TESTING=1 (before this the pinphone self-test appended its
+    # fake sends to the real results\pinphone.log)
+    os.environ["KALS_TESTING"] = "1"
 
     def ck(cond, msg):
         print(("  ok   " if cond else "  FAIL ") + msg)

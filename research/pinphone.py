@@ -104,7 +104,10 @@ from pindesk import (Ledger, et_day, et_day_start, et_str, et_now_str, coin, clo
 import pinflat                                                       # noqa: E402
 
 CONFIG = r"C:\kals\telegram.json"
-RESULTS = pindesk.RESULTS
+from botdata import paths as _paths                                  # noqa: E402
+# v-tg-rebuild step 2 (2026-10-30): RESULTS from the one place (botdata/paths.py) -- the same <repo>\results string
+# pindesk.RESULTS is; tests and the golden harness still patch pinphone.RESULTS as before
+RESULTS = _paths.RESULTS
 HEARTBEAT = os.path.join(RESULTS, "pinphone.heartbeat")
 UPDATE_FLAG = os.path.join(RESULTS, "pinphone.update")    # its presence = /update (update_flag_tick, 10-26)
 LOG = os.path.join(RESULTS, "pinphone.log")
@@ -196,6 +199,7 @@ def log(msg):
         except Exception:                                       # noqa: BLE001
             pass
     try:
+        _paths.check_write(LOG)              # v-tg-rebuild step 2: never the live log under KALS_TESTING=1 (an OSError)
         with open(LOG, "a", encoding="utf-8") as fh:
             fh.write(line + "\n")
     except OSError:
@@ -4874,6 +4878,7 @@ class Phone:
 
     def save_cfg(self):
         try:
+            _paths.check_write(self.cfg_path)        # v-tg-rebuild step 2: never C:\kals under KALS_TESTING=1
             with open(self.cfg_path, "w", encoding="utf-8") as fh:
                 json.dump(self.cfg, fh, indent=2)
         except OSError as e:
@@ -6375,6 +6380,7 @@ class Phone:
         if self.chat_id is None or not os.path.exists(UPDATE_FLAG):
             return None
         try:
+            _paths.check_write(UPDATE_FLAG)          # v-tg-rebuild step 2: never the live flag under KALS_TESTING=1
             os.remove(UPDATE_FLAG)
         except OSError:
             return None
@@ -6611,6 +6617,7 @@ class Phone:
             self.say(UP_TEXT)
         while True:
             try:
+                _paths.check_write(HEARTBEAT)        # v-tg-rebuild step 2: never the live heartbeat under KALS_TESTING=1
                 with open(HEARTBEAT, "w") as fh:
                     fh.write(time.strftime("%Y-%m-%dT%H:%M:%S"))
             except OSError:
@@ -6634,6 +6641,10 @@ class Phone:
 def selftest():
     import tempfile
     import calendar
+    # v-tg-rebuild step 2 (2026-10-30): a self-test never writes a LIVE file -- botdata/paths.py's fence refuses any
+    # write under the real results\ or C:\kals while KALS_TESTING=1 (before this the pinphone self-test appended its
+    # fake sends to the real results\pinphone.log)
+    os.environ["KALS_TESTING"] = "1"
 
     def ck(cond, msg):
         cprint(("  ok   " if cond else "  FAIL ") + msg)
