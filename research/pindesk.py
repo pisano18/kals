@@ -65,6 +65,7 @@ Without server.json (the server itself) everything works exactly as above.
     python research/pindesk.py --action status [--json]
     python research/pindesk.py --action start|pause|stop --yes
 """
+import bisect
 import calendar
 import collections
 import ctypes
@@ -4797,12 +4798,25 @@ def run_gui():
                 _ = base
             return "line", pts, "$"
         if mode == "bank":
+            # v-tg-neutral (2026-10-30, the operator: "Robinhood ... a withdrawal or deposit doesn't spike or change it
+            # at all ... this applies to all charts on graphs anywhere and everywhere"): the bank drawn deposit-neutral
+            # -- its latest figure minus the settlements after each point, so only trading moves the line; the last
+            # point is the bank itself. A dot still marks where the bot read its balance.
             pts = []
-            for t, b, real in ledger.bank_series():
-                if t_min is None or t >= t_min:
-                    pts.append((t, b, "$%.2f  %s%s" % (
-                        b, et_str(t, "%a %b %d, %I:%M %p"),
-                        " -- a real balance reading" if real else " -- reconstructed between readings")))
+            ser = ledger.bank_series()
+            if ser:
+                t_end, end = ser[-1][0], ser[-1][1]
+                trades = sorted((s["t"], s["pnl"]) for s in ledger.settled if s["t"] and s["t"] <= t_end)
+                tt_ = [x[0] for x in trades]
+                after = [0.0] * (len(trades) + 1)       # after[k] = the trading of trades[k:]
+                for k in range(len(trades) - 1, -1, -1):
+                    after[k] = after[k + 1] + trades[k][1]
+                for t, _b, real in ser:
+                    if t_min is None or t >= t_min:
+                        v = end - after[bisect.bisect_right(tt_, t)]
+                        pts.append((t, v, "$%.2f  %s -- deposits and transfers removed%s" % (
+                            v, et_str(t, "%a %b %d, %I:%M %p"),
+                            " (a real balance reading)" if real else "")))
             return "line", pts, "$"
         pts = []
         for d in ledger.days():
@@ -4885,9 +4899,9 @@ def run_gui():
                 coords += [X(t), Y(v)]
             chart.create_line(*coords, fill=C["gain"] if pts[-1][1] >= (pts[0][1] if mode_var.get() == "bank" else 0) else C["loss"], width=2)
             if mode_var.get() == "bank":
-                for t, b, real in ledger.bank_series():
-                    if real and pts[0][0] <= t <= pts[-1][0]:
-                        chart.create_oval(X(t) - 3, Y(b) - 3, X(t) + 3, Y(b) + 3, fill=C["blue"], outline="")
+                for t, v, txt in pts:                   # v-tg-neutral: the readings, on the deposit-neutral line
+                    if txt.endswith("(a real balance reading)"):
+                        chart.create_oval(X(t) - 3, Y(v) - 3, X(t) + 3, Y(v) + 3, fill=C["blue"], outline="")
             # the headline moved OUT of the chart corner and into the readout
             # above it, where it is 22pt instead of 12 and does not fight the
             # line for space.

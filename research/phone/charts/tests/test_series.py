@@ -4,6 +4,7 @@ v-tg-rebuild step 8 (2026-10-30): moved out of tgcharts.selftest unchanged (seri
 lane A's).
 """
 import calendar
+import time
 
 from pindesk import et_day, et_day_start
 from botdata import series
@@ -83,4 +84,82 @@ def test_clock_change_days():
        "Mar 8 is 23): %s" % _len)
 
 
-TESTS = [test_seven_day_lines, test_thirty_day_lines, test_by_now, test_clock_change_days]
+
+def _neutral_world():
+    """A fake botstats over botdata's own money / pot code: the main account (0) and the ladder's subaccount (1), with a
+    deposit, a withdrawal, transfers 0 -> 1 and 1 -> 2 (between pots), and ONE trading gain in each pot."""
+    import types
+    import pinxfer
+    from botdata import money, pots
+    T = 1793000000.0                                    # 2026-10-26, a whole hour
+
+    def row(tk, t):
+        return {"ticker": tk, "settled_time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t)), "market_result": "yes",
+                "yes_count_fp": "50.00", "no_count_fp": "0.00", "yes_total_cost_dollars": "40.00",
+                "no_total_cost_dollars": "0.00", "fee_cost": "0.50", "revenue": 5000, "value": 100}
+    g0, g1 = T - 25 * 3600 + 120, T - 20 * 3600 + 60   # the two trading gains (sub 0, sub 1)
+    led = {"fetched": T, "tried": T,
+           "deposits": [{"amount_cents": 200000, "fee_cents": 0, "status": "applied", "created_ts": int(T - 45 * 3600),
+                         "finalized_ts": int(T - 45 * 3600)}],
+           "withdrawals": [{"amount_cents": 30000, "fee_cents": 0, "status": "applied", "created_ts": int(T - 15 * 3600),
+                            "finalized_ts": int(T - 15 * 3600)}],
+           "transfers": [{"amount_cents": 50000, "from_subaccount": 0, "to_subaccount": 1, "exchange_index": 2,
+                          "created_ts": int(T - 40 * 3600)},
+                         {"amount_cents": 10000, "from_subaccount": 1, "to_subaccount": 2, "exchange_index": 2,
+                          "created_ts": int(T - 30 * 3600)},
+                         {"amount_cents": 20000, "from_subaccount": 0, "to_subaccount": 1, "exchange_index": 2,
+                          "created_ts": int(T - 10 * 3600)}]}
+    c = {"ledgers": led, "subs": {"0": {"rows": {"a": row("KXA-0", g0)}}, "1": {"rows": {"b": row("KXB-1", g1)}}}}
+    gain = money.market(row("KXA-0", g0))["money"]
+    real = {"0": 2000.0 - 500.0 - 300.0 - 200.0 + gain, "1": 500.0 - 100.0 + 200.0 + gain}
+    bs = types.SimpleNamespace(market=money.market, pot_rows=pots.pot_rows, pinxfer=pinxfer, _int=pots._int,
+                               xfer_in_pot=pots.xfer_in_pot, flows=pots.flows,
+                               _pot_now=lambda c_, s_, own=False: (real[s_], None))
+    return bs, c, T, gain, (g0, g1), real
+
+
+def test_deposit_neutral_series():
+    """v-tg-neutral (step 12): a deposit, a withdrawal, a transfer between pots and a trading gain -- only the gain moves
+    the line, and its last point is the real balance now."""
+    from botdata.series import account_series, trading_only
+    ck(trading_only([0, 10, 20, 30], [(5, 2.0), (25, -1.0), (31, 9.0)], 100.0) == [(0, 99.0), (10, 101.0), (20, 101.0),
+                                                                                  (30, 100.0)],
+       "trading_only: the money now minus the trading after each point (a trade after 'now' is not counted)")
+    bs, c, T, gain, (g0, g1), real = _neutral_world()
+    for sub, g in (("0", g0), ("1", g1)):
+        raw, v, why, _each = account_series(bs, c, sub, T, window_days=3)
+        pts, v2, _w, _e = account_series(bs, c, sub, T, window_days=3, neutral=True)
+        ck(v == v2 == real[sub] and why is None and [t for t, _y in raw] == [t for t, _y in pts],
+           "pot %s: the same hours, the pot now $%.2f" % (sub, real[sub]))
+        steps = [(t, y - y0) for (t, y), (_t0, y0) in zip(pts[1:], pts[:-1]) if abs(y - y0) > 1e-9]
+        ck(len(steps) == 1 and abs(steps[0][1] - gain) < 1e-9 and steps[0][0] - 3600 < g <= steps[0][0],
+           "pot %s deposit-neutral: ONE step, the trading gain %s in its hour; the deposit, the withdrawal and the "
+           "transfers between pots move nothing (%s)" % (sub, usd(gain), steps))
+        ck(abs(pts[-1][1] - real[sub]) < 1e-9 and abs(pts[0][1] - (real[sub] - gain)) < 1e-9,
+           "pot %s: the last point is the real balance now (%s), the first is it less the gain" % (sub, usd(pts[-1][1])))
+        rsteps = [1 for (_t, y), (_t0, y0) in zip(raw[1:], raw[:-1]) if abs(y - y0) > 1e-9]
+        ck(len(rsteps) >= 3, "pot %s: the balance as it was (raw) does jump at the money moves (%d steps)" % (sub, len(rsteps)))
+    # the real pot unknown: the books' figure now is the end, the shape is the same
+    bs._pot_now = lambda c_, s_, own=False: (None, "the last cash read failed")
+    pts, v, why, _e = account_series(bs, c, "1", T, window_days=3, neutral=True)
+    raw, _v, _w, _e = account_series(bs, c, "1", T, window_days=3)
+    ck(v is None and why and abs(pts[-1][1] - raw[-1][1]) < 1e-9
+       and len([1 for (_t, y), (_t0, y0) in zip(pts[1:], pts[:-1]) if abs(y - y0) > 1e-9]) == 1,
+       "pot 1 unread now: the line ends at the books' figure and still steps only at the gain")
+
+
+def test_status_and_funds_pictures_are_neutral():
+    """/status' bank picture and /funds draw the deposit-neutral line and say so in the caption."""
+    from phone.charts import build
+    from phone.charts.tests.planted import planted_botstats
+    led = planted_ledger()
+    got = build("status", {"now": NOW, "ledger": led, "pp": None})
+    ck(got is not None and "deposits and transfers removed" in got[1], "/status picture: 'deposits and transfers removed'")
+    with planted_botstats(fx=True) as (_BS, _c, _procs, _td, ctx3):
+        got = build("funds", ctx3)
+        ck(got is not None and "deposits and transfers removed" in got[1] and "only trading does" in got[1],
+           "/funds picture: deposit-neutral, and its caption says so")
+
+
+TESTS = [test_seven_day_lines, test_thirty_day_lines, test_by_now, test_clock_change_days, test_deposit_neutral_series,
+         test_status_and_funds_pictures_are_neutral]

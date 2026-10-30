@@ -6,6 +6,7 @@ v-tg-rebuild step 8 (2026-10-30): moved verbatim out of tgcharts.py (chart_hedge
 chart_market). /hedges' markets come from the ChartCtx (ctx.main_account_markets: was markets_of(ctx) over pp).
 """
 from pindesk import Ledger, et_day, et_day_start
+from botdata import series
 from phone.charts.base import (BLUE, BOT_COLOUR, GREY, INK, INK2, MUTED, SURF, date_axis, etdt, fig_new, headline,
                                legend, money_axis, mpl, note, png, usd, zero_line)
 
@@ -53,35 +54,39 @@ def chart_hedges(ctx):
 
 
 def chart_status(ctx):
+    """/status: the main account's bank over the last 7 days, hour by hour, deposit-neutral (v-tg-neutral, rebuild step
+    12; the operator: "Robinhood ... a withdrawal or deposit doesn't spike or change it at all"): the bank now (pindesk's
+    bank_at, the figure /status shows) minus the settlements after each hour (botdata.series.trading_only), so only
+    trading moves the line; a deposit, withdrawal or transfer is marked where it happened and moves nothing."""
     led, now = ctx.ledger, ctx.now
     t0 = now - 7 * 86400
     grid = list(range(int(t0), int(now), 3600)) + [now]
-    pts = [(g, led.bank_at(g)) for g in grid]
-    pts = [(g, b) for g, b in pts if b is not None]
+    end = led.bank_at(now)
+    if end is None:
+        return None
+    pts = series.trading_only(grid, [(s_["t"], s_["pnl"]) for s_ in led.settled if s_["t"]], end)
     if len(pts) < 2:
         return None
     fig, (ax,) = fig_new(1, 5.4)
     X = [etdt(g) for g, _b in pts]
     Y = [b for _g, b in pts]
     ax.plot(X, Y, color=BLUE, lw=2.0, zorder=3)
-    reads = [(a["t"], a["bank"]) for a in led.autosize if a["bank"] is not None and a["t"] and a["t"] >= t0]
-    if reads:
-        ax.scatter([etdt(t) for t, _b in reads], [b for _t, b in reads], s=14, color=INK2, zorder=4,
-                   label="the pin bot's own bank reads")
     mv = [e for e in led.external if e.get("t") and e["t"] >= t0 and abs(float(e.get("amount") or 0)) >= Ledger.TRANSFER_MIN]
     for e in mv:
         ax.axvline(etdt(e["t"]), color=INK2, lw=1.2, ls=":", zorder=2)
     if mv:
-        ax.plot([], [], color=INK2, lw=1.2, ls=":", label="money moved in or out")
+        ax.plot([], [], color=INK2, lw=1.2, ls=":", label="money moved in or out (left out of the line)")
     note(ax, X[-1], Y[-1], usd(Y[-1], False), dx=-4, ha="right")
     money_axis(ax, signed=False)
     date_axis(ax, 7)
-    ax.set_title("Main account (%s), hour by hour, last 7 days" % ctx.words_main())
-    if reads or mv:
+    ax.set_title("Main account (%s), hour by hour, last 7 days (%s)" % (ctx.words_main(), series.NEUTRAL_NOTE))
+    if mv:
         legend(ax)
-    headline(fig, "Bank %s · 7 days ago %s" % (usd(Y[-1], False), usd(Y[0], False)))
-    cap = ("The main account's bank (" + ctx.words_main() + ") over the last 7 days: the pin bot's last bank read plus every settlement since "
-           "(pindesk's bank_at, the figure /status shows). A deposit or withdrawal moves it too -- never profit.")
+    headline(fig, "Bank %s · trading, last 7 days %s" % (usd(Y[-1], False), usd(Y[-1] - Y[0])))
+    cap = ("The main account's bank (" + ctx.words_main() + ") over the last 7 days, " + series.NEUTRAL_NOTE + ": the "
+           "bank now (the pin bot's last bank read plus every settlement since -- pindesk's bank_at, the figure /status "
+           "shows) minus the trading after each hour, so only trading moves the line -- a deposit, withdrawal or "
+           "transfer never does (dotted lines mark where one happened).")
     return png(fig), cap
 
 

@@ -1,5 +1,5 @@
 """funds.py -- /bots /funds /bank /accounts: every RUNNING account's money over time (cash + open bets at cost), a
-panel each, in its bot's colour.
+panel each, in its bot's colour; deposit-neutral since v-tg-neutral (rebuild step 12): only trading moves a line.
 
 v-tg-rebuild step 8 (2026-10-30): moved verbatim out of tgcharts.py (chart_funds); the series is
 botdata.series.account_series (was tgcharts._account_series).
@@ -22,7 +22,7 @@ def chart_funds(ctx):
         if not live:                                    # v-tg-active: an account no active bot runs is not named
             stopped.append(account_name(key).lower())
             continue
-        pts, v, why, each = series.account_series(bs, c, key if len(key) > 1 else key[0], now)
+        pts, v, why, each = series.account_series(bs, c, key if len(key) > 1 else key[0], now, neutral=True)
         if pts:
             drawn.append((key, live, pts, v, why, each))
     for k, w in sorted((ctx.funds_what or {}).items()):
@@ -58,7 +58,10 @@ def chart_funds(ctx):
                      color=INK, fontsize=11)
     date_axis(axs[-1])
     headline(fig, "Every running account: %s%s" % ("" if whole else "about ", usd(total, False)))
-    cap = ("Each running account's money over time = cash + open bets at cost, worked forward from Kalshi's own "
-           "deposits, transfers and settlements (botstats); the dot is the account now.%s"
-           % ((" Not drawn (no bot runs there now): " + "; ".join(stopped) + ".") if stopped else ""))
+    # v-tg-neutral (step 12, the operator: "Robinhood ... a withdrawal or deposit doesn't spike or change it at all"):
+    # each line is the account now minus the trading after each hour (botdata.series.trading_only)
+    cap = ("Each running account's money over time, %s: the account now (cash + open bets at cost) minus the trading "
+           "after each moment -- every settlement on Kalshi's books, fees in (botstats) -- so money moved in or out, or "
+           "between pots, never moves a line; only trading does. The dot is the account now.%s"
+           % (series.NEUTRAL_NOTE, (" Not drawn (no bot runs there now): " + "; ".join(stopped) + ".") if stopped else ""))
     return png(fig), cap

@@ -232,12 +232,43 @@ def by_now(rows, bs, day, now, n=AVG_DAYS):
     return so_far, tot / len(ds), len(ds)
 
 
+# ---- deposit-neutral money over time (v-tg-neutral, rebuild step 12, 2026-10-30) ----------------------------------
+# The operator: "Robinhood ... the shape of the graph is only affected by the trading and a withdrawal or deposit
+# doesn't spike or change it at all ... acting like it's always been the [balance] it's currently at ... this applies to
+# all charts on graphs anywhere and everywhere". A money-over-time line is drawn as
+#     value(t) = the money now - the trading after t
+# = balance(t) + every deposit, withdrawal and transfer (in or out of that pot, between pots too) made after t, when
+# Kalshi's books explain the pot. Only trading (each settlement, fees in) moves the line; the last point IS the money
+# now. Lines that are already trading only (running totals, a day's pace) are unchanged; percentages of a bank keep
+# their own rule (what the pot held when the window began, botdata.pots).
+NEUTRAL_NOTE = "deposits and transfers removed"
+
+
+def trading_only(grid, trades, end):
+    """[(t, end - the trading after t)] for each t of `grid` (epochs, ascending; its last one is 'now'): `trades`
+    [(epoch, $)] are the account's trading events (settlements); one after the last grid point is not counted (it is
+    not in 'now' either). A deposit, withdrawal or transfer is not a trade, so it never moves the line, and the last
+    point is `end` (the money now)."""
+    if not grid:
+        return []
+    t_end = grid[-1]
+    ts = sorted((t, v) for t, v in trades if t is not None and t <= t_end)
+    times = [t for t, _v in ts]
+    after = [0.0] * (len(ts) + 1)                     # after[k] = the trading of ts[k:]
+    for k in range(len(ts) - 1, -1, -1):
+        after[k] = after[k + 1] + ts[k][1]
+    return [(g, end - after[bisect.bisect_right(times, g)]) for g in grid]
+
+
 # ---- one account's money over time (/funds) -----------------------------------------------------------------------
-def account_series(bs, c, sub, now, window_days=WINDOW_DAYS):
+def account_series(bs, c, sub, now, window_days=WINDOW_DAYS, neutral=False):
     """[(epoch, dollars)] for pot `sub`, or a tuple of pots added up (the FX taker's 5 + 4): money moved in
     (botstats.flows) + every settlement (botstats.market), hour by hour, worked forward from Kalshi's books; plus the
     pot now (botstats._pot_now) or why not, and each pot's part now (None for one pot). A pool-only pot
-    (botstats.POT_POOL_ONLY: subaccount 4 = its pool 0) counts its own pool's money, cash and markets only."""
+    (botstats.POT_POOL_ONLY: subaccount 4 = its pool 0) counts its own pool's money, cash and markets only.
+    neutral=True (v-tg-neutral, the /funds picture): the same hours drawn deposit-neutral (trading_only) -- the pot
+    now (or, when it cannot be read, the books' figure now) minus the settlements after each hour, so money moved in or
+    out, and transfers between pots, never move the line."""
     subs = sub if isinstance(sub, tuple) else (sub,)
     led = c.get("ledgers") or {}
     sett = sorted((m["t"], m["money"]) for s in subs
@@ -270,6 +301,8 @@ def account_series(bs, c, sub, now, window_days=WINDOW_DAYS):
     nows = [bs._pot_now(c, s, own=True) for s in subs]
     why = next((w for v, w in nows if v is None), None)
     v = None if why is not None else sum(v for v, _w in nows)
+    if neutral and pts:
+        pts = trading_only([g for g, _y in pts], sett, v if v is not None else pts[-1][1])
     return pts, v, why, ([v_ for v_, _w in nows] if len(subs) > 1 else None)
 
 

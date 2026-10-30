@@ -17,6 +17,7 @@ WHAT EACH COMMAND GETS (one PNG, sent by pinphone with sendPhoto after the text)
   /stats                   stats.py: every bot, one colour a bot: $ each day stacked by bot, the day's net as % of all
                            pots, each bot's running total. The main account's old picture when botstats cannot be read
   /bots /funds /bank /accounts   funds.py: every RUNNING account's money over time, a panel each, in its bot's colour
+                           (deposit-neutral since step 12: the money now less the trading after each hour)
   each bot's commands      bot.py: that bot's pace today, running total and win rate over its last 50 markets (races)
   /losses                  losses.py: every bot's losing markets, coloured by bot
   /hedges /status /fills /bets /market   small.py: the pin bot's own log (each says "pin bot")
@@ -31,6 +32,10 @@ RULES
     turn comes more than STALE_S late. A STOPPED bot, account or test is never drawn; it is named in the
     caption instead.
   * Off the poll loop: pinphone draws on one background thread; alerts, PAUSE and STOP never wait.
+  * Deposit-neutral (v-tg-neutral, rebuild step 12; the operator: "Robinhood ... a withdrawal or deposit doesn't spike
+    or change it at all"): a line of money over time (/funds, /status' bank) is the money now less the trading after
+    each moment (botdata.series.trading_only), so only trading moves it and it ends at the real balance; running
+    totals and paces are trading only already; a % of a bank keeps its own rule.
   * matplotlib (Agg, no pyplot, no window) is imported on first use (base.mpl). Missing -> pinphone sends words only.
 """
 import bots
