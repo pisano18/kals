@@ -305,3 +305,4 @@ Each line: world, case, expected digest -> actual digest (first 12 hex of the ca
 - `race-active-kalshi-down` `cmd//move` `absent` -> `85e9b6258a44`: step 12 lane R: new command /move (bare: every pot's cash through /funds' own GET read; nothing sent) (accepted 2026-10-30)
 - `race-active-procs-unreadable` `cmd//move` `absent` -> `bbbde86b95d8`: step 12 lane R: new command /move (bare: every pot's cash through /funds' own GET read; nothing sent) (accepted 2026-10-30)
 - `race-stopfile` `cmd//move` `absent` -> `bbbde86b95d8`: step 12 lane R: new command /move (bare: every pot's cash through /funds' own GET read; nothing sent) (accepted 2026-10-30)
+- `jumpband-live` `data/all_bots` `de5fdde902bc` -> `b2e7c753579e`: step 12 lane P: all_bots gains last_30_days (operator's 30-day window), replayed from C:\kals-repo (the known <REPO>/<CODE> path quirk in this world) (accepted 2026-10-30)
