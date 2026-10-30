@@ -93,9 +93,9 @@ import glob
 import json
 import os
 import re
-import subprocess
 import sys
 import time
+import types
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
@@ -108,10 +108,13 @@ import bots as _reg                                              # noqa: E402  (
 from bots import fx as _b_fx, jumpband as _b_jb, pin as _b_pin  # noqa: E402  (their constants + old function names)
 from bots import forecaster as _b_fc, ladder as _b_lad, race as _b_race, weather as _b_wx  # noqa: E402
 from bots.spec import SettingsIn as _SettingsIn                  # noqa: E402
+from botdata import procs as _procs                              # noqa: E402  (the one process table, step 4)
+from botdata import status as _status                            # noqa: E402  (which bots run / are shown, step 4)
 
 # v-tg-rebuild step 2 (2026-10-30): RESULTS comes from the one place (botdata/paths.py) -- the same <repo>\results string
-# this line always computed. Tests still patch botstats.RESULTS as before (a copy, read by every function here).
-RESULTS = _paths.RESULTS
+# this module always computed. Step 4 (2026-10-30): every function here reads _paths.RESULTS at call time (so does
+# botdata.status), and botstats.RESULTS is a PROPERTY of this module that reads and sets that one value -- the tests
+# that set botstats.RESULTS = <a temp dir> (pinphone's, tgcharts', the registry's) move every reader at once.
 REPO = os.path.dirname(HERE)
 CACHE_NAME = "botstats_cache.json"
 VERSIONS_NAME = "VERSIONS.md"
@@ -418,7 +421,7 @@ _MEMO = {"key": None, "data": None}
 
 
 def cache_path():
-    return os.path.join(RESULTS, CACHE_NAME)
+    return os.path.join(_paths.RESULTS, CACHE_NAME)
 
 
 def load_cache():
@@ -694,146 +697,22 @@ def cached_pots():
             "t": max(ts) if ts else None}
 
 
-# ---- the process table -------------------------------------------------------
-_PS = ("Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | ForEach-Object { "
-       "$s = ''; if ($_.CreationDate) { $s = $_.CreationDate.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ') }; "
-       "\"$($_.ProcessId)" + chr(96) + "t$s" + chr(96) + "t$(($_.CommandLine -replace '\\s+', ' '))\" }")
+# ---- the process table (v-tg-rebuild step 4, 2026-10-30: botdata/procs.py, the one reader) ------------------------
+PROC_STALE_S = _procs.PROC_STALE_S
+_PS = _procs._PS
+_norm_procs = _procs._norm_procs
+procs_for = _procs.procs_for
 
 
 def _procs_native():
-    """The same table straight from Windows in milliseconds: a Toolhelp snapshot of process names,
-    then, for each python.exe only, its command line (NtQueryInformationProcess class 60) and start
-    time (GetProcessTimes). Every handle is opened with QUERY_LIMITED_INFORMATION -- the right to
-    look, nothing else. WMI (the fallback below) took 25-35 s on the operator's box on 2026-09-30.
-    None when any step is unavailable."""
-    try:
-        import ctypes
-        from ctypes import wintypes
-        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        nt = ctypes.WinDLL("ntdll")
-    except (ImportError, OSError, AttributeError):
-        return None
-
-    class PE(ctypes.Structure):
-        _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD), ("pid", wintypes.DWORD),
-                    ("heap", ctypes.c_size_t), ("mod", wintypes.DWORD), ("threads", wintypes.DWORD),
-                    ("ppid", wintypes.DWORD), ("prio", ctypes.c_long), ("flags", wintypes.DWORD),
-                    ("exe", ctypes.c_wchar * 260)]
-
-    class US(ctypes.Structure):                  # UNICODE_STRING
-        _fields_ = [("Length", ctypes.c_ushort), ("MaximumLength", ctypes.c_ushort), ("Buffer", ctypes.c_void_p)]
-
-    k32.CreateToolhelp32Snapshot.restype = ctypes.c_void_p
-    k32.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
-    k32.Process32FirstW.argtypes = k32.Process32NextW.argtypes = [ctypes.c_void_p, ctypes.POINTER(PE)]
-    k32.OpenProcess.restype = ctypes.c_void_p
-    k32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
-    k32.CloseHandle.argtypes = [ctypes.c_void_p]
-    k32.GetProcessTimes.argtypes = [ctypes.c_void_p] + [ctypes.POINTER(ctypes.c_ulonglong)] * 4
-    nt.NtQueryInformationProcess.restype = ctypes.c_long
-    nt.NtQueryInformationProcess.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_void_p, ctypes.c_ulong,
-                                             ctypes.POINTER(ctypes.c_ulong)]
-    snap = k32.CreateToolhelp32Snapshot(0x2, 0)                     # TH32CS_SNAPPROCESS
-    if not snap or snap == ctypes.c_void_p(-1).value:
-        return None
-    pids = []
-    try:
-        pe = PE()
-        pe.dwSize = ctypes.sizeof(PE)
-        more = k32.Process32FirstW(snap, ctypes.byref(pe))
-        while more:
-            if pe.exe.lower() == "python.exe":
-                pids.append(int(pe.pid))
-            more = k32.Process32NextW(snap, ctypes.byref(pe))
-    finally:
-        k32.CloseHandle(snap)
-    rows, unread = [], 0
-    for pid in pids:
-        h = k32.OpenProcess(0x1000, False, pid)                     # PROCESS_QUERY_LIMITED_INFORMATION
-        if not h:
-            unread += 1
-            continue
-        try:
-            need = ctypes.c_ulong(0)
-            buf = ctypes.create_string_buffer(4096)
-            st = nt.NtQueryInformationProcess(h, 60, buf, len(buf), ctypes.byref(need))
-            if st != 0 and need.value > len(buf):
-                buf = ctypes.create_string_buffer(need.value)
-                st = nt.NtQueryInformationProcess(h, 60, buf, len(buf), ctypes.byref(need))
-            if st != 0:
-                unread += 1
-                continue
-            us = US.from_buffer(buf)
-            cl = ctypes.wstring_at(us.Buffer, us.Length // 2) if us.Buffer else ""
-            ft = [ctypes.c_ulonglong(0) for _ in range(4)]
-            started = ""
-            if k32.GetProcessTimes(h, *[ctypes.byref(x) for x in ft]) and ft[0].value:
-                started = time.strftime("%Y-%m-%dT%H:%M:%SZ",
-                                        time.gmtime((ft[0].value - 116444736000000000) / 1e7))
-        finally:
-            k32.CloseHandle(h)
-        cl = " ".join(cl.split())
-        if any(SPEC[b]["script"] in cl for b in BOTS):
-            rows.append([pid, started, cl])
-    # a python.exe we could not read might be one of ours: say "could not tell", not "not running"
-    return None if unread else rows
+    """The bots' rows of the native table (botdata.procs._procs_native), or None. A seam: setting botstats._procs_native
+    sets botdata.procs' too (the facade below), and everything reads that one."""
+    return _procs._procs_native()
 
 
 def read_procs(timeout=40):
-    """[[pid, started_utc_or_'', command line]] for OUR four scripts, or None when Windows could not
-    be asked. None, never [] -- an empty list would read as 'nothing is running'. The native read
-    first; WMI through PowerShell only when it fails."""
-    try:
-        rows = _procs_native()
-    except Exception:                                           # noqa: BLE001
-        rows = None
-    if rows is not None:
-        return rows
-    try:
-        out = subprocess.run(["powershell", "-NoProfile", "-Command", _PS], capture_output=True, text=True,
-                             timeout=timeout, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        if out.returncode != 0:
-            return None
-    except Exception:                                           # noqa: BLE001
-        return None
-    rows = []
-    for line in (out.stdout or "").splitlines():
-        f = line.split("\t", 2)
-        if len(f) < 3 or not any(SPEC[b]["script"] in f[2] for b in BOTS):
-            continue
-        try:
-            rows.append([int(f[0].strip()), f[1].strip(), f[2].strip()])
-        except ValueError:
-            pass
-    return rows
-
-
-def _norm_procs(rows):
-    out = []
-    for r in rows or []:
-        r = list(r)
-        if len(r) == 2:
-            r = [r[0], "", r[1]]
-        out.append([int(r[0]), str(r[1] or ""), str(r[2] or "")])
-    return out
-
-
-def procs_for(c, now, procs):
-    """(rows, ok, cache_changed). `procs` may be a table the caller already holds ([(pid, cmdline)]
-    or [(pid, started_utc, cmdline)]), a callable returning one (or None on failure), or None to
-    read (and cache) it here."""
-    if procs is not None and not callable(procs):
-        return _norm_procs(procs), True, False
-    p = c.get("procs") or {}
-    if procs is None and p.get("rows") is not None and now - float(p.get("t") or 0) < REFRESH_S:
-        return _norm_procs(p["rows"]), True, False
-    rows = procs() if callable(procs) else read_procs()
-    if rows is not None:
-        c["procs"] = {"t": now, "rows": _norm_procs(rows)}
-        return _norm_procs(rows), True, True
-    if p.get("rows") is not None and now - float(p.get("t") or 0) < PROC_STALE_S:
-        return _norm_procs(p["rows"]), True, False
-    return None, False, False
+    """[[pid, started, cmdline]] for OUR scripts, native first then WMI, or None (botdata.procs.read_procs)."""
+    return _procs.read_procs(timeout)
 
 
 def _toks(cl):
@@ -845,120 +724,28 @@ def opt(cl, flag):
     return t[t.index(flag) + 1] if flag in t and t.index(flag) + 1 < len(t) else None
 
 
-def is_bot(name, cl):
-    """Is this command line the LIVE copy of `name`? Paper arms of the same script are not. v-tg-rebuild step 3
-    (2026-10-30): the registry's rule -- its script and its is_live (the race's --paper-live and the jump band's
-    --live --dry-run are not the live copy)."""
-    return _reg.is_bot(name, cl)
+is_bot = _status.is_bot
 
 
 # ---- which bots the phone shows (v-tg-active, 2026-10-30) -------------------------------------------------------
 # The operator, 2026-10-30: "Make sure all commands in telegram are being updated to what bots are actually running
 # including both if one gets paused/removed/added telegram should reflect that by either showing it or not showing it.
 # So remove the paused and removed until they're added back, and show the details for the new one in any relevant
-# commands." A bot is ACTIVE when its live copy runs (is_bot: its script AND --live) AND its stop file is absent: the coin
-# race kept running with pinracepenny.stop set (it refuses every trade) and is not active; the jump band's paper arm (no
-# --live) is not the jump band. A bot that stopped ITSELF for the day (a day stop, a halt) still runs and stays shown. The
-# pin bot is always shown: /status, /pause and /start are about it. Nothing here hides money: every total keeps every
-# bot's markets, and all_bots puts a hidden bot's past money on one line, 'earlier bots'.
-ALWAYS_SHOWN = _reg.table("ALWAYS_SHOWN")       # ("pin",): bots with always_shown (v-tg-rebuild step 3)
-ACTIVE_TTL_S = 10               # the process table + stop files are re-read at most this often for active_bots()
-_ACTIVE = {"t": 0.0, "v": None}
-
-
-def stop_set(name):
-    """True when bot `name`'s stop file exists (False when it cannot be looked at)."""
-    try:
-        return os.path.exists(os.path.join(RESULTS, SPEC[name]["stop"]))
-    except (OSError, KeyError, TypeError):
-        return False
-
-
-def is_active(name, rows, ok):
-    """Shown on the phone? The pin bot always; any other bot when its stop file is absent and a live copy of it is in the
-    process table `rows`. A table that could not be read (ok False) hides nothing but a stop-filed bot: never hidden on a
-    failed read."""
-    if name in ALWAYS_SHOWN:
-        return True
-    if stop_set(name):
-        return False
-    if not ok or rows is None:
-        return True
-    return any(is_bot(name, r[2]) for r in rows)
-
-
-def active_from(rows, ok):
-    """The active bots, in BOTS order, from a process table already read (botstats' [pid, started, cmdline] rows)."""
-    return tuple(b for b in BOTS if is_active(b, rows, ok))
-
-
-def active_bots(procs=None, now=None):
-    """The active bots (BOTS order) for a page that does not read all_bots: `procs` as procs_for takes it -- a table the
-    caller holds, a callable, or None to read Windows here (the native read, milliseconds; when it fails, the cached
-    table if under PROC_STALE_S old, never the 30 s WMI read inside a command). Memoised ACTIVE_TTL_S. Never raises: on
-    any error every bot without a stop file is shown."""
-    try:
-        if procs is not None and not callable(procs):
-            return active_from(_norm_procs(procs), True)
-        t = time.time() if now is None else float(now)
-        if callable(procs) or _ACTIVE["v"] is None or not (0.0 <= t - _ACTIVE["t"] < ACTIVE_TTL_S):
-            if callable(procs):
-                rows = procs()
-            else:
-                try:
-                    rows = _procs_native()
-                except Exception:                                # noqa: BLE001
-                    rows = None
-                if rows is None:
-                    p = load_cache().get("procs") or {}
-                    if p.get("rows") is not None and 0.0 <= t - float(p.get("t") or 0) < PROC_STALE_S:
-                        rows = p["rows"]
-            v = active_from(None if rows is None else _norm_procs(rows), rows is not None)
-            if callable(procs):
-                return v
-            _ACTIVE.update(t=t, v=v)
-        return _ACTIVE["v"]
-    except Exception:                                            # noqa: BLE001
-        return tuple(b for b in BOTS if not stop_set(b) or b in ALWAYS_SHOWN)
-
-
-EARLIER = "earlier"             # all_bots' one line for every hidden bot's past money
-EARLIER_LABEL = "Earlier bots"
-
-
-def shown_parts(a):
-    """[(key, money block)] for a per-bot list that must add up to all_bots' totals: each ACTIVE bot, then 'earlier'
-    (every hidden bot's markets on one line) when it has a market or could not be read, then 'other'."""
-    act = a.get("active") or BOTS
-    out = [(b, a["bots"][b]["money"]) for b in act if b in a["bots"]]
-    e = a.get("earlier")
-    if e and (not e.get("ok") or (e.get("all_time") or {}).get("markets")):
-        out.append((EARLIER, e))
-    out.append(("other", a["other"]))
-    return out
-
-
-def shown_by(a, d, how="sum"):
-    """A by-bot dict of all_bots (a window's by_bot, by_bot_markets, by_bot_put_in, by_bot_pot_pct, a day's by_bot) with
-    the hidden bots folded into one 'earlier' entry: added up (how='sum'), or None (how='none', for a % of a pot, which
-    has no meaning summed over pots). Order: active bots, 'earlier', then the rest ('other')."""
-    act = set(a.get("active") or BOTS)
-    out, hid = {}, []
-    for k, v in (d or {}).items():
-        if k in SPEC and k not in act:
-            hid.append(v)
-        elif k != "other":
-            out[k] = v
-    if hid:
-        out[EARLIER] = None if how == "none" else round(sum(x or 0 for x in hid), 4)
-    if "other" in (d or {}):
-        out["other"] = d["other"]
-    return out
-
-
-def shown_name(a, name):
-    """'earlier' for a hidden bot's name (a missing pot, an error line), the name itself otherwise."""
-    return EARLIER if name in SPEC and name not in (a.get("active") or BOTS) else name
+# commands." v-tg-rebuild step 4 (2026-10-30): the rule and its memo live in botdata/status.py (with each bot's STATE:
+# active / stopping / stopped / down / unknown / retired, and fleet()); these are the same objects under the old names.
+ALWAYS_SHOWN = _status.ALWAYS_SHOWN
+ACTIVE_TTL_S = _status.ACTIVE_TTL_S
+_ACTIVE = _status._ACTIVE
+stop_set = _status.stop_set
+is_active = _status.is_active
+active_from = _status.active_from
+active_bots = _status.active_bots
+fleet = _status.fleet
+EARLIER = _status.EARLIER
+EARLIER_LABEL = _status.EARLIER_LABEL
+shown_parts = _status.shown_parts
+shown_by = _status.shown_by
+shown_name = _status.shown_name
 
 
 # ---- the bots' own logs (what they DID; never money) -------------------------
@@ -1053,7 +840,7 @@ def last_record(path, kinds, pred=None, max_bytes=64 << 20, chunk=1 << 20):
 
 
 def pin_logs():
-    return sorted(glob.glob(os.path.join(RESULTS, SPEC["pin"]["log_glob"])))
+    return sorted(glob.glob(os.path.join(_paths.RESULTS, SPEC["pin"]["log_glob"])))
 
 
 def _halt_why(r):
@@ -1079,7 +866,7 @@ def activity(name, since):
         if not pin_logs():
             paths = None
     else:
-        p = os.path.join(RESULTS, SPEC[name]["log"])
+        p = os.path.join(_paths.RESULTS, SPEC[name]["log"])
         paths = [p] if os.path.exists(p) else None
     out = {"ok": paths is not None, "source": None, "sent": 0, "filled": 0, "contracts_filled": 0.0,
            "not_filled": 0, "refused": 0, "refused_why": {}, "cancelled": 0, "hedges": 0,
@@ -1179,7 +966,7 @@ def fills_since(since, names=None):
                 except OSError:
                     pass
         else:
-            p = os.path.join(RESULTS, SPEC[name]["log"])
+            p = os.path.join(_paths.RESULTS, SPEC[name]["log"])
             logs = paths = [p] if os.path.exists(p) else []
         if not logs:
             unread[name] = "no log file found"
@@ -1208,7 +995,7 @@ INFRA_VER = r"v-(tg|phone|telegram|wifi|recorder|collector)\b"
 def version_of(name):
     """The newest VERSIONS.md heading for this bot: (name, epoch or None, title) or None."""
     try:
-        with open(os.path.join(RESULTS, VERSIONS_NAME), encoding="utf-8", errors="replace") as fh:
+        with open(os.path.join(_paths.RESULTS, VERSIONS_NAME), encoding="utf-8", errors="replace") as fh:
             lines = fh.readlines()
     except OSError:
         return None
@@ -1282,7 +1069,7 @@ def settings_clean(name, start, cl):
 def _read_json(name):
     """A RESULTS json file, or None (a settings hook's reader: the pin bot's pinrun-live-size.json)."""
     try:
-        with open(os.path.join(RESULTS, name), encoding="utf-8") as fh:
+        with open(os.path.join(_paths.RESULTS, name), encoding="utf-8") as fh:
             return json.load(fh)
     except (OSError, ValueError):
         return None
@@ -1297,7 +1084,7 @@ def _fmt_g(x):
 
 def running(name, rows, ok, now):
     spec = SPEC[name]
-    stop = os.path.join(RESULTS, spec["stop"])
+    stop = os.path.join(_paths.RESULTS, spec["stop"])
     out = {"alive": None, "pid": None, "pids": [], "started_utc": None, "started_et": None, "command": None,
            "keepalive": spec["keepalive"], "stop_flag": os.path.exists(stop), "stop_flag_et": None,
            "stop_flag_text": None, "halted": None, "log": None, "log_age_s": None, "log_last_et": None,
@@ -1330,7 +1117,7 @@ def running(name, rows, ok, now):
         logs = pin_logs()
         log = logs[-1] if logs else None
     else:
-        log = os.path.join(RESULTS, spec["log"])
+        log = os.path.join(_paths.RESULTS, spec["log"])
         log = log if os.path.exists(log) else None
     start = None
     if log:
@@ -2172,8 +1959,12 @@ def selftest():
 
     # 0. READ ONLY, BY CONSTRUCTION. The forbidden words are assembled from pieces so this check
     # does not find itself; everything else in the file is scanned.
-    with open(os.path.abspath(__file__), encoding="utf-8") as fh:
-        src = fh.read()
+    # v-tg-rebuild step 4 (2026-10-30): the process reader moved to botdata/procs.py and the shown-bots rule to
+    # botdata/status.py; the scans read them with this file
+    src = ""
+    for _f in (os.path.abspath(__file__), _procs.__file__, _status.__file__):
+        with open(_f, encoding="utf-8") as fh:
+            src += fh.read() + "\n"
     # 2026-10-02: the transfer HISTORY (GET .../transfers, plural) is read for the pot; the singular path
     # is the one that MOVES money, and it stays forbidden.
     bad = [p for p in (r"\b" + "PO" + r"ST\b", r"\b" + "DEL" + r"ETE\b", r"\b" + "PA" + r"TCH\b", r"\b" + "PU" + r"T\b",
@@ -2297,10 +2088,10 @@ def selftest():
             for r in recs:
                 fh.write(json.dumps(r) + "\n")
 
-    saved = (RESULTS, dict(_MEMO), dict(_BACK))
+    saved = (_paths.RESULTS, dict(_MEMO), dict(_BACK))
     td = tempfile.mkdtemp(prefix="botstats-")
     try:
-        globals()["RESULTS"] = td
+        _paths.set_results(td)
         _MEMO.update(key=None, data=None)
         _BACK.clear()
         # planted logs
@@ -2756,7 +2547,7 @@ def selftest():
            "NULL: pot_settlements with Kalshi refusing gives no pot's rows -- never an empty list read as 'nothing settled'")
         fail["all"] = False
     finally:
-        globals()["RESULTS"] = saved[0]
+        _paths.set_results(saved[0])
         _MEMO.clear()
         _MEMO.update(saved[1])
         _BACK.clear()
@@ -2766,7 +2557,7 @@ def selftest():
     # 5. the EMPTY world: no settlements, no positions, no logs, nothing running
     td = tempfile.mkdtemp(prefix="botstats-empty-")
     try:
-        globals()["RESULTS"] = td
+        _paths.set_results(td)
         _MEMO.update(key=None, data=None)
         _BACK.clear()
 
@@ -2796,7 +2587,7 @@ def selftest():
         ck(all(d["before_first"] for d in e["bots"]["pin"]["money"]["days_7"]),
            "EMPTY: every day is before the first settlement, so the phone lists none")
     finally:
-        globals()["RESULTS"] = saved[0]
+        _paths.set_results(saved[0])
         _MEMO.clear()
         _MEMO.update(saved[1])
         _BACK.clear()
@@ -2814,7 +2605,7 @@ def selftest():
     td3 = tempfile.mkdtemp(prefix="botstats-wx-")
     pool_saved = (dict(SUB_POOL), dict(POT_POOL_ONLY))
     try:
-        globals()["RESULTS"] = td3
+        _paths.set_results(td3)
         SUB_POOL["3"] = 0
         POT_POOL_ONLY.pop("3", None)
         _MEMO.update(key=None, data=None)
@@ -2931,7 +2722,7 @@ def selftest():
         ck(w2["pot_check"]["3"]["now"] == 49.5 and w2["pot_check"]["1"]["now"] == 5.0,
            "NULL: $5 of subaccount 1 sitting in pool 0 is subaccount 1's, never the weather pot's")
     finally:
-        globals()["RESULTS"] = saved[0]
+        _paths.set_results(saved[0])
         _MEMO.clear()
         _MEMO.update(saved[1])
         _BACK.clear()
@@ -2950,7 +2741,7 @@ def selftest():
     NOW7 = float(calendar.timegm((2026, 10, 30, 12, 30, 0)))           # 8:30 AM ET, Fri Oct 30
     td4 = tempfile.mkdtemp(prefix="botstats-jb-")
     try:
-        globals()["RESULTS"] = td4
+        _paths.set_results(td4)
         _MEMO.update(key=None, data=None)
         _BACK.clear()
         _ACTIVE.update(t=0.0, v=None)
@@ -3131,7 +2922,7 @@ def selftest():
            and "forecaster" not in tx7 and "weather" not in tx7,
            "ALL-BOTS text: the jump band named, the race / forecaster / weather not -- their money on the 'earlier' line")
     finally:
-        globals()["RESULTS"] = saved[0]
+        _paths.set_results(saved[0])
         _MEMO.clear()
         _MEMO.update(saved[1])
         _BACK.clear()
@@ -3143,9 +2934,9 @@ def selftest():
 
     # 2026-10-01: a heading that ships several bots at once is each bot's own version, by name
     td2 = tempfile.mkdtemp(prefix="botstats_v_")
-    saved2 = RESULTS
+    saved2 = _paths.RESULTS
     try:
-        globals()["RESULTS"] = td2
+        _paths.set_results(td2)
         with open(os.path.join(td2, VERSIONS_NAME), "w", encoding="utf-8") as fh:
             fh.write("# Versions\n\n"
                      "# v-topup -- LIVE 2026-09-30 12:12:02Z (pid 4447780): top-up to one bet\n"
@@ -3165,7 +2956,7 @@ def selftest():
            "an INSTALLED / PREPARED heading (live only at the next restart) is not the running version: pin is "
            "still v-ladderboost -- the phone's /stats parser has always skipped them")
     finally:
-        globals()["RESULTS"] = saved2
+        _paths.set_results(saved2)
         shutil.rmtree(td2, ignore_errors=True)
     _s40, _t40 = settings_race(None, "python -u research/pinracearm.py --live --max-contracts 40 --max-stake 120 "
                                      "--live-max-losses 2")
@@ -3190,6 +2981,33 @@ def selftest():
        "shift_day walks the calendar across both changes and the days join up: Nov 1 is 25 hours, Mar 8 is 23, the "
        "rest 24 (%s)" % _len)
     print("botstats selftest: OK")
+
+
+# ---- botstats as a module object (v-tg-rebuild step 4, 2026-10-30) ---------------------------------------------------
+# Callers set names on this module: tests set botstats.RESULTS to a temp folder, the golden harness sets
+# botstats._procs_native / read_procs to its recorded table. The code those names steer now lives in botdata, so this
+# module's class forwards them: RESULTS is a property over botdata.paths (read and set), and setting a name botdata
+# owns sets it there as well (_FORWARD), so every reader sees the one value.
+_FORWARD = {"_procs_native": _procs, "read_procs": _procs, "_norm_procs": _procs, "procs_for": _procs}
+
+
+class _Botstats(types.ModuleType):
+    @property
+    def RESULTS(self):
+        return _paths.RESULTS
+
+    @RESULTS.setter
+    def RESULTS(self, value):
+        _paths.set_results(value)
+
+    def __setattr__(self, name, value):
+        owner = _FORWARD.get(name)
+        if owner is not None:
+            setattr(owner, name, value)
+        types.ModuleType.__setattr__(self, name, value)
+
+
+sys.modules[__name__].__class__ = _Botstats
 
 
 def main():
