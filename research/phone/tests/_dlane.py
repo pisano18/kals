@@ -30,10 +30,24 @@ from phone import command as CM                                     # noqa: E402
 from phone import context as CX                                     # noqa: E402
 from phone.html import Html                                          # noqa: E402
 
-T = 1793448000.0            # 2026-10-30 14:40Z (10:40 AM ET)
+T = 1793448000.0            # 2026-10-31 12:00Z (8:00 AM ET)
 DAY = pindesk.et_day(T)
 TMP = tempfile.mkdtemp(prefix="test_dlane_")
 pp.LOG = os.path.join(TMP, "pinphone.log")       # every log() line of these tests (phone.log asks pinphone's LOG)
+
+
+def _no_kalshi(*a, **k):
+    raise RuntimeError("tests: no Kalshi (a botstats read was not planted)")
+
+
+# a read a test forgot to plant fails (Kalshi) or reads as unreadable (the process table): never kauth, a key, or this
+# machine's processes
+import botdata.kalshi as _bk                                         # noqa: E402
+import botdata.procs as _bp                                          # noqa: E402
+_bk.default_getter = botstats.default_getter = _no_kalshi
+for _name in ("native_rows", "wmi_rows", "read_all"):
+    if hasattr(_bp, _name):
+        setattr(_bp, _name, lambda *a, **k: None)
 
 HEALTH = {"alive": False, "pid": None, "quiet_s": None, "flag": False, "open": {}, "watchdog_s": 30,
           "kalshi_ok": True, "feeds_ok": True, "disk_gb": 42.5, "checked": "Checked just now"}
