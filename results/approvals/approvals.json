@@ -11,6 +11,17 @@
    "added_by": "Claude (assistant), for the operator",
    "date": "2026-10-30",
    "sha256": "e216593c377b9f8251daf5939e33b4f7c112ca2167064b6653d014c8300b7bcf"
+  },
+  {
+   "id": "fx30",
+   "title": "FX taker: restart it on the 30-second window again",
+   "description": "The FX code on the server is already back on the 30-second window (commit 42935f8), but the running FX taker still uses 45 seconds until it restarts. Today's 1:45 PM silver and platinum losses were both bought 44.9 seconds out, in the stretch added this morning: that stretch bought 96 and lost 2 (-$10.75), while 15-30 seconds bought 34 and lost 0 (+$3.32). The script waits for minutes 1-11 of a quarter hour, writes FX's stop file so it stands down with nothing open, waits for it to exit, removes the stop file and runs the server's keep-alive (KalsBoot), which starts FX again on the new code within a minute. FX misses at most one 15-minute round.",
+   "stop_rule": "If FX loses again on the 30-second window before 11-03, the 11-03 read decides between keeping it, dropping platinum/silver, or pausing FX.",
+   "script": "fx_restart.ps1",
+   "log": "fx_restart.out",
+   "added_by": "Claude (assistant), for the operator",
+   "date": "2026-10-30",
+   "sha256": "b02365ece371c08d6c427ccb6a7884b1e8be6fef5c2f8b2d3100d0ff81698f96"
   }
  ]
 }
