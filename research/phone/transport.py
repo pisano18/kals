@@ -83,6 +83,15 @@ def photo_body(chat_id, png, caption, boundary):
     return b"".join(out)
 
 
+def get_url(url, timeout=10):
+    """One GET of `url` -- the outside 'is it alive' ping (phone/alive.py; step 12, lane Q). Returns the HTTP status;
+    raises on a network error or an HTTP error status (the caller logs it). Reads at most 1 KB of the answer."""
+    req = urllib.request.Request(url, headers={"User-Agent": "kals-phone-alive/1"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        r.read(1024)
+        return int(getattr(r, "status", 200) or 200)
+
+
 def net_error(e):
     """True when a send failed on the CONNECTION (no answer, reset, TLS timeout, Telegram 5xx or 429) -- worth
     sending again. False when Telegram refused the message itself (HTTP 4xx), which a resend would only repeat."""

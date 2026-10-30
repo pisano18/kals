@@ -1,6 +1,6 @@
 """The pin bot: 15-minute coin markets + hourly Bitcoin, main account (subaccount 0). Every fact copied verbatim from
 botstats.py / pinphone.py / tgcharts.py at 8a9c5e1 (v-tg-rebuild step 1, 2026-10-30)."""
-from bots.spec import Bot, Feature, Logs, Pot, Records, VersionRule, live_flag, opt, toks
+from bots.spec import Book, Bot, Feature, Gauge, Logs, Pot, Records, VersionRule, live_flag, opt, toks
 from botdata.clock import et_clock, utc_epoch
 from botdata.fmt import cents as _c, num as _num, usd
 
@@ -105,6 +105,75 @@ def size_words(si):
         (" on a %s bank" % si.usd2(sz["bank"])) if si.num(sz.get("bank")) is not None else "")
 
 
+# v-tg-rebuild step 12, lane Q (2026-10-30): the phone's early warning before the pin bot's loss abort trips
+def stop_gauges(wi):
+    """The pin bot's loss abort (pinrun.risk_abort): it halts when the run's settled money, or the ET day's, reaches
+    loss_abort (its newest loss_cap / autosize record; the start record before any). One gauge: the worse of the two,
+    warned at 60% and 80% of the line, once each per ET day and run."""
+    import glob
+    import os
+    logs = sorted(glob.glob(os.path.join(wi.results, "pinrun-live-*.jsonl")))
+    if not logs:
+        return []
+    path = logs[-1]
+    lim = wi.last_record(path, ("loss_cap", "autosize")) or wi.last_record(path, ("start",)) or {}
+    line = _num(lim.get("loss_abort"))
+    if line is None or line >= 0:
+        return []
+    s = wi.last_record(path, ("settled",)) or {}
+    run = _num(s.get("realised")) or 0.0
+    day = (_num(s.get("day_realised")) or 0.0) if s and wi.et_day(wi.epoch(s.get("t")) or 0) == wi.today else 0.0
+    h = wi.last_record(path, ("halt",)) or {}
+    hit = (str(h.get("why") or "").startswith(("DAY loss cap", "loss abort"))
+           and wi.et_day(wi.epoch(h.get("t")) or 0) == wi.today)
+    run_id = os.path.basename(path)[len("pinrun-live-"):-len(".jsonl")]
+    money, counted = (day, "settled today") if day <= run else (run, "settled this run")
+    return [Gauge(key="abort", what="its loss abort", money=round(money, 2), line=line,
+                  warn_at=(round(0.6 * line, 2), round(0.8 * line, 2)), period="%s run %s" % (wi.today, run_id),
+                  counted=counted, trips="it halts: no new bets until /start", tripped=hit)]
+
+
+# v-tg-rebuild step 12, lane Q (2026-10-30): the phone's balance check -- the main account as the pin bot's log has it
+def books(wi, upto):
+    """The main account's money as the pin bot last read it (its newest autosize 'bank $X', or an external-move record's
+    bank, both read while flat) at or before `upto`, plus every market it settled since (settled.pnl_c, fees in)."""
+    import glob
+    import os
+    import re
+    logs = sorted(glob.glob(os.path.join(wi.results, "pinrun-live-*.jsonl")))
+    if not logs:
+        return []
+    path = logs[-1]
+
+    def banked(r):
+        t = wi.epoch(r.get("t"))
+        return t is not None and t <= upto and (_num(r.get("bank")) is not None or re.search(r"bank \$([\d.]+)", str(
+            r.get("why") or "")))
+    r = wi.last_record(path, ("autosize", "external"), banked)
+    if not r:
+        return []
+    m = re.search(r"bank \$([\d.]+)", str(r.get("why") or ""))
+    value0 = _num(r.get("bank")) if r.get("kind") == "external" else (float(m.group(1)) if m else None)
+    t0 = wi.epoch(r.get("t"))
+    if value0 is None or t0 is None:
+        return []
+    settled, n, tickers, last = 0.0, 0, set(), None
+    for x in wi.read_since(path, t0) or []:
+        t = wi.epoch(x.get("t"))
+        if t is None or t <= t0 or t > upto:
+            continue
+        k = x.get("kind")
+        if k == "settled":
+            settled += (_num(x.get("pnl_c")) or 0.0) / 100.0
+            n += 1
+            tickers.add(str(x.get("ticker")))
+            last = t
+        elif (k == "order" and (_num(x.get("filled")) or 0) > 0) or k == "hedge":
+            last = t
+    return [Book(sub="0", t0=t0, value0=value0, settled=round(settled, 4), markets=n, tickers=frozenset(tickers),
+                 since="its last sizing" if r.get("kind") == "autosize" else "it saw money move", last_t=last)]
+
+
 BOT = Bot(
     name="pin", label="Pin bot", short="Pin bot", word="pin bot",
     what="15-minute coin markets + hourly Bitcoin",
@@ -128,6 +197,8 @@ BOT = Bot(
     page_footer="More on pin: /stats (win rate vs break-even), /fills (today's orders), /open, /losses, /hedges.",
     activity=activity,
     funds_size=size_words,
+    stop_gauges=stop_gauges,     # step 12 (lane Q): the phone's early warnings
+    books=books,                 # step 12 (lane Q): the phone's balance check
     ledger_book="crypto",           # pinday.book_of's name for its markets (/stats' lifetime by bot)
     speed=None,                # /speed's pin section is its own (speed_gather)
     features=(

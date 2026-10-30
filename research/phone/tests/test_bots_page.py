@@ -31,7 +31,9 @@ def test_render_is_bs_all_html_of_all_bots():
     def all_bots(now, getter, procs):
         asked.append((now, getter, procs))
         return a
-    with patched((botstats, "all_bots", all_bots), (M, "bs_all_html", lambda x: ["page of", str(x is a)])):
+    import phone.monitor as MON                 # step 12 (lane Q): no DOWN warning line in this planted world
+    with patched((botstats, "all_bots", all_bots), (M, "bs_all_html", lambda x: ["page of", str(x is a)]),
+                 (MON, "down_lines", lambda ctx: [])):
         got = M.COMMAND.run(CX.Ctx.from_phone(ph, "/bots"))
     assert isinstance(got, Html) and str(got) == "page of\nTrue"
     assert asked == [(ph.now(), ph.bs_getter, ph.bs_procs)]

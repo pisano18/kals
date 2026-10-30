@@ -1,6 +1,7 @@
 """/status (/s) -- is it trading, with the evidence: the desktop banner's state and why, the main account's bank and
 bet size, every pot together (/bots), the main account's day, every bot's day (/today), the pin bot's open bets, the
-watchdog, recorders and disk.
+watchdog, recorders and disk. Step 12 (lane Q): a bot that is DOWN (not running, no stop file) gets one warning line at
+the top (phone/monitor.py down_lines).
 
 v-tg-rebuild step 9, lane D1 (2026-10-30): Phone.text_status as a command module (load + render), byte-identical (golden
 shadow). No wall around the whole (as before); each of the two botstats lines keeps its own: an error there costs only
@@ -14,6 +15,7 @@ from phone.command import Command, declare
 from phone.commands.day import day_data, day_lines
 from phone.html import Html, esc, i_
 from phone.log import log
+from phone import monitor as _monitor
 from phone.render.botcards import _bs, main_shared, main_sharers, main_words
 from pindesk import close_et, coin, et_day, status_of
 
@@ -29,11 +31,12 @@ def _all_bots(ctx):
 
 def load(ctx):
     """Phone.text_status's reads, in its order."""
+    down = _monitor.down_lines(ctx)         # step 12 (lane Q): a DOWN bot's warning line at the top
     h = ctx.health()
     state, hl, det, _c = status_of(h)
     b = ctx.ledger.bank()
     dep = ctx.ledger.deposited()
-    d = {"h": h, "state": state, "hl": hl, "det": det, "b": b, "dep": dep}
+    d = {"h": h, "state": state, "hl": hl, "det": det, "b": b, "dep": dep, "down": down}
     if b:
         d["mw"] = main_words(ctx.active())
         d["a1"] = _all_bots(ctx)
@@ -52,7 +55,7 @@ def render(d, ctx):
     body, _nl, ev = d["det"].rpartition("\n")
     if not body:
         body, ev = ev, ""
-    lines = ["%s <b>%s</b>" % (ctx.pp.state_dot(d["state"]), esc(d["hl"])), esc(body)]
+    lines = list(d.get("down") or []) + ["%s <b>%s</b>" % (ctx.pp.state_dot(d["state"]), esc(d["hl"])), esc(body)]
     if ev:
         lines.append(i_(ev))
     if b:

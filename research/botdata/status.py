@@ -17,7 +17,13 @@ total keeps every bot's markets, and all_bots puts a hidden bot's past money on 
 fleet(procs=None, now=None) -> Fleet: every bot's BotStatus at once, memoised FLEET_TTL_S, never raising (on any error
 every non-retired bot without a stop file is shown, UNKNOWN). active_bots() is fleet().shown, as a tuple in bot order.
 pinphone.fleet() (its paper arms, by role) is a different view; the phone switches to this table in a later step.
+
+DOWN, ONE-LINE POLICY (v-tg-rebuild step 12, lane Q, 2026-10-30; DESIGN 3.3's decision): a DOWN bot stays out of the
+bot-by-bot lists like any hidden bot, but /status and /bots print one warning line for it at the top, and the phone's
+alerts tell the operator when a bot ENTERS DOWN (after a debounce: phone/monitor.py) and when it is back. down(fleet)
+names them; last_log_t(name) is when its own log last moved (the line says it: 'last log 10:42 AM').
 """
+import glob
 import os
 import time
 from dataclasses import dataclass, field
@@ -186,6 +192,31 @@ def fleet(procs=None, now=None):
         return _fail_safe(now)
 
 
+def down(f):
+    """The names of fleet `f`'s DOWN bots (not running, no stop file), in bot order. () when the table was unreadable."""
+    return tuple(s.name for s in f.bots if s.state == DOWN) if f.procs_ok else ()
+
+
+def last_log_t(name):
+    """When bot `name`'s own log last changed (the newest mtime of its Logs.path / Logs.glob in RESULTS), or None."""
+    try:
+        lg = _reg.get(name).logs
+        paths = []
+        if lg.path:
+            paths.append(os.path.join(_paths.RESULTS, lg.path))
+        if lg.glob:
+            paths += glob.glob(os.path.join(_paths.RESULTS, lg.glob))
+        ts = []
+        for p in paths:
+            try:
+                ts.append(os.path.getmtime(p))
+            except OSError:
+                pass
+        return max(ts) if ts else None
+    except Exception:                                           # noqa: BLE001
+        return None
+
+
 def active_bots(procs=None, now=None):
     """The active bots (BOTS order) for a page that does not read all_bots: `procs` as procs_for takes it -- a table the
     caller holds, a callable, or None to read Windows here (the native read, milliseconds; when it fails, the cached
@@ -244,5 +275,6 @@ def shown_name(a, name):
 
 
 __all__ = ["ACTIVE", "STOPPING", "STOPPED", "DOWN", "UNKNOWN", "RETIRED", "SHOWN_STATES", "BotStatus", "Fleet",
-           "fleet", "fleet_from", "status_of", "is_bot", "stop_set", "is_active", "active_from", "active_bots",
+           "fleet", "fleet_from", "status_of", "is_bot", "stop_set", "is_active", "active_from", "active_bots", "down",
+           "last_log_t",
            "shown_parts", "shown_by", "shown_name", "EARLIER", "EARLIER_LABEL", "ALWAYS_SHOWN"]

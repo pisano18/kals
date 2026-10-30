@@ -81,13 +81,24 @@ def test_declaration():
         assert c[0].kind_of(n) is None and tgcharts.kind_of(n) is None
 
 
+def _new_since_legacy(line):
+    """A /help line of a command the legacy phone never had (step 12 adds /week /month /quiet /alive ...): its first
+    /name is nowhere in the legacy template. They are checked on their own below; the legacy comparisons leave them out."""
+    import re
+    m = re.match(r"(?:<code>)?(/[a-z_]+)", line)
+    return bool(m) and not re.search(re.escape(m.group(1)) + r"\b", str(pp.help_text(None)))
+
+
 def test_rows_off_declared_commands_match_the_table():
     """Step 10 switches /help to the declared Commands (use_commands): every Command declared now carries exactly its
     HELP_ENTRIES row, no two rows share a place, and the template built from them (plus the rows of modules not merged
     in this tree yet) is byte-identical."""
     failed = CM.discover()
     assert not failed, failed
-    cmds = CM.commands()
+    allc = CM.commands()
+    new = [c for c in allc if c.help_line and _new_since_legacy(c.help_line)]
+    assert all(c.section in CM.SECTIONS and c.section != "one_bot" for c in new), new
+    cmds = [c for c in allc if c not in new]
     rows = H.entries(cmds)
     assert rows, "no listed command declared"
     added = S12.rows()                                   # v-tg-step12 (lane R): /resume, /approve, /move -- new rows

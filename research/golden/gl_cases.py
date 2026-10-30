@@ -28,6 +28,11 @@ BASE_CMDS = [
     "/?", "/HELP", "hello there", "/nosuchcommand", "",
 ]
 TICKS = ["alerts-state", "alerts-recorder", "alerts-disk", "alerts-loss", "alerts-daily", "update-flag"]
+try:                    # v-tg-rebuild step 12 (lane Q): the monitor's alert scripts, in their own file
+    import gl_ticks_q as _TQ
+    TICKS += list(_TQ.TICKS)
+except ImportError:
+    _TQ = None
 DATA = ["all_bots", "active_bots", "owner", "version_of", "kind_of", "tables"]
 SYNTH_TICKERS = [  # owner() on tickers of every family, in every sub (the fixture's own tickers are added)
     "KXBTC15M-26OCT301300-00", "KXETH15M-26OCT301300-00", "KXBNB15M-26OCT301300-00", "KXHYPE15M-26OCT301300-00",
@@ -492,6 +497,8 @@ def run_tick(rt, which):
         out["flag_left"] = os.path.exists(flag)
         out["exit_now"] = bool(getattr(ph, "_exit_now", False))
         return out
+    if _TQ is not None and which in _TQ.TICKS:
+        return _TQ.run(rt, ph, which, _tick)
     h0 = copy.deepcopy(rt.health0)
     ticks.append(_tick(rt, ph, "first (learns, sends nothing)"))
     if which == "alerts-state":
