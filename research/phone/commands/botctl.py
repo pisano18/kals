@@ -212,6 +212,12 @@ def resume_cmd(ctx):
     if how is None:
         return Html("⚠️ <b>%s has no keep-alive and no start recipe</b>, so the phone will not guess how to start it. "
                     "Nothing changed.\n%s" % (esc(b.label), esc(state_line(ctx, b.name))))
+    if stop_set and running and not b.keepalive:
+        _confirm.drop(chat, "resume")
+        return Html("⏳ <b>%s is still winding down</b> (its stop file is set and it is still running): a bot that saw "
+                    "its stop file finishes its open bets and exits, and nothing would start it again. Send "
+                    "<code>/resume %s</code> once it has stopped; nothing changed.\n%s" % (
+                        esc(b.label), esc(short(b)), esc(state_line(ctx, b.name))))
     if not stop_set and b.start is None:
         return Html("▶️ %s has no stop file, so there is nothing to resume: %s.\n%s" % (
             esc(b.label), esc(how), esc(state_line(ctx, b.name))))
@@ -224,12 +230,20 @@ def resume_cmd(ctx):
                    "so it may stop again at once."
         return Html("▶️ <b>Resume %s?</b> %s\nHow it comes back: %s.%s\nReply <code>/resume %s yes</code> within %d minutes."
                     % (esc(b.label),
-                       esc(("Its stop file (since %s) says: “%s”." % (_since(b.name), said)) if stop_set
+                       esc(("Its stop file (since %s) says: “%s”" % (_since(b.name), said)) if stop_set
                            else "It has no stop file and is not running."),
                        esc(how), esc(warn), esc(short(b)), ASK_TTL_S // 60))
     got, why = _confirm.take(chat, "resume", now, key=b.name)
     if got is None:
         return _not_confirmed(why, "resume", b)
+    path = None
+    if not (b.keepalive or running):                # the phone starts it: the recipe must be runnable BEFORE anything
+        try:
+            path = _launch.resolve_script(b.start.script)
+        except ValueError as e:
+            _journal.record("resume", t=now, bot=b.name, chat=chat, ok=False, error=str(e)[:200])
+            return "%s: its start recipe cannot run (%s), so its stop file stays. Nothing changed." % (
+                b.label, str(e)[:200])
     try:
         removed = _stop.remove(b.name)
     except Exception as e:                                      # noqa: BLE001
@@ -241,26 +255,20 @@ def resume_cmd(ctx):
         _journal.record("resume", t=now, bot=b.name, chat=chat, ok=True, removed=removed, state=line)
         return Html("▶️ <b>%s resumed</b>: its stop file is %s (%s ET). %s.\n%s" % (
             esc(b.label), "removed" if removed else "already gone", esc(et_str(now)),
-            esc("It is still running and trades again from its next tick" if running else how[0].upper() + how[1:]),
+            esc(("It is still running; if it already saw the file it finishes its open bets and exits, and %s"
+                 % how) if running else how[0].upper() + how[1:]),
             esc(line)))
-    return start_bot(ctx, b, removed, now)
+    return start_bot(ctx, b, path, removed, now)
 
 
-def start_bot(ctx, b, removed, now):
-    """Run b.start detached (WMI) on a worker: reply now, then say the launch, the log tail and the state."""
+def start_bot(ctx, b, path, removed, now):
+    """Run b.start (its script already resolved: `path`) detached through WMI on a worker: reply now, then say the
+    launch, the log tail and the state."""
     chat = ctx.chat_id
     with _BUSY_LOCK:
         if b.name in _BUSY:
             return "⏳ Still starting %s from the last command." % b.label
         _BUSY.add(b.name)
-    try:
-        path = _launch.resolve_script(b.start.script)
-    except ValueError as e:
-        with _BUSY_LOCK:
-            _BUSY.discard(b.name)
-        _journal.record("resume", t=now, bot=b.name, chat=chat, ok=False, removed=removed, error=str(e)[:200])
-        return "%s: stop file %s, but its start recipe cannot run: %s" % (
-            b.label, "removed" if removed else "already gone", str(e)[:200])
 
     def worker():
         try:

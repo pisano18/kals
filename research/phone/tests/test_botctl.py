@@ -189,7 +189,17 @@ def test_resume_running_bot_with_stop_file():
     SF.write("fx", "test")
     run("/resume fx")
     r, _c = run("/resume fx yes", now=T + 1)
-    assert "still running and trades again" in r and "running, no stop file" in r, r
+    assert "It is still running; if it already saw the file" in r and "keep-alive" in r, r
+    assert "running, no stop file" in r and not os.path.exists(stop("fx")), r
+
+
+def test_a_winding_down_bot_without_keepalive_waits():
+    clean()
+    SF.write("jumpband", "test")
+    r, _c = run("/resume jb")                                   # its live copy still runs (JB_LIVE)
+    assert "still winding down" in r and "nothing changed" in r and os.path.exists(stop("jumpband")), r
+    r, _c = run("/resume jb yes", now=T + 1)
+    assert os.path.exists(stop("jumpband")) and SPAWNED == [], r
 
 
 def test_already_running_and_nothing_to_resume():
@@ -269,7 +279,8 @@ def test_missing_recipe_script_is_said():
     SF.write("jumpband", "test")
     run("/resume jb", procs=())
     r, _c = run("/resume jb yes", procs=(), now=T + 1)
-    assert "cannot run" in r and "not there" in r and SPAWNED == [], r
+    assert "cannot run" in r and "not there" in r and "stop file stays" in r and SPAWNED == [], r
+    assert os.path.exists(stop("jumpband")), "a recipe that cannot run leaves the stop file where it was"
 
 
 # ---- the actions' own rails -------------------------------------------------------------------------------------------

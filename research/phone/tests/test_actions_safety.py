@@ -63,6 +63,19 @@ def test_money_moving_paths_only_in_money():
     assert set(users(r"\bkauth\.(headers|_PK|KEY_ID)\b")) <= {MONEY}, "only money.py signs with kauth's key"
 
 
+def test_money_names_only_the_transfer_paths():
+    """money.py exists (step 12 lane R 3/3), names the two transfer paths and the cash read, signs through kauth.headers
+    and never touches the key itself."""
+    src = sources().get(MONEY)
+    assert src is not None, "phone/actions/money.py is missing"
+    paths = set(re.findall(r"""["'](/portfolio/[A-Za-z_/]+)["']""", src))
+    assert paths == {"/portfolio/subaccounts/" + "transfer", "/portfolio/intra_exchange_instance_" + "transfer",
+                     "/portfolio/balance"}, paths
+    assert "kauth.headers(" in src and "ALLOWED_POST" in src
+    for bad in ("_PK", "KEY_FILE", "load_pem", ".pem", "load_key", "sign_headers"):
+        assert bad not in src, "money.py reaches the key itself: %s" % bad
+
+
 def test_no_order_paths_anywhere():
     for p in ORDER_PATHS:
         assert users(p) == [], (p, users(p))

@@ -13,6 +13,7 @@ a semicolon, a pipe, a redirect or an ampersand.
 SEAMS for the tests: SPAWN(cmdline, cwd) -> (pid or None, error or None) and WAIT(pid, timeout_s) -> exit code / None.
 Under KALS_TESTING=1 the real ones refuse (a test never starts a process); the tests plant stubs.
 """
+import base64
 import os
 import re
 import subprocess
@@ -73,8 +74,9 @@ def wmi_create(cmdline, cwd):
     script = ("$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments "
               "@{CommandLine = %s; CurrentDirectory = %s}; Write-Output ('WMI {0} {1}' -f $r.ReturnValue, $r.ProcessId)"
               % (psq(cmdline), psq(cwd)))
+    enc = base64.b64encode(script.encode("utf-16-le")).decode("ascii")     # no quoting of the script on the way in
     try:
-        r = subprocess.run([POWERSHELL, "-NoProfile", "-NonInteractive", "-Command", script], capture_output=True,
+        r = subprocess.run([POWERSHELL, "-NoProfile", "-NonInteractive", "-EncodedCommand", enc], capture_output=True,
                            text=True, timeout=SPAWN_TIMEOUT_S, creationflags=CREATE_NO_WINDOW)
     except Exception as e:                                      # noqa: BLE001
         return None, "could not run PowerShell: %s" % str(e)[:200]
