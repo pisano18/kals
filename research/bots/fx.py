@@ -158,7 +158,7 @@ def books(wi, upto):
 
 BOT = Bot(
     name="fx", label="FX taker", short="FX taker", word="FX taker",
-    what="buys the side already bid 98c+ at 99c or less 45 to 15 s before the close of the 15-minute markets (30 to 15 s "
+    what="buys the side already bid 98c+ at 99c or less 30 to 15 s before the close of the 15-minute markets (45 to 15 s on 10-30 only; 30 to 15 s "
          "until 10-30, v-fx-from45): the 5 currency pairs (subaccount 4) and the 8 commodities (subaccount 5), 10 "
          "contracts a market",
     help=("/fx — the FX taker: the 5 currency pairs (subaccount 4) and the 8 commodities (subaccount 5), the same detail "
@@ -191,7 +191,7 @@ BOT = Bot(
     speed=Speed(rank=1, field="kind", kind="placed"),
     features=(
         Feature("fxtake_live.py", "--live", None, "FX taker (LIVE, subaccounts 5 + 4)",
-                "In the last 45 to 15 seconds of each 15-minute currency and commodity market (30 to 15 until 10-30), "
+                "In the last 30 to 15 seconds of each 15-minute currency and commodity market (45 to 15 for one day, 10-30), "
                 "buys the side already bid 98c or more at 99c or less, 10 contracts: the 5 currency pairs from "
                 "subaccount 4, the 8 commodities from subaccount 5.", pos=5, hides=True),
     ),

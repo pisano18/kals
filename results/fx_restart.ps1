@@ -1,5 +1,5 @@
 # fx_restart.ps1 -- 2026-10-30 (v-fx-from45, operator: "Sure widen fx if the profit loss rate increases").
-# Restarts the FX taker so it runs the pulled code (ENTRY_FROM 45 s; boot_all passes no --from, so no boot_all edit).
+# Restarts the FX taker so it runs the pulled code (ENTRY_FROM 30 s since v-fx-back30; boot_all passes no --from, so no boot_all edit).
 # Launch detached (WMI). Steps: wait for minutes 1-11 of the quarter hour (the bot only buys in the last 45 s before a
 # close and is flat once the close has settled) -> write results\fxtake-live.stop (no new orders, exits when flat) ->
 # once exited: delete the stop file, run KalsBoot -> boot_all starts it again on the new code -> check the start record.
@@ -9,12 +9,12 @@ function Say($m) { ("{0} {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $m) |
 function FxPids { @(Get-CimInstance Win32_Process -Filter "Name='python.exe'" | Where-Object { $_.CommandLine -like "*fxtake_live.py*--live*" } | ForEach-Object { $_.ProcessId }) }
 Say "start; HEAD $(git -C $repo rev-parse --short HEAD)"
 $src = Get-Content "$repo\research\cleanroom\fxtake_live.py" -Raw
-if ($src -notmatch '(?m)^ENTRY_FROM\s*=\s*45\.0') { Say "fxtake_live.py does not have ENTRY_FROM = 45.0 -- pull first; doing nothing"; exit 1 }
+if ($src -notmatch '(?m)^ENTRY_FROM\s*=\s*30\.0') { Say "fxtake_live.py does not have ENTRY_FROM = 30.0 -- pull first; doing nothing"; exit 1 }
 if (Test-Path $stop) { Say "a stop file already exists -- doing nothing"; exit 1 }
 Say "waiting for minutes 1-11 of a quarter hour"
 while ($true) { $m = (Get-Date).Minute % 15; if ($m -ge 1 -and $m -le 11) { break }; Start-Sleep -Seconds 5 }
 Say ("running fx pids: " + ((FxPids) -join ","))
-Set-Content -Path $stop -Value "fx_restart.ps1 restart for ENTRY_FROM 45; it removes this file itself" -Encoding utf8
+Set-Content -Path $stop -Value "fx_restart.ps1 restart for ENTRY_FROM 30 (v-fx-back30); it removes this file itself" -Encoding utf8
 Say "stop file written; waiting for the bot to exit flat"
 $t0 = Get-Date
 while ((FxPids).Count -gt 0 -and ((Get-Date) - $t0).TotalSeconds -lt 150) { Start-Sleep -Seconds 2 }

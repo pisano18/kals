@@ -70,7 +70,11 @@ SIZE = 10
 SIZE_MAX = 50
 FAV = 0.98
 CAP = 0.99
-ENTRY_FROM = 45.0            # v-fx-from45 (2026-10-30 FX read; 30.0 from 10-25 to 10-30). Replay of ALL the FX tape (61 hours,
+ENTRY_FROM = 30.0            # v-fx-back30 (2026-10-30 ~15:50 ET, operator: "There goes fx losing again ... What can we do
+                             # about this"): live at 45 s 07:01Z-19:30Z the 30-45 s part bought 96, lost 2 (SILVER + PLATINUM
+                             # 13:45 ET, both at T-44.9 s, one metals move) = -$10.75, while 15-30 s bought 34, lost 0, +$3.32.
+                             # The operator's condition for widening was a better profit/loss rate; it got worse, so back to 30.
+                             # HISTORY v-fx-from45 (2026-10-30 FX read; 30.0 from 10-25 to 10-30). Replay of ALL the FX tape (61 hours,
                              # 2,734 markets, 10 contracts, fees in), hold5 rule: from T-30 305 buys / 1 lost / +$22.30; from
                              # T-45 494 / 1 / +$39.70; from T-60 657 / 3 / +$35.35 (two new losers bought the instant the window
                              # opened). The 189 extra T-45 buys lost 0, had fewer scares (6.9% vs 9.5%), made +$16.77 and never
