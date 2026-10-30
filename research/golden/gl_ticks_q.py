@@ -13,7 +13,7 @@ import os
 import sys
 import time
 
-TICKS = ["alerts-down", "alerts-stops"]
+TICKS = ["alerts-down", "alerts-stops", "alerts-balance"]
 
 
 def _iso(t):
@@ -41,6 +41,8 @@ def _monitor_state(ph):
     out = {"down": {k: {"checks": v.get("checks"), "sent": v.get("sent")} for k, v in sorted(m.down.items())}}
     if getattr(m, "gauge", None):
         out["stops"] = {" / ".join(k): v for k, v in sorted(m.gauge.items())}
+    if getattr(m, "bal", None):
+        out["balance"] = {" / ".join(k): {"streak": v.get("streak"), "sent": v.get("sent")} for k, v in sorted(m.bal.items())}
     return out
 
 
@@ -102,5 +104,34 @@ def run(rt, ph, which, tick):
                 T + 70)
         at(122, "the jump band trips both (urgent)")
         at(190, "nothing more")
+        return {"ticks": ticks}
+    if which == "alerts-balance":
+        import gl_worlds
+        path = sys.modules["botdata.kalshi"].cache_path()
+        with open(path, encoding="utf-8") as fh:
+            c0 = json.load(fh)
+        new0 = gl_worlds.newest_read(c0)
+
+        def put(read_t, short):
+            """botstats' cache as if every pot was read at read_t; the ladder's pot `short` dollars light."""
+            c = gl_worlds.shift_cache_dict(copy.deepcopy(c0), read_t - new0) if new0 is not None else copy.deepcopy(c0)
+            x = (c.get("subs") or {}).get("1") or {}
+            if short and x.get("balance") is not None:
+                x["balance"] = round(float(x["balance"]) - short, 4)
+                for r in (c.get("ledgers") or {}).get("subaccount_balances") or []:
+                    if str(r.get("subaccount_number")) == "1" and str(r.get("exchange_index")) == "2":
+                        r["balance"] = "%.4f" % (float(r["balance"]) - short)
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(c, fh, separators=(",", ":"))
+            os.utime(path, (read_t, read_t))
+        at(0, "first (judges the fixture's own read; never refreshes Kalshi on the first tick)")
+        put(T0 + 55, 25.0)
+        at(60, "Kalshi read 1: the ladder's pot $25 light (no alert yet)")
+        put(T0 + 115, 25.0)
+        at(120, "Kalshi read 2: still $25 light -> the balance alert (urgent)")
+        put(T0 + 145, 25.0)
+        at(150, "read 3: nothing more")
+        put(T0 + 175, 0.0)
+        at(180, "read 4: agrees again")
         return {"ticks": ticks}
     return {"skipped": "unknown script %s" % which}

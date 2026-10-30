@@ -2,7 +2,7 @@
 pinphone.py / tgcharts.py at 8a9c5e1 (v-tg-rebuild step 1, 2026-10-30)."""
 import re
 
-from bots.spec import Bot, Feature, Gauge, Logs, Pot, Records, Speed, VersionRule, live_flag
+from bots.spec import Book, Bot, Feature, Gauge, Logs, Pot, Records, Speed, VersionRule, live_flag
 from botdata.fmt import num as _num, usd
 
 LADDER_GOAL_PCT = 1.0       # operator 10-22: the ladder's target is 1% of its bank a day -- shown next to its %
@@ -86,6 +86,33 @@ def stop_gauges(wi):
                   tripped=str(d.get("day") or "") == wi.today and (wi.epoch(d.get("t")) or 0) >= t0)]
 
 
+# v-tg-rebuild step 12, lane Q (2026-10-30): the phone's balance check -- its pot as its own log has it
+def books(wi, upto):
+    """Its pot (subaccount 1) as it last read it -- its newest start or resize record's pot (a resize is applied only
+    with nothing resting) -- plus every market it settled since (live_settle.pnl), up to `upto`."""
+    import os
+    path = os.path.join(wi.results, "ladder-live-orders.jsonl")
+    r = wi.last_record(path, ("start", "rescale"), lambda x: (wi.epoch(x.get("t")) or 0) <= upto)
+    t0 = wi.epoch((r or {}).get("t"))
+    value0 = _num((r or {}).get("pot") if (r or {}).get("pot") is not None else (r or {}).get("sub_balance"))
+    if not r or t0 is None or value0 is None:
+        return []
+    settled, n, tickers, last = 0.0, 0, set(), None
+    for x in wi.read_since(path, t0) or []:
+        t = wi.epoch(x.get("t"))
+        if t is None or t <= t0 or t > upto:
+            continue
+        if x.get("ev") == "live_settle":
+            settled += _num(x.get("pnl")) or 0.0
+            n += 1
+            tickers.add(str(x.get("ticker")))
+            last = t
+        elif x.get("ev") == "live_fill":
+            last = t
+    return [Book(sub="1", t0=t0, value0=value0, settled=round(settled, 4), markets=n, tickers=frozenset(tickers),
+                 since="its start" if (r.get("ev") or r.get("kind")) == "start" else "its last resize", last_t=last)]
+
+
 BOT = Bot(
     name="ladder", label="Ladder", short="Ladder", word="ladder",
     what="resting 98c bids on the decided side of NEAR ZEC DOGE HYPE XRP (one rung since 10-23), sized so every bid "
@@ -109,6 +136,7 @@ BOT = Bot(
     activity=activity, activity_note=activity_note,
     funds_size=size_words,
     stop_gauges=stop_gauges,     # step 12 (lane Q): the phone's early warnings
+    books=books,                 # step 12 (lane Q): the phone's balance check
     speed=Speed(rank=2, skipped="skipped: its bids rest on the book until a seller hits them, so how fast it sends "
                                 "does not decide what it gets, and its log keeps no send-to-answer time"),
     features=(

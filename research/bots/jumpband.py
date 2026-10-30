@@ -4,7 +4,7 @@ bot; --live --dry-run sends nothing and is not it either. Every fact copied verb
 tgcharts.py at 8a9c5e1 (v-tg-rebuild step 1, 2026-10-30)."""
 import re
 
-from bots.spec import Bot, Feature, Gauge, Logs, Pot, Records, Speed, VersionRule, live_flag
+from bots.spec import Book, Bot, Feature, Gauge, Logs, Pot, Records, Speed, VersionRule, live_flag
 from botdata.fmt import cents as _c, fmt_g as _fmt_g, num as _num, plural as _n, usd
 
 # the jump band's coins (jumpband_live.SLOW): in subaccount 3 a 15-minute coin market is the jump band's, a KXHIGH the weather's
@@ -133,6 +133,35 @@ def stop_gauges(wi):
     return out
 
 
+# v-tg-rebuild step 12, lane Q (2026-10-30): the phone's balance check -- its pot as its own log has it
+def books(wi, upto):
+    """Its pot (subaccount 3, pool 2) as its newest live start read it (start.cash; nothing open: restored positions 0),
+    plus every market it settled since (settle.money, fees in), up to `upto`."""
+    import os
+    path = os.path.join(wi.results, "jumpband-live.jsonl")
+    st = wi.last_record(path, ("start",), lambda r: r.get("live") is True and (wi.epoch(r.get("t")) or 0) <= upto)
+    if not st or ((st.get("restored") or {}).get("positions") or 0) > 0:
+        return []
+    value0 = _num((st.get("cash") or {}).get("2"))
+    t0 = wi.epoch(st.get("t"))
+    if value0 is None or t0 is None:
+        return []
+    settled, n, tickers, last = 0.0, 0, set(), None
+    for x in wi.read_since(path, t0) or []:
+        t = wi.epoch(x.get("t"))
+        if t is None or t <= t0 or t > upto:
+            continue
+        if x.get("kind") == "settle":
+            settled += _num(x.get("money")) or 0.0
+            n += 1
+            tickers.add(str(x.get("ticker")))
+            last = t
+        elif x.get("kind") == "fill":
+            last = t
+    return [Book(sub="3", t0=t0, value0=value0, settled=round(settled, 4), markets=n, tickers=frozenset(tickers),
+                 since="its start", last_t=last)]
+
+
 BOT = Bot(
     name="jumpband", label="Jump band", short="Jump band", word="jump band",
     what="buys the 70-90c favourite on BNB/HYPE/ZEC/NEAR when the price jumps 2+ standard deviations in "
@@ -164,6 +193,7 @@ BOT = Bot(
     activity=activity, activity_note=activity_note, halt_why=jb_why,
     funds_size=size_words,
     stop_gauges=stop_gauges,     # step 12 (lane Q): the phone's early warnings
+    books=books,                 # step 12 (lane Q): the phone's balance check
     # the jump band (2026-10-30) started on the server, so it has no home window to set its speed against
     speed=Speed(rank=1, skipped="skipped: it started on the server (10-30), so there is no home window to compare"),
     features=(

@@ -177,6 +177,22 @@ class Gauge:
 
 
 @dataclass(frozen=True)
+class Book:
+    """What a bot's own log says one of its pots holds: `value0`, read from Kalshi by the bot itself at `t0` (its start,
+    a resize, a sizing) while it held nothing open, plus every market it settled since -- so Kalshi's cash + open bets
+    in that pot (its own pool for a pool_only pot) should be value0 + settled: the phone's balance check."""
+    sub: str                                              # the subaccount (one of the bot's Pots)
+    t0: float                                             # epoch of the record value0 is from
+    value0: float                                         # the pot's money then ($)
+    settled: float                                        # its settled $ after t0, up to `upto` (fees in)
+    markets: int                                          # how many markets that is
+    tickers: frozenset = frozenset()                      # the markets it settled after t0
+    since: str = ""                                       # 'its start', 'its last sizing' ...
+    part: str = ""                                        # a two-pot bot's name for this pot ('currencies')
+    last_t: Optional[float] = None                        # epoch of its newest fill or settle up to `upto`
+
+
+@dataclass(frozen=True)
 class Bot:
     name: str
     label: str                                            # SPEC label ('Pin bot')
@@ -214,3 +230,4 @@ class Bot:
     ledger_book: Optional[str] = None                     # pinday.book_of's name for its markets (step 5)
     # v-tg-rebuild step 12, lane Q (2026-10-30): what the phone's monitor reads from the bot's own log
     stop_gauges: Optional[Callable] = None                # (WatchIn) -> [Gauge]: its stops, for the early warnings
+    books: Optional[Callable] = None                      # (WatchIn, upto) -> [Book]: its pots as its own log has them

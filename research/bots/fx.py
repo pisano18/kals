@@ -1,7 +1,7 @@
 """The FX taker (research/cleanroom/fxtake_live.py, 2026-10-25): the 8 commodities from subaccount 5 (pool 2) and the
 5 currency pairs from subaccount 4 (pool 0). Every fact copied verbatim from botstats.py / pinphone.py / tgcharts.py at
 8a9c5e1 (v-tg-rebuild step 1, 2026-10-30)."""
-from bots.spec import Bot, Feature, Gauge, Logs, Pot, Records, Speed, VersionRule, live_flag
+from bots.spec import Book, Bot, Feature, Gauge, Logs, Pot, Records, Speed, VersionRule, live_flag
 from botdata.fmt import cents as _c, num as _num, usd
 
 # 4: the FX taker's currency pairs (pool 0, created 2026-10-25 ~21:0xZ). The NUMBER 4 also names the old coin-race reward
@@ -114,6 +114,48 @@ def stop_gauges(wi):
     return out
 
 
+# v-tg-rebuild step 12, lane Q (2026-10-30): the phone's balance check -- both pots as its own log has them
+def books(wi, upto):
+    """Each of its two pots as its newest start read it (start.pool_cash by pool, start.subs = which subaccount each pool
+    is), plus every market it settled since (settle.pnl, fees in), up to `upto`. A market bought before the start and
+    settled after it adds its whole payout (its cost had left the cash the start read)."""
+    import os
+    path = os.path.join(wi.results, "fxtake-live-orders.jsonl")
+    st = wi.last_record(path, ("start",), lambda r: (wi.epoch(r.get("t")) or 0) <= upto)
+    t0 = wi.epoch((st or {}).get("t"))
+    if not st or t0 is None or not st.get("subs") or not st.get("pool_cash"):
+        return []
+    acc = {str(pool): [0.0, 0, set(), None] for pool in st["subs"]}
+    filled = set()
+    for x in wi.read_since(path, t0) or []:
+        t = wi.epoch(x.get("t"))
+        if t is None or t <= t0 or t > upto:
+            continue
+        tk = str(x.get("ticker"))
+        pool = "0" if tk.split("-")[0] in FX_PAIRS else "2"
+        if pool not in acc:
+            continue
+        if x.get("kind") == "fill":
+            filled.add(tk)
+            acc[pool][3] = t
+        elif x.get("kind") == "settle":
+            a = acc[pool]
+            a[0] += (_num(x.get("pnl")) or 0.0) + (0.0 if tk in filled else
+                                                   (_num(x.get("cost")) or 0.0) + (_num(x.get("fee")) or 0.0))
+            a[1] += 1
+            a[2].add(tk)
+            a[3] = t
+    out = []
+    for pool, sub in sorted(st["subs"].items()):
+        v0 = _num((st.get("pool_cash") or {}).get(str(pool)))
+        if v0 is None:
+            continue
+        s, n, tks, last = acc[str(pool)]
+        out.append(Book(sub=str(sub), t0=t0, value0=v0, settled=round(s, 4), markets=n, tickers=frozenset(tks),
+                        since="its start", part="currencies" if str(pool) == "0" else "commodities", last_t=last))
+    return out
+
+
 BOT = Bot(
     name="fx", label="FX taker", short="FX taker", word="FX taker",
     what="buys the side already bid 98c+ at 99c or less 45 to 15 s before the close of the 15-minute markets (30 to 15 s "
@@ -145,6 +187,7 @@ BOT = Bot(
     activity=activity,
     funds_size=size_words,
     stop_gauges=stop_gauges,     # step 12 (lane Q): the phone's early warnings
+    books=books,                 # step 12 (lane Q): the phone's balance check
     speed=Speed(rank=1, field="kind", kind="placed"),
     features=(
         Feature("fxtake_live.py", "--live", None, "FX taker (LIVE, subaccounts 5 + 4)",

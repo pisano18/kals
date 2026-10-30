@@ -64,7 +64,8 @@ class Rig:
         self.rows = table("jumpband", "ladder")
         self.sent = []
         self.st = types.SimpleNamespace()
-        self.ctx = FakeCtx(now=None, now_fn=lambda: self.now, bs_procs=None, cfg=cfg or {}, pots={"pots": {}})
+        self.ctx = FakeCtx(now=None, now_fn=lambda: self.now, bs_procs=None, cfg=cfg or {}, pots={"pots": {}},
+                           bs_getter=lambda path, params: (599, "tests: no Kalshi"))
 
     def tick(self, dt, rows=None):
         self.now = T0 + dt

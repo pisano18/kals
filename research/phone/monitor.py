@@ -13,6 +13,13 @@ self-tests and the golden harness turn it on only where they test it):
              stop line and $5 from its -$15 day stop, the FX taker near its stop line and its day stop, the ladder at 60%
              and 80% of its day-stop rail. Once per level per run / day (Gauge.period), and once more (URGENT) when the
              stop trips. Read every GAUGE_EVERY_S; the first read after a (re)start learns and says nothing.
+  BALANCE    each pot's money on Kalshi (cash + open bets, botstats' cache: ONE read, no new endpoint) against what the
+             one bot trading there says it holds (its Bot.books hook: what it read itself at its start / sizing + every
+             market it settled since). Off by more than max($2, 1% of the pot) + 5c a market on TWO reads in a row ->
+             one URGENT alert explaining the gap in $ (money Kalshi lists moving in or out, markets Kalshi settled that
+             its books do not have, the rest unexplained), and one when they agree again. A read taken within FLUX_S of
+             the bot's own fill or settle is skipped (in flight). botstats' cache is refreshed through its own read at
+             most every BAL_REFRESH_S (never on the first tick); a pot with no trading bot, or two, is not checked.
 
 Every alert leads with what happened and what it means in $; every one goes through `send(msg, urgent)` (alerts.py:
 muted -> nothing; quiet hours hold what is not urgent). Each check is inside its own try: one failing never costs the
@@ -35,6 +42,9 @@ from pindesk import et_day, et_str, pct
 DOWN_CHECKS = 2                         # it must be seen DOWN on MORE than this many checks ...
 DOWN_ALERT_S = 180                      # ... and for at least this long (telegram.json "down_alert_s" overrides)
 GAUGE_EVERY_S = 60                      # the stops are read at most this often (the first tick always)
+BAL_REFRESH_S = 600                     # botstats' Kalshi cache is brought up to date at most this often by the monitor
+FLUX_S = 90                             # a Kalshi read this close to the bot's own fill / settle is not judged
+BAL_READS = 2                           # the gap must be there on this many reads in a row
 
 
 @dataclass
@@ -44,6 +54,9 @@ class MonitorState:
     gauge: dict = field(default_factory=dict)       # (bot, gauge key, period) -> the level already told
     gauge_t: float = None                           # when the stops were last read
     gauge_learnt: bool = False                      # the first read (learns, says nothing) is done
+    bal: dict = field(default_factory=dict)         # (bot, sub) -> {"read", "streak", "sent", "reads"}
+    bal_next: float = None                          # when the monitor next refreshes botstats' Kalshi cache
+    bal_key: tuple = None                           # the cache file's (mtime, size) last judged
 
 
 def state_of(st):
@@ -223,6 +236,113 @@ def check_gauges(ctx, m, send, now):
     m.gauge_learnt = True
 
 
+# ---- the balance check: Kalshi's money in a pot vs what the bot's own books say --------------------------------------------
+def pot_words(name, b):
+    """'Ladder's pot (subaccount 1)', "FX taker's currencies pot (subaccount 4)", "Pin bot's main account"."""
+    if b.sub == "0":
+        return "%s's main account" % label(name)
+    return "%s's %spot (subaccount %s)" % (label(name), (b.part + " ") if b.part else "", b.sub)
+
+
+def balance_text(name, b, r, reads, now):
+    gap = r["gap"]
+    pots_ = r["kalshi"]
+    only = r["kalshi_only"]
+    only_sum = sum(m["money"] for m in only)
+    rest = gap - r["flows"] - only_sum
+    lines = ["⚠️ <b>BALANCE: %s has %s %s on Kalshi than its books say</b>" % (
+        esc(pot_words(name, b)), esc(usd(abs(gap)).lstrip("+")), "less" if gap < 0 else "more"),
+        "Kalshi <b>%s</b> (cash + open bets) · its books <b>%s</b> = %s at %s (%s ET) %s settled in %d market%s since "
+        "· gap <b>%s</b>%s" % (
+            esc(usd(pots_).lstrip("+")), esc(usd(r["books"]).lstrip("+")), esc(usd(b.value0).lstrip("+")),
+            esc(b.since), esc(when_words(b.t0, now)), esc(usd(b.settled).replace("+", "+ ", 1).replace("-", "- ", 1)),
+            b.markets, "" if b.markets == 1 else "s", esc(usd(gap)),
+            (" (%s of the pot)" % esc(pct(gap / pots_))) if pots_ else ""),
+        "• money Kalshi lists moving in or out since then: %s%s" % (
+            esc(usd(r["flows"])), " -- a move its books do not know" if abs(r["flows"]) >= 0.01 else ""),
+        "• markets Kalshi settled that its books do not have: %s" % (
+            esc(", ".join("%s %s" % (m["what"], usd(m["money"])) for m in only[:5]) + (
+                " and %d more" % (len(only) - 5) if len(only) > 5 else "")) if only else "none"),
+        "• not explained by either: <b>%s</b>%s" % (esc(usd(rest)), (
+            " -- a missed fill, a manual trade, or a money move the bot does not know about")
+            if abs(rest) > r["tol"] else ""),
+        "<i>Seen on %d Kalshi reads in a row (%s ET); the tolerance here is %s.</i>" % (
+            len(reads), esc(", ".join(when_words(t, now) for t in reads)), esc(usd(r["tol"]).lstrip("+")))]
+    return Html("\n".join(lines))
+
+
+def balance_ok_text(name, b, r):
+    return Html("✅ <b>BALANCE: %s agrees with its books again</b> -- Kalshi %s, books %s (off by %s, inside the %s "
+                "tolerance)." % (esc(pot_words(name, b)), esc(usd(r["kalshi"]).lstrip("+")),
+                                 esc(usd(r["books"]).lstrip("+")), esc(usd(abs(r["gap"])).lstrip("+")),
+                                 esc(usd(r["tol"]).lstrip("+"))))
+
+
+def _cache_key():
+    import os
+    from botdata import kalshi as _kalshi
+    try:
+        st = os.stat(_kalshi.cache_path())
+        return (st.st_mtime, st.st_size)
+    except OSError:
+        return None
+
+
+def check_balance(ctx, m, send, now):
+    """Each checkable pot once per new Kalshi read in botstats' cache (see the module note)."""
+    from botdata import kalshi as _kalshi
+    if m.bal_next is None:
+        m.bal_next = now + BAL_REFRESH_S                # never a Kalshi pass on the first tick
+    elif now >= m.bal_next:
+        m.bal_next = now + BAL_REFRESH_S
+        if not _kalshi.is_readonly():
+            try:
+                _kalshi.load(now, ctx.bs_getter)        # botstats' own GETs, at most every REFRESH_S; nothing new
+            except Exception:                           # noqa: BLE001
+                log("balance check: the Kalshi refresh failed:\n%s" % traceback.format_exc())
+    key = _cache_key()
+    if key is None or key == m.bal_key:
+        return
+    m.bal_key = key
+    c = _kalshi.load_cache()
+    f = _fleet(ctx)
+    for sub in _bots.subs():
+        on = [b for b in _bots.bots_on(sub) if f.state(b.name) in (_status.ACTIVE, _status.UNKNOWN)]
+        if len(on) != 1 or getattr(on[0], "books", None) is None:
+            continue
+        name = on[0].name
+        read_t = ((c.get("subs") or {}).get(sub) or {}).get("tried")
+        e = m.bal.setdefault((name, sub), {"read": None, "streak": 0, "sent": False, "reads": []})
+        if read_t is None or e["read"] == read_t:
+            continue
+        e["read"] = read_t
+        try:
+            bk = [x for x in _watch.books(name, read_t, now) if x.sub == sub]
+        except Exception:                               # noqa: BLE001
+            log("books of %s failed:\n%s" % (name, traceback.format_exc()))
+            continue
+        if not bk or bk[0].t0 > read_t or (bk[0].last_t is not None and read_t - bk[0].last_t < FLUX_S):
+            continue                                    # no book, a restart after the read, or a bet in flight
+        b = bk[0]
+        r = _watch.compare(c, name, b, read_t)
+        if r.get("why"):
+            continue
+        if r["off"]:
+            e["streak"] += 1
+            e["reads"] = (e["reads"] + [read_t])[-BAL_READS:]
+            if e["streak"] >= BAL_READS and not e["sent"]:
+                e["sent"] = True
+                reads = list(e["reads"])
+                send(fmt(lambda: balance_text(name, b, r, reads, now),
+                         lambda: "BALANCE: %s -- Kalshi %s, its books %s" % (pot_words(name, b), r["kalshi"],
+                                                                            r["books"])), urgent=True)
+        else:
+            if e["sent"]:
+                send(fmt(lambda: balance_ok_text(name, b, r),
+                         lambda: "BALANCE: %s agrees with its books again" % pot_words(name, b)), urgent=True)
+            e.update(streak=0, sent=False, reads=[])
+
+
 # ---- the tick ------------------------------------------------------------------------------------------------------------
 def fmt(build, plain):
     """An alert laid out, or its plain words if the layout fails (alerts.fmt_or_plain's rule)."""
@@ -233,7 +353,7 @@ def fmt(build, plain):
         return plain()
 
 
-CHECKS = (("down", check_down), ("stops", check_gauges))
+CHECKS = (("down", check_down), ("stops", check_gauges), ("balance", check_balance))
 
 
 def tick(ctx, st, send, now=None):

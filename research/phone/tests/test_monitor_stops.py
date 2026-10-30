@@ -78,7 +78,8 @@ class Rig:
         self.sent = []
         self.st = types.SimpleNamespace()
         self.ctx = FakeCtx(now_fn=lambda: self.now, bs_procs=[LIVE[n] for n in ("pin", "jumpband", "fx", "ladder")],
-                           cfg={}, pots={"pots": {"3": {"value": 50.0}, "0": {"value": 1300.0}}})
+                           cfg={}, pots={"pots": {"3": {"value": 50.0}, "0": {"value": 1300.0}}},
+                           bs_getter=lambda path, params: (599, "tests: no Kalshi"))
 
     def tick(self, dt):
         self.now = T0 + dt
