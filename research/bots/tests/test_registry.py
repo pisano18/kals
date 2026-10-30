@@ -208,24 +208,32 @@ def _func(mod, qual):
     return node
 
 
+# v-tg-rebuild step 5 (2026-10-30): pinphone now READS these from the registry, so its source holds no literal to compare
+# against; the legacy values are frozen here as they stood in pinphone.py at 8a9c5e1 (the golden baseline B0).
+LEGACY_TEXT_BOT_FOOTERS = {
+    "pin": "More on pin: /stats (win rate vs break-even), /fills (today's orders), /open, /losses, /hedges.",
+    "forecaster": "Every bot: /bots.", "ladder": "Every bot: /bots.",
+    "weather": "Every bot: /bots.", "fx": "Every bot: /bots · both FX pots' cash: /funds.",
+    "jumpband": "Every bot: /bots · its pot (subaccount 3, crypto pool): /funds."}
+
+
 def test_text_bot_footers():
-    """pinphone.Phone.text_bot's `more = {...}.get(name)` footers == the registry's page_footer."""
-    fn = _func(pp, "Phone.text_bot")
-    lit = None
-    for n in ast.walk(fn):
-        if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", None) == "more":
-            lit = ast.literal_eval(n.value.func.value)
-    assert lit is not None, "text_bot has no `more = {...}.get(name)`"
-    eq_ordered(bots.PAGE_FOOTER, lit, "text_bot footers")
+    """pinphone.Phone.text_bot's footers (8a9c5e1's `more = {...}.get(name)`) == the registry's page_footer, and
+    pinphone reads them from the registry."""
+    eq_ordered(bots.PAGE_FOOTER, LEGACY_TEXT_BOT_FOOTERS, "text_bot footers")
+    eq(pp.PAGE_FOOTER, LEGACY_TEXT_BOT_FOOTERS, "pinphone.PAGE_FOOTER")
+    assert "more = PAGE_FOOTER.get(name)" in _src(pp)
 
 
 def test_units_and_goal_rules():
-    """The race counts legs (pinphone: unit = "leg" if b["name"] == "race"), the ladder alone shows its goal."""
-    src = _src(pp)
-    assert src.count('unit = "leg" if b["name"] == "race" else "market"') == 2
-    assert 'goal=LADDER_GOAL_PCT if b["name"] == "ladder" else None' in src
+    """The race counts legs (8a9c5e1's pinphone: unit = "leg" if b["name"] == "race"), the ladder alone shows its goal
+    (goal=LADDER_GOAL_PCT if b["name"] == "ladder"); pinphone now asks the registry (_unit_of, _goal_of)."""
     eq({n: u for n, u in bots.UNIT.items() if u != "market"}, {"race": "leg"}, "units")
     eq([b.name for b in bots.all_bots() if b.goal_pct is not None], ["ladder"], "goal_pct bots")
+    eq({n: pp._unit_of(n) for n in bots.names()}, {n: ("leg" if n == "race" else "market") for n in bots.names()},
+       "pinphone._unit_of")
+    eq({n: pp._goal_of(n) for n in bots.names()}, {n: (1.0 if n == "ladder" else None) for n in bots.names()},
+       "pinphone._goal_of")
 
 
 # ---- tgcharts' tables ----------------------------------------------------------------------------------------------

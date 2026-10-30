@@ -96,7 +96,8 @@ BOT = Bot(
     keepalive="boot_all.ps1 (every 10 min) restarts it unless the stop file is there",
     page_footer="Every bot: /bots.",
     activity=activity, activity_note=activity_note,
-    funds_size=False,          # /funds says no bet size for it
+    funds_size=None,           # /funds says no bet size for it
+    pot_word="weather",        # its pot in the phone's cash lines (pinphone._POT_WORD)
     features=(
         Feature("dipsell_live.py", None, None, "Weather dip-seller (LIVE, subaccount 3)",
                 "Sells daily high-temperature markets (KXHIGH) into dips, in Kalshi's weather cash pool.",

@@ -111,51 +111,73 @@ RESULTS = _paths.RESULTS
 HEARTBEAT = os.path.join(RESULTS, "pinphone.heartbeat")
 UPDATE_FLAG = os.path.join(RESULTS, "pinphone.update")    # its presence = /update (update_flag_tick, 10-26)
 LOG = os.path.join(RESULTS, "pinphone.log")
-MAX_LEN = 3900
 LOSSES_SHOWN = 30               # /losses lists this many (operator 10-26: "a bit more than just the last ten")
 CHART_QUEUE = 2                 # pictures waiting to be drawn; one more is dropped (logged), never waited for
 CHART_MAX_BYTES = 9_500_000     # Telegram takes photos up to 10 MB
 
-# /funds (/bank /accounts): WHAT RUNS IN EACH KALSHI ACCOUNT -- edit here when a bot moves, starts or stops.
-# Key = subaccount number (0 = the main account). A value is the words, or {cash pool: words} when one
+import bots as _bots                                                 # noqa: E402
+# v-tg-rebuild step 5 (2026-10-30): every per-bot table below is READ FROM THE REGISTRY (research/bots/<name>.py, one file
+# a bot); a bot that moves, starts or stops is edited there, never here. bots/tests/test_registry.py and the golden
+# harness (research/golden, 'data/tables') hold each table to the values it had when it was written out here (8a9c5e1).
+
+# /funds (/bank /accounts): WHAT RUNS IN EACH KALSHI ACCOUNT (the bots' Pot.what, bots.EXTRA_POOLS for a pool no bot
+# trades). Key = subaccount number (0 = the main account). A value is the words, or {cash pool: words} when one
 # subaccount does different things in different pools. A subaccount Kalshi lists that is not here
 # shows as "unknown". (2026-10-11, the operator: "Add a way in telegram to see the bankroll or fund
 # sizes of all sub accounts.")
-FUNDS_WHAT = {
-    0: "main bot (pin) + coin race",
-    1: "penny ladder",
-    2: "forecaster",
-    3: {0: "weather dip-seller", 2: "jump band: BNB/HYPE/ZEC/NEAR after a price jump (live stage 1, 2026-10-30)"},
-    4: {0: "FX taker: the 5 currency pairs (penny test, 2026-10-25)", 2: "coin-race reward test (stopped)"},
-    5: "FX taker: the 8 commodities (penny test, 2026-10-25)",
-}
+FUNDS_WHAT = _bots.FUNDS_WHAT
 # v-tg-active (2026-10-30): the bots behind each FUNDS_WHAT entry. /funds names only the ACTIVE ones (botstats.active_bots:
 # running live, no stop file); an entry whose bots are all paused or retired reads FUNDS_IDLE -- its money is still listed.
-FUNDS_BOTS = {0: ("pin", "race"), 1: ("ladder",), 2: ("forecaster",), 3: {0: ("weather",), 2: ("jumpband",)},
-              4: {0: ("fx",), 2: ()}, 5: ("fx",)}
+FUNDS_BOTS = _bots.FUNDS_BOTS
 FUNDS_IDLE = "nothing runs here now (stopped)"
 FUNDS_POOL_NAME = {0: "weather pool", 2: "crypto pool"}     # Kalshi's exchange_index; others say "pool N"
-# whose bet size /funds shows under each account (read from that bot's own log, see funds_sizes)
-FUNDS_SIZE_BOTS = {0: ("pin", "race"), 1: ("ladder",), 2: ("forecaster",), 3: ("jumpband",), 4: ("fx",), 5: ("fx",)}
+# whose bet size /funds shows under each account (read from that bot's own log by its Bot.funds_size, see funds_sizes)
+FUNDS_SIZE_BOTS = _bots.FUNDS_SIZE_BOTS
+
+
+def _pot_whats(n, pool=None):
+    """[(Bot, its words)] for every bot pot in account n (in cash pool `pool`; None = every pool), in bot order."""
+    sub = str(n)
+    return [(b, p.what) for b in _bots.bots_on(sub) for p in b.pots if p.sub == sub and (pool is None or p.pool == pool)]
 
 
 def funds_what(n, active=None):
     """FUNDS_WHAT's words for account n, naming only the ACTIVE bots (v-tg-active; None = the whole roster): an entry
-    whose bots are all hidden reads FUNDS_IDLE; the main account names the coin race only while it runs."""
+    whose bots are all hidden reads FUNDS_IDLE; the main account names the coin race only while it runs (an always-shown
+    bot -- the pin bot -- is always named). v-tg-rebuild step 5: the words are the active bots' Pot.what, joined."""
     what = FUNDS_WHAT.get(n)
     if what is None or active is None:
         return what
-    bots = FUNDS_BOTS.get(n)
 
-    def one(w, who):
-        if who is None:
-            return w
-        if n == 0:
-            return "main bot (pin)" + (" + coin race" if "race" in active else "")
-        return w if any(b in active for b in who) else FUNDS_IDLE
+    def one(pool):
+        words = [w for b, w in _pot_whats(n, pool) if b.always_shown or b.name in active]
+        return " + ".join(words) if words else FUNDS_IDLE
     if isinstance(what, dict):
-        return {ix: one(w, (bots or {}).get(ix) if isinstance(bots, dict) else bots) for ix, w in what.items()}
-    return one(what, bots)
+        return {ix: one(ix) for ix in what}
+    return one(None)
+
+
+# WHICH BOT a trade is (2026-10-26, the operator: "anywhere that trades or transactions are listed list the account or
+# which bot"): the words a line uses for each bot (its Bot.word); 'earlier' = every paused or retired bot together,
+# 'other' = a main-account market no bot claims (bots.NOT_BOT_WORD).
+BOT_WORD = _bots.BOT_WORD
+
+# the bot the desk is about (pindesk: the Ledger of kalshi_ledger.json's orders, /status, /pause, /start): the registry's
+# always-shown bot, the pin bot. Its orders come from the Ledger; every other bot's from botstats.fills_since.
+DESK_BOT = next(b.name for b in _bots.all_bots() if b.always_shown)
+
+
+def main_sharers(present=None):
+    """The main account's bots to name while it is SHARED: the desk bot, then every other bot with a pot in subaccount 0
+    that is in `present` (None = all of them) -- [] while the desk bot is alone there. 'pin + race share the main
+    account' is said only while the coin race runs (v-tg-active); v-tg-rebuild step 5: from the registry."""
+    others = [b.name for b in _bots.bots_on("0") if b.name != DESK_BOT and (present is None or b.name in present)]
+    return [DESK_BOT] + others if others else []
+
+
+def main_shared(present=None, joiner=" + "):
+    """'pin + race' (main_sharers joined by `joiner`) while the main account is shared among `present`, else ''."""
+    return joiner.join(main_sharers(present))
 
 
 def _tgc():
@@ -164,107 +186,16 @@ def _tgc():
     return tgcharts
 
 
-def split_text(s, limit=MAX_LEN):
-    """Chunks of at most `limit` chars for Telegram, cut at a blank line when
-    one sits in the second half of the chunk, else at a line, else hard --
-    so a /bars block is not sliced mid-sentence."""
-    s = str(s)
-    out = []
-    while len(s) > limit:
-        cut = s.rfind("\n\n", 0, limit)
-        if cut < limit // 2:
-            cut = s.rfind("\n", 0, limit)
-        if cut < limit // 2:
-            cut = limit
-        out.append(s[:cut].rstrip("\n"))
-        s = s[cut:].lstrip("\n")
-    if s or not out:
-        out.append(s)
-    return out
-
-
-def log(msg):
-    """One line to stdout and to LOG. NEVER RAISES (2026-10-18): boot_all starts this program with stdout
-    redirected to results/pinphone.out, and a redirected stdout on this box is cp1252 -- the emoji and box
-    characters the phone's replies carry cannot be written there. Before this fix a raise here came out of
-    say() AFTER the message had gone, and out of poll_once() BEFORE Telegram was told the update was
-    handled: the process died, and the restart answered the same command again. So the console copy falls
-    back to escapes; the log file (utf-8) keeps the real characters."""
-    line = "%s  %s" % (time.strftime("%Y-%m-%dT%H:%M:%S"), msg)
-    try:
-        print(line, flush=True)
-    except Exception:                                           # noqa: BLE001
-        try:
-            print(line.encode("ascii", "backslashreplace").decode("ascii"), flush=True)
-        except Exception:                                       # noqa: BLE001
-            pass
-    try:
-        _paths.check_write(LOG)              # v-tg-rebuild step 2: never the live log under KALS_TESTING=1 (an OSError)
-        with open(LOG, "a", encoding="utf-8") as fh:
-            fh.write(line + "\n")
-    except OSError:
-        pass
-
-
-def cprint(s):
-    """print() that never raises on a console that cannot show a character (the self-test's and --preview's
-    output carries emoji; a redirected console here is cp1252): the line falls back to escapes."""
-    try:
-        print(s, flush=True)
-    except UnicodeEncodeError:
-        print(str(s).encode("ascii", "backslashreplace").decode("ascii"), flush=True)
-
-
-# ===========================================================================
-# PRESENTATION (2026-10-18). THE OPERATOR: "Make the telegram responses better to read and more pleasant
-# and human friendly to look at. They're blobs of text and hard to find my numbers. Charts and graphs
-# included would be neat only if possible. Also make sure numbers include their percentages next to them
-# wherever possible."
-#
-# A reply is Telegram HTML (parse_mode=HTML): its FIRST LINE is a headline with the number that matters
-# (e.g. "Today +$7.10 (+0.55% of the bank)"), then short sections under bold headers, small aligned tables
-# in <pre> (at most about 36 characters a line, a phone's monospace width), money with its percentage
-# beside it, and the long sentences the bot always wrote kept whole behind a tap (<blockquote
-# expandable>, one per reply where possible, so a reply stays one message). ONLY THE LAYOUT CHANGED:
-# every figure is the one the plain text carried, from the same source, or a percentage worked from two
-# of those figures (money / what the bets cost; a count / its total). One money style: +$1,234.56 / -$4.57.
-#
-# SAFE BY CONSTRUCTION: every piece of data goes through esc() before it meets a tag; a reply built here
-# is an Html (a str marked is_html) and only an Html is sent as HTML -- a plain str (an error, a control
-# callback's words) goes exactly as before. Telegram's nesting rules are kept (tg_html_problems, run by the
-# self-test over every reply): <pre>/<code> never inside a quote or a bold, a quote never inside a quote.
-# split_html never leaves a tag open across messages, and if Telegram refuses the markup anyway the
-# transport re-sends that part as plain text: a formatting slip can never cost an alert. log() never
-# raises (the redirected console is cp1252 and cannot print an emoji).
-#
-# CHARTS are drawn with text (block characters in <pre>, a sparkline in <code>): no plotting library is
-# installed for C:\Python314 (matplotlib, PIL, numpy: none -- checked 2026-10-18), and none is added, so
-# nothing here sends a photo.
-# ===========================================================================
-class Html(str):
-    """A reply written in Telegram HTML; every piece of data inside went through esc()."""
-    is_html = True
-
-
-def esc(x):
-    """Text made safe inside Telegram HTML: & < > become entities (quotes may stay)."""
-    return _html.escape(str(x), quote=False)
-
-
-def html_to_plain(s):
-    """What the phone shows for an Html reply: the tags dropped, the entities decoded."""
-    return _html.unescape(re.sub(r"<[^<>]+>", "", str(s)))
-
-
-_MONEY_SIGN = re.compile(r"\$([+-])(?=\d)")
-_MONEY_BIG = re.compile(r"(?<![\d,.])\$(\d{4,})(?![\d,])")
-
-
-def norm_money(s):
-    """The one money style, for lines written by other modules: '$+1008.55' -> '+$1,008.55',
-    '$-4.57' -> '-$4.57'. Only the dress changes -- the digits are the same digits."""
-    s = _MONEY_SIGN.sub(lambda m: m.group(1) + "$", str(s))
-    return _MONEY_BIG.sub(lambda m: "$" + "{:,}".format(int(m.group(1))), s)
+# v-tg-rebuild step 6 (2026-10-30): the log line, the HTML layout helpers and the message splitters live in
+# research/phone/ (log.py, html.py), moved there verbatim; every name is re-exported here (bars.py, the golden harness and
+# the self-test use them as pinphone.<name>). log() writes to THIS module's LOG, read at each call: a test that patches
+# pinphone.LOG still moves every line (phone.log.set_path below).
+from phone import log as _plog                                       # noqa: E402
+from phone.log import log, cprint                                    # noqa: E402,F401
+from phone.html import (MAX_LEN, Html, esc, html_to_plain, _MONEY_SIGN, _MONEY_BIG, norm_money, b_, i_,   # noqa: E402,F401
+                        table, pre, details, elines, _EIGHTHS, hbar, _SPARK, spark, _TG_TAGS, _TG_STYLE, _TG_TOK,
+                        tg_html_problems, _TAG, _open_after, _closers, _openers, _cut_long_line, split_html, split_text)
+_plog.set_path(lambda: LOG)
 
 
 def usd(x):
@@ -286,85 +217,6 @@ def dot(x):
     if x is None:
         return "⚪"
     return "🟢" if x > 0.004 else ("🔴" if x < -0.004 else "⚪")
-
-
-def b_(x):
-    return "<b>%s</b>" % esc(x)
-
-
-def i_(x):
-    return "<i>%s</i>" % esc(x)
-
-
-def table(rows, align=None):
-    """Rows of cells -> aligned lines for pre(). The first column is left-aligned, the rest right-aligned
-    (or `align`, one 'l'/'r' a column). A row with fewer cells than the widest (a day heading, 'nothing
-    settled yet') is written as its first cell padded, then the rest, and does not widen the columns."""
-    n = max(len(r) for r in rows) if rows else 0
-    align = align or ("l" + "r" * (n - 1))
-    w = [0] * n
-    for r in rows:
-        if len(r) == n:
-            for k, c in enumerate(r):
-                w[k] = max(w[k], len(str(c)))
-    out = []
-    for r in rows:
-        if len(r) != n:
-            out.append((str(r[0]).ljust(w[0]) + (" " + " ".join(str(c) for c in r[1:]) if len(r) > 1 else ""))
-                       .rstrip())
-            continue
-        out.append(" ".join(str(c).ljust(w[k]) if align[k] == "l" else str(c).rjust(w[k])
-                            for k, c in enumerate(r)).rstrip())
-    return out
-
-
-def pre(lines):
-    return "<pre>%s</pre>" % esc("\n".join(lines))
-
-
-def details(html_lines, title=None):
-    """Long lines behind a tap: Telegram shows the first lines of an expandable quote and opens the rest
-    when it is tapped. `html_lines` are already escaped (elines)."""
-    body = "\n".join(html_lines)
-    if not body.strip():
-        return ""
-    return "<blockquote expandable>%s%s</blockquote>" % (("<b>%s</b>\n" % esc(title)) if title else "", body)
-
-
-def elines(lines):
-    """Another module's plain lines, in this file's money style, escaped for HTML."""
-    return [esc(norm_money(x)) for x in lines]
-
-
-_EIGHTHS = "▏▎▍▌▋▊▉"
-
-
-def hbar(v, mx, width=10):
-    """A text bar for one figure against the biggest one shown: full blocks plus an eighth, light shade
-    for a negative figure. '' when there is nothing to draw against."""
-    if v is None or not mx:
-        return ""
-    n = min(abs(v) / float(mx), 1.0) * width
-    if v < -0.004:
-        return "░" * max(1, int(round(n)))
-    if v <= 0.004:
-        return ""
-    full = int(n)
-    k = int((n - full) * 8)
-    return ("█" * full + (_EIGHTHS[k - 1] if k else "")) or "▏"
-
-
-_SPARK = "▁▂▃▄▅▆▇█"
-
-
-def spark(vals):
-    """A one-line chart of a series (lowest = ▁, highest = █)."""
-    if len(vals) < 2:
-        return ""
-    lo, hi = min(vals), max(vals)
-    if hi - lo < 1e-9:
-        return _SPARK[0] * len(vals)
-    return "".join(_SPARK[int(round((v - lo) / (hi - lo) * 7))] for v in vals)
 
 
 def hm(epoch):
@@ -402,219 +254,9 @@ def ret(money_, base, digits=1):
     return ("%+." + str(digits) + "f%%") % (100.0 * money_ / base)
 
 
-# Telegram's HTML rules (Bot API, "Formatting options"), checked by the self-test over every reply. A
-# reply that breaks one is refused (HTTP 400) and goes again as plain text -- readable, but unformatted.
-_TG_TAGS = {"b", "strong", "i", "em", "u", "ins", "s", "strike", "del", "code", "pre", "a", "blockquote",
-            "tg-spoiler", "span"}
-_TG_STYLE = {"b", "strong", "i", "em", "u", "ins", "s", "strike", "del", "tg-spoiler", "span"}
-_TG_TOK = re.compile(r"<[^<>]*>|&[#a-zA-Z0-9]*;|[<>&]")
-
-
-def tg_html_problems(s):
-    """What Telegram would refuse in `s`: an unknown tag, a raw < > &, an unknown entity, a tag closed out
-    of order or left open, <pre>/<code> inside a quote or a bold/italic, a quote inside a quote."""
-    bad, stack = [], []
-    for m in _TG_TOK.finditer(str(s)):
-        t = m.group(0)
-        if t in ("<", ">", "&"):
-            bad.append("raw %r" % t)
-            continue
-        if t.startswith("&"):
-            if t not in ("&lt;", "&gt;", "&amp;", "&quot;") and not re.match(r"^&#(\d+|x[0-9a-fA-F]+);$", t):
-                bad.append("entity %s" % t)
-            continue
-        mm = re.match(r"^<(/?)([a-zA-Z][a-zA-Z0-9-]*)(\s[^<>]*)?>$", t)
-        if not mm:
-            bad.append("tag %r" % t)
-            continue
-        close, name, attrs = mm.group(1) == "/", mm.group(2).lower(), (mm.group(3) or "").strip()
-        if name not in _TG_TAGS:
-            bad.append("<%s> is not a Telegram tag" % name)
-        if close:
-            if not stack or stack[-1] != name:
-                bad.append("</%s> closes %s" % (name, stack[-1] if stack else "nothing"))
-            else:
-                stack.pop()
-            continue
-        inside = set(stack)
-        if name == "blockquote" and attrs not in ("", "expandable"):
-            bad.append("<blockquote %s>" % attrs)
-        if "code" in inside or ("pre" in inside and name != "code"):
-            bad.append("<%s> inside pre/code" % name)
-        if name in ("pre", "code") and inside & (_TG_STYLE | {"blockquote", "a"}):
-            bad.append("<%s> inside %s" % (name, "/".join(sorted(inside))))
-        if name == "blockquote" and "blockquote" in inside:
-            bad.append("a quote inside a quote")
-        stack.append(name)
-    if stack:
-        bad.append("left open: %s" % ", ".join(stack))
-    return bad
-
-
-_TAG = re.compile(r"<(/?)([a-zA-Z][a-zA-Z0-9-]*)(?:\s[^<>]*)?>")
-
-
-def _open_after(stack, text):
-    st = list(stack)
-    for m in _TAG.finditer(text):
-        name = m.group(2).lower()
-        if m.group(1):
-            for k in range(len(st) - 1, -1, -1):
-                if st[k][0] == name:
-                    del st[k]
-                    break
-        else:
-            st.append((name, m.group(0)))
-    return st
-
-
-def _closers(stack):
-    return "".join("</%s>" % n for n, _o in reversed(stack))
-
-
-def _openers(stack):
-    return "".join(o for _n, o in stack)
-
-
-def _cut_long_line(line, room):
-    """A single line longer than a message: cut at a space outside any tag or entity."""
-    out = []
-    while len(line) > room:
-        spaces, inside = [], False
-        for k, ch in enumerate(line[:room]):
-            if ch == "<":
-                inside = True
-            elif ch == ">":
-                inside = False
-            elif ch == " " and not inside:
-                spaces.append(k)
-        cut = spaces[-1] if spaces and spaces[-1] > room // 2 else -1
-        if cut < 0:
-            cut = room
-            lt, amp = line.rfind("<", 0, cut), line.rfind("&", 0, cut)
-            if lt > line.rfind(">", 0, cut):
-                cut = lt
-            if amp > line.rfind(";", 0, cut) and cut - amp < 10:
-                cut = amp
-            cut = max(cut, 1)
-        out.append(line[:cut])
-        line = line[cut:].lstrip(" ")
-    out.append(line)
-    return out
-
-
-def split_html(s, limit=MAX_LEN):
-    """split_text for an Html reply: chunks of at most `limit` chars, cut at the last blank line when one
-    sits past the first quarter of the chunk (so a section -- a table, a tap-to-open quote -- moves whole to
-    the next message rather than being cut), else at a line. Every chunk stands on its own: a tag open at
-    a cut is closed at the end of the chunk and opened again at the start of the next, so Telegram never
-    sees half a tag."""
-    s = str(s)
-    if len(s) <= limit:
-        return [s]
-    lines = []
-    for ln in s.split("\n"):
-        lines.extend(_cut_long_line(ln, limit - 400) if len(ln) > limit - 400 else [ln])
-    out = []
-    start = []                              # tags open where the current chunk begins
-    cur = []                                # [(line, tags open after it)]
-
-    def body(items):
-        return "\n".join(x for x, _st in items)
-
-    def emit(k):
-        nonlocal start, cur
-        part, end = cur[:k], (cur[k - 1][1] if k else start)
-        text = (_openers(start) + body(part)).rstrip("\n") + _closers(end)
-        if html_to_plain(text).strip():
-            out.append(text)
-        start, cur = end, cur[k:]
-        while cur and not cur[0][0].strip():
-            cur = cur[1:]
-    for ln in lines:
-        while True:
-            st_after = _open_after(cur[-1][1] if cur else start, ln)
-            if not (cur and len(_openers(start)) + len(body(cur + [(ln, st_after)])) + len(_closers(st_after))
-                    > limit):
-                break
-            k = len(cur)
-            for j in range(len(cur) - 1, 0, -1):     # the last blank line, if it is past the first quarter
-                if not cur[j][0].strip():
-                    if len(body(cur[:j])) >= limit // 4:
-                        k = j
-                    break
-            emit(k)                                   # takes at least one line off `cur`
-        if cur or ln.strip():
-            cur.append((ln, st_after))
-    if cur:
-        emit(len(cur))
-    return out or [""]
-
-
-# ===========================================================================
-# transport
-# ===========================================================================
-class Telegram:
-    def __init__(self, token):
-        self.base = "https://api.telegram.org/bot%s/" % token
-
-    def _call(self, method, params, http_timeout=45):
-        data = urllib.parse.urlencode({k: v for k, v in params.items() if v is not None}).encode()
-        req = urllib.request.Request(self.base + method, data=data)
-        with urllib.request.urlopen(req, timeout=http_timeout) as r:
-            return json.loads(r.read().decode("utf-8", "replace"))
-
-    def get_updates(self, offset, timeout=25):
-        d = self._call("getUpdates", {"offset": offset, "timeout": timeout, "allowed_updates": '["message"]'},
-                       http_timeout=timeout + 15)
-        return d.get("result", []) if d.get("ok") else []
-
-    def send(self, chat_id, text):
-        """A plain str goes exactly as it always did. An Html reply goes with parse_mode=HTML, cut by
-        split_html; if Telegram refuses a part's markup (HTTP 400, "can't parse entities") that part is
-        sent again as plain text, so a formatting slip never costs a message. Any other failure is
-        raised as before (say() logs it)."""
-        if not getattr(text, "is_html", False):
-            for chunk in split_text(text, MAX_LEN):
-                self._call("sendMessage", {"chat_id": chat_id, "text": chunk})
-            return
-        for chunk in split_html(text, MAX_LEN):
-            try:
-                self._call("sendMessage", {"chat_id": chat_id, "text": chunk, "parse_mode": "HTML"})
-            except urllib.error.HTTPError as e:
-                if e.code != 400:
-                    raise
-                log("Telegram refused the HTML of one part (%s); sent it again as plain text" % e)
-                for part in split_text(html_to_plain(chunk), MAX_LEN):
-                    self._call("sendMessage", {"chat_id": chat_id, "text": part})
-
-    def _post(self, method, body, ctype, http_timeout=60):
-        req = urllib.request.Request(self.base + method, data=body, headers={"Content-Type": ctype})
-        with urllib.request.urlopen(req, timeout=http_timeout) as r:
-            return json.loads(r.read().decode("utf-8", "replace"))
-
-    def send_photo(self, chat_id, png, caption=None):
-        """One chart: sendPhoto, multipart (photo_body). The caption is plain text (no markup to refuse)."""
-        boundary = "pinphone" + os.urandom(12).hex()
-        d = self._post("sendPhoto", photo_body(chat_id, png, caption, boundary),
-                       "multipart/form-data; boundary=" + boundary)
-        if not (isinstance(d, dict) and d.get("ok")):
-            raise RuntimeError("sendPhoto refused: %s" % (str(d)[:200],))
-
-
-def photo_body(chat_id, png, caption, boundary):
-    """multipart/form-data for sendPhoto: chat_id, caption (cut to Telegram's 1024), the PNG as `photo`."""
-    B = boundary.encode()
-    crlf = b"\r\n"
-    out = []
-    for k, v in (("chat_id", str(chat_id)), ("caption", (caption or "")[:1024] or None)):
-        if v is not None:
-            out.append(b"--" + B + crlf + b'Content-Disposition: form-data; name="' + k.encode() + b'"' + crlf + crlf
-                       + v.encode("utf-8") + crlf)
-    out.append(b"--" + B + crlf + b'Content-Disposition: form-data; name="photo"; filename="chart.png"' + crlf
-               + b"Content-Type: image/png" + crlf + crlf + bytes(png) + crlf)
-    out.append(b"--" + B + b"--" + crlf)
-    return b"".join(out)
+# v-tg-rebuild step 6 (2026-10-30): Telegram, photo_body, net_error and FakeTelegram live in research/phone/transport.py
+# (moved verbatim); re-exported here (phone_alert.py uses pinphone.Telegram).
+from phone.transport import Telegram, photo_body, net_error, FakeTelegram   # noqa: E402,F401
 
 
 SUPPLY_STALE_D = 3.0        # /market: an opportunity trend measured longer ago than this is left out (2026-10-23)
@@ -642,38 +284,6 @@ RESEND_FOR_S = 15 * 60      # 2026-10-23: a send the connection dropped is tried
 RESEND_GAP_S = 30           # ... this far apart
 RESEND_KEEP = 20            # at most this many wait (the newest)
 PHOTO_TRIES = (5, 20)       # a chart the connection dropped: sent again after these many seconds
-
-
-def net_error(e):
-    """True when a send failed on the CONNECTION (no answer, reset, TLS timeout, Telegram 5xx or 429) -- worth
-    sending again. False when Telegram refused the message itself (HTTP 4xx), which a resend would only repeat."""
-    if isinstance(e, urllib.error.HTTPError):
-        return e.code >= 500 or e.code == 429
-    import http.client
-    return isinstance(e, (OSError, http.client.HTTPException))
-
-
-class FakeTelegram:
-    """For the self-test: a queue of incoming messages and a list of sent ones."""
-    def __init__(self):
-        self.incoming = []
-        self.sent = []
-        self.photos = []
-        self.n = 0
-
-    def push(self, chat_id, text):
-        self.n += 1
-        self.incoming.append({"update_id": self.n, "message": {"chat": {"id": chat_id}, "text": text}})
-
-    def get_updates(self, offset, timeout=25):
-        out = [u for u in self.incoming if u["update_id"] >= (offset or 0)]
-        return out
-
-    def send(self, chat_id, text):
-        self.sent.append((chat_id, text))
-
-    def send_photo(self, chat_id, png, caption=None):
-        self.photos.append((chat_id, png, caption))
 
 
 # ===========================================================================
@@ -719,17 +329,8 @@ HELP_TEXT = """📱 <b>Commands</b>
 
 # v-tg-active (2026-10-30, the operator: "remove the paused and removed until they're added back, and show the details
 # for the new one in any relevant commands"): /help lists a bot's command only while it is ACTIVE (botstats.active_bots).
-HELP_BOT_LINES = (
-    ("pin", "/pin — the pin bot: running or not and why, version, settings, money by window, worst, open bets, cash, last markets"),
-    ("race", "/race — the live coin race right now (real money; its bets grow with the bank), its last 10 races, and its money by window"),
-    ("race", "/racestats — the coin race record, and the paper arms on the same races"),
-    ("forecaster", "/forecaster (or /fc) — the forecaster (subaccount 2), the same detail as /pin"),
-    ("ladder", "/ladder — the penny ladder (subaccount 1), the same detail as /pin"),
-    ("weather", "/weather (or /wx) — the weather dip-seller (subaccount 3, weather cash pool), the same detail as /pin"),
-    ("fx", "/fx — the FX taker: the 5 currency pairs (subaccount 4) and the 8 commodities (subaccount 5), the same detail as /pin"),
-    ("jumpband", "/jb (or /jumpband) — the jump band: buys the 70-90c favourite on BNB/HYPE/ZEC/NEAR after a 2+ sd price "
-                 "jump, 5 contracts (subaccount 3), the same detail as /pin"),
-)
+# v-tg-rebuild step 5 (2026-10-30): each bot's lines are its Bot.help (research/bots/<name>.py), in bot order
+HELP_BOT_LINES = _bots.HELP_BOT_LINES
 
 
 def help_text(active=None):
@@ -737,7 +338,8 @@ def help_text(active=None):
     act = set(active) if active is not None else None
     lines = [w for b, w in HELP_BOT_LINES if act is None or b in act]
     return Html(_HELP_TPL.replace("{bot_lines}", "\n".join(lines)).replace(
-        "{funds_split}", " (main bot and coin race apart)" if act is None or "race" in act else ""))
+        "{funds_split}", (" (main bot and %s apart)" % " and ".join(BOT_WORD[x] for x in main_sharers(act)[1:]))
+        if main_sharers(act) else ""))
 
 
 _HELP_TPL = HELP_TEXT
@@ -1216,11 +818,11 @@ def stats_block(title, st, ndays=None):
 # missing them made /stats date pin's window from a clean-room entry (09-30).
 _VER_RE = re.compile(r"^#\s+(v-\S+(?:\s*\+\s*v-\S+)*)\s+--\s+(?:LIVE\s+)?(\d{4}-\d{2}-\d{2})"
                      r"(?:\s+(~?)(\d{2}):(\d[\dx])(?::\d{2})?Z?)?\s*(.*)$", re.I)
-# Entries that are another bot's: the coin race, the clean-room forecaster and
-# penny ladder, and the boot entries that name them. botstats.version_of uses
-# the same words, and the self-test fails if the two pick different versions.
-_NOT_PIN_RE = re.compile(r"coin.?race|penny|cleanroom|clean-room|bettor|forecaster|ladder_live|dipsell|dip.?sell|jumpband",
-                         re.I)
+# Entries that are another bot's (the coin race, the clean-room forecaster and penny ladder, the boot entries that name
+# them ...) are decided by ONE rule, the registry's (bots.version_claim, which botstats.version_of keeps); the self-test
+# fails if the two pick different versions. v-tg-rebuild step 5 (2026-10-30): this file's own word list (_NOT_PIN_RE)
+# is gone -- it knew neither the FX taker's v-fx / fxtake headings nor a combined heading's 'v-ladder-<x>' names.
+INFRA_VER = r"v-(tg|phone|telegram|wifi|recorder|collector)\b"      # = botstats.INFRA_VER: no bot's version
 
 
 def versions(path):
@@ -1258,8 +860,7 @@ def live_version(path):
     would otherwise sit on top and date every 'since the version' figure
     wrong."""
     for v in versions(path):
-        if v[0].lower().startswith(("v-race", "v-jb")) or _NOT_PIN_RE.search(v[0] + " " + v[3]) \
-                or re.match(r"v-(tg|phone|telegram|wifi|recorder|collector)\b", v[0].lower()):   # = botstats.INFRA_VER
+        if re.match(INFRA_VER, v[0].lower()) or _bots.version_claim(DESK_BOT, v[0], v[3]) is None:
             continue
         return v
     return None
@@ -1346,23 +947,31 @@ def _log_name(path, prefix):
     return b[len(prefix):] if b.startswith(prefix) else b
 
 
+def _fleet_scripts():
+    """fleet()'s scripts in the order they are tried, and {script: Bot} of the main account's other live bot (the coin
+    race). v-tg-rebuild step 5: the desk bot's and the race's scripts are the registry's Bot.script (every bot with a pot
+    in subaccount 0); the desk bot's two older copies and the command-line paper arm are no registry bot's."""
+    other = {b.script: b for b in _bots.bots_on("0") if b.name != DESK_BOT}
+    return ("pinrun_afternoon.py", "pinrun913.py", _bots.get(DESK_BOT).script, "cmdarm.py") + tuple(other), other
+
+
 def fleet(procs):
     """What is running, by role: the live up/down bot, the penny race bot,
     the paper arms (by --arm-name / log name) and the paper race arms."""
     out = {"live": None, "penny": None, "arms": [], "race_arms": [], "unknown": procs is None}
+    scripts, race = _fleet_scripts()
     for pid, cl in (procs or []):
         low = cl.lower()
-        script = next((s for s in ("pinrun_afternoon.py", "pinrun913.py", "pinrun.py",
-                                   "cmdarm.py", "pinracearm.py") if s in low), None)
+        script = next((s for s in scripts if s in low), None)
         if not script:
             continue
         toks = cl.split()
         is_live = "--live" in toks
-        if script == "pinracearm.py":
-            if is_live and "--paper-live" not in toks:
+        if script in race:
+            if race[script].is_live(toks):              # the race's live rule: --live, not --paper-live
                 out["penny"] = (pid, cl)
             else:
-                out["race_arms"].append(_log_name(argv_opt(cl, "--log"), "pinracearm-") or "race-arm")
+                out["race_arms"].append(_log_name(argv_opt(cl, "--log"), script[:-3] + "-") or "race-arm")
         elif script == "cmdarm.py":
             out["arms"].append(_log_name(argv_opt(cl, "--out"), "") or "cmdarm")
         elif is_live:
@@ -1758,10 +1367,11 @@ def disk_alert(level, disk_gb):
 # Kalshi's weather pool, exchange_index 0) and the FX taker (subaccounts 5 +
 # 4, 2026-10-25) are separate pots and are added up only in /bots.
 # ===========================================================================
-BOT_CMDS = {"/pin": "pin", "/forecaster": "forecaster", "/fc": "forecaster", "/ladder": "ladder",
-            "/weather": "weather", "/wx": "weather", "/fx": "fx", "/jb": "jumpband", "/jumpband": "jumpband"}
-BOT_CMD_OF = {"pin": "/pin", "race": "/race", "forecaster": "/fc", "ladder": "/ladder", "weather": "/weather", "fx": "/fx",
-              "jumpband": "/jb"}
+# v-tg-rebuild step 5 (2026-10-30): from the registry -- BOT_CMDS = the generic one-bot page's commands (every alias of
+# a bot with no page of its own; the race has /race), BOT_CMD_OF = the one command the phone names for each bot
+BOT_CMDS = _bots.BOT_CMDS
+BOT_CMD_OF = _bots.BOT_CMD_OF
+PAGE_FOOTER = _bots.PAGE_FOOTER             # the line under a one-bot page (Bot.page_footer)
 BS_WINDOWS = ("today", "yesterday", "last_7_days", "this_month", "all_time")
 BS_LABEL = {"today": "Today", "yesterday": "Yesterday", "last_7_days": "Last 7 days",
             "this_month": "This month", "all_time": "All time"}
@@ -1993,7 +1603,7 @@ def bs_activity_lines(name, a):
 
 def bs_bot_text(b, now_et):
     """One bot, everything botstats knows, for /pin /forecaster /ladder."""
-    unit = "leg" if b["name"] == "race" else "market"
+    unit = _unit_of(b["name"])                   # v-tg-rebuild step 5: the registry's Bot.unit (the race: "leg")
     L = ["%s -- %s. %s" % (b["label"].upper(), b["what"], now_et)]
     pot = _pot_words(b)
     if b["shares_subaccount_with"]:
@@ -2025,8 +1635,11 @@ def bs_errors_line(errors):
 # "earlier" (every hidden bot's past markets as one money block). A page lists the active bots and, where its rows must
 # add up to a total, one 'earlier' row; it never names a paused or retired bot. An older botstats (no "active") lists
 # every bot as before.
-_POT_WORD = {"main": "main account", "ladder": "ladder", "forecaster": "forecaster", "jumpband": "jump band",
-             "weather": "weather", "fx": "FX taker", "earlier bots' pots": "earlier bots' pots"}
+# v-tg-rebuild step 5 (2026-10-30): a pot's words in the cash lines -- all_bots' balance keys: 'main' (subaccount 0), each
+# other bot by name (its Bot.pot_word, else its Bot.word), and botstats.shown_cash's one entry for the hidden bots' pots
+_POT_WORD = dict([("main", "main account")]
+                 + [(b.name, b.pot_word or b.word) for b in _bots.all_bots() if "0" not in _bots.bot_subs(b.name)]
+                 + [("earlier bots' pots", "earlier bots' pots")])
 
 
 def _active_of(a):
@@ -2093,7 +1706,8 @@ def bs_all_text(a):
     L = ["ALL BOTS -- %s" % a["as_of_et"],
          "Money from Kalshi, every pot; a market counts on the ET day it closed.",
          "The %% after '=' or in brackets = share of the pot when the window began (its cash + open bets%s). All "
-         "time = share of the money put in." % ("; pin and race share the main account" if "race" in _active_of(a) else "")]
+         "time = share of the money put in." % (("; %s share the main account" % main_shared(_active_of(a), " and "))
+                                                if main_sharers(_active_of(a)) else "")]
     anything = False
     for k in BS_WINDOWS:
         t = a["total"][k]
@@ -2245,26 +1859,23 @@ def bs_running_html(r):
     return out
 
 
-# WHICH BOT a trade is (2026-10-26, the operator: "anywhere that trades or transactions are listed list the account or
-# which bot"). The words a line uses for each bot; 'other' = a main-account market no bot claims.
-BOT_WORD = {"pin": "pin bot", "race": "coin race", "forecaster": "forecaster", "ladder": "ladder",
-            "weather": "weather dip-seller", "fx": "FX taker", "jumpband": "jump band", "earlier": "earlier bots",
-            "other": "not any bot's"}
+# BOT_WORD (which bot a trade is, in words) is near the top: /help is built at import and names bots with it.
 
 
 def main_words(active=None):
     """The main account's bots in words: 'pin bot + coin race' while the race is active, else 'pin bot' (v-tg-active).
-    The main account's own books (/status, /today's tap, /days' tap) still carry every market it ever settled."""
-    return "pin bot + coin race" if active is None or "race" in active else "pin bot"
+    The main account's own books (/status, /today's tap, /days' tap) still carry every market it ever settled.
+    v-tg-rebuild step 5: the words of main_sharers (the registry's bots in subaccount 0)."""
+    return " + ".join(BOT_WORD[x] for x in (main_sharers(active) or [DESK_BOT]))
 
 
 def main_bot_of(tk):
     """Which bot a MAIN-ACCOUNT market is: 'pin', 'race' or 'other' (botstats.owner, the /bots split; pinday's book when
-    botstats cannot be imported)."""
+    botstats cannot be imported -- each bot's Bot.ledger_book)."""
     try:
         return _bs().owner(tk, "0")
     except Exception:                                           # noqa: BLE001
-        return {"crypto": "pin", "coin race": "race"}.get(pinday.book_of(tk), "other")
+        return {b.ledger_book: b.name for b in _bots.all_bots() if b.ledger_book}.get(pinday.book_of(tk), "other")
 
 
 def _mkt_short(tk):
@@ -2387,7 +1998,21 @@ def bs_money_html(m, unit="market", goal=None):
     return L
 
 
-LADDER_GOAL_PCT = 1.0       # operator 10-22: the ladder's target is 1% of its bank a day -- shown next to its %
+# operator 10-22: the ladder's target is 1% of its bank a day -- shown next to its %. v-tg-rebuild step 5: a bot's goal
+# is its Bot.goal_pct (only the ladder has one)
+LADDER_GOAL_PCT = _bots.LADDER_GOAL_PCT
+
+
+def _unit_of(name):
+    """What a bot counts its bets in: 'market', or the race's 'leg' (Bot.unit; 'market' for a name no bot has)."""
+    b = _bots.get(name)
+    return b.unit if b is not None else "market"
+
+
+def _goal_of(name):
+    """A bot's daily goal in % of its bank (Bot.goal_pct), or None."""
+    b = _bots.get(name)
+    return b.goal_pct if b is not None else None
 
 
 def bs_avg_day_line(m, goal=None):
@@ -2506,8 +2131,8 @@ def bots_window_table(a, key, span="day"):
     rows.append(cells("ALL", tot))
     return [pre(table(rows, "lrrrr")),
             i_("of bank = share of that bot's pot when the %s began (%sALL = every pot) · Return = on what the bets "
-               "cost · Lost = markets lost / settled" % (span, "pin + race share the main account; "
-                                                         if "race" in _active_of(a) else ""))]
+               "cost · Lost = markets lost / settled" % (span, ("%s share the main account; " % main_shared(_active_of(a)))
+                                                         if main_sharers(_active_of(a)) else ""))]
 
 
 def _day_long(day):
@@ -2533,13 +2158,13 @@ def bs_bot_html(b, now_et):
     """One bot for /pin /forecaster /ladder /weather: headline, status, the money table, the last 7 days,
     open bets and cash; every sentence bs_bot_text wrote is in the details."""
     bs = _bs()
-    unit = "leg" if b["name"] == "race" else "market"
+    unit = _unit_of(b["name"])                   # v-tg-rebuild step 5: the registry's Bot.unit (the race: "leg")
     r, m = b["running"], b["money"]
     pot = _pot_words(b)
     if b["shares_subaccount_with"]:
         pot += ", shared with the " + " and ".join(bs.SPEC[x]["label"].lower() for x in b["shares_subaccount_with"])
     L = [bs_headline(m["today"] if m["ok"] else None, who=b["label"],
-                     goal=LADDER_GOAL_PCT if b["name"] == "ladder" else None),
+                     goal=_goal_of(b["name"])),
          "%s <b>%s</b> -- %s" % (state_icon(r), esc(b["label"].upper()), esc(b["what"])),
          "<i>%s · Pot: %s.</i>" % (esc(now_et), esc(pot))]
     L.append("")
@@ -2548,7 +2173,7 @@ def bs_bot_html(b, now_et):
     setup = bs_setup_lines(r)
     L += elines([x for x in setup if not x.startswith("Settings: ")])
     L.append("")
-    L += bs_money_html(m, unit, goal=LADDER_GOAL_PCT if b["name"] == "ladder" else None)
+    L += bs_money_html(m, unit, goal=_goal_of(b["name"]))
     L.append("")
     ol = elines(bs_open_lines(b["open"]))
     L.append("📂 " + ol[0].replace("Open now:", "<b>Open now:</b>", 1))
@@ -2612,7 +2237,8 @@ def bs_all_html(a):
     anything = any(tot[k]["markets"] for k in BS_WINDOWS)
     tbl, base = bs_money_table(tot, "of pots")
     L.append(pre(tbl))
-    L.append(money_legend(base, "all pots (pin and race share the main account)" if "race" in _active_of(a) else "all pots"))
+    L.append(money_legend(base, ("all pots (%s share the main account)" % main_shared(_active_of(a), " and "))
+                          if main_sharers(_active_of(a)) else "all pots"))
     miss = [_shown_name(a, x) for x in tot["all_time"]["missing"]]
     miss = sorted(set(miss), key=miss.index)
     if miss:
@@ -2706,8 +2332,10 @@ def bs_all_html(a):
     full = bs_all_text(a).split("\n")
     keep, skip = [], True
     for x in full[1:]:
-        if x.startswith(("PIN BOT", "COIN RACE", "FORECASTER", "PENNY LADDER", "LADDER", "WEATHER DIP-SELLER",
-                         "FX TAKER", "JUMP BAND", "EARLIER BOTS", "NOT ANY BOT'S", "! ", "PARTIAL:", "% of the pots", "Cash: ")):
+        # v-tg-rebuild step 5: a bot card's line starts with its label (the registry's Bot.label, upper case); "PENNY
+        # LADDER" = the ladder's label in an older botstats
+        if x.startswith(tuple(bt_.label.upper() for bt_ in _bots.all_bots())
+                        + ("PENNY LADDER", "EARLIER BOTS", "NOT ANY BOT'S", "! ", "PARTIAL:", "% of the pots", "Cash: ")):
             continue
         keep.append(x)
     while keep and not keep[-1].strip():
@@ -2871,104 +2499,24 @@ def funds_read(getter, clock=time.monotonic, deadline_s=FUNDS_DEADLINE_S):
 def funds_sizes(results=RESULTS, active=None):
     """{subaccount: [words]}: each bot's bet size NOW, from its own log -- no Kalshi read. A log with no
     size record leaves that bot out; a log that cannot be read says so. Never a guess. `active` (v-tg-active): only
-    those bots (None = every bot)."""
-    import glob
+    those bots (None = every bot). v-tg-rebuild step 5 (2026-10-30): each bot's reader is its Bot.funds_size
+    (research/bots/<name>.py, moved there verbatim); spec.SizeIn hands it the results folder, the account and these
+    readers."""
+    from bots.spec import SizeIn
     bs = _bs()
 
     def when(r):
         e = bs._epoch((r or {}).get("t"))
         return bs.et_clock(e) if e else "?"
 
-    def pin():
-        logs = sorted(glob.glob(os.path.join(results, "pinrun-live-*.jsonl")))
-        r = bs.last_record(logs[-1], ("autosize",)) if logs else None
-        if r and _fnum(r.get("new")) is not None:
-            m = re.search(r"bank \$([\d.]+)", str(r.get("why") or ""))
-            return "main bot %g contracts a bet (sized %s%s)" % (
-                _fnum(r["new"]), when(r), (" on a %s bank" % _usd2(m.group(1))) if m else "")
-        sz = read_json(os.path.join(results, "pinrun-live-size.json")) or {}
-        if _fnum(sz.get("size")) is None:
-            return None
-        return "main bot %g contracts a bet (sized %s%s)" % (
-            _fnum(sz["size"]), when({"t": sz.get("at")}),
-            (" on a %s bank" % _usd2(sz["bank"])) if _fnum(sz.get("bank")) is not None else "")
-
-    def race():
-        path = os.path.join(results, "pinracepenny-live.jsonl")
-        r = bs.last_record(path, ("start",))
-        lr = (r or {}).get("live_rails") or {}
-        if _fnum(lr.get("max_contracts")) is None:
-            return None
-        # v-race-snowball (2026-10-11): a start record with bank_sizing takes its size from the bank; the
-        # size in force is the newest bank_size record after that start, not the start-up live_rails.
-        bsz = r.get("bank_sizing") or {}
-        if _fnum(bsz.get("contracts_per_bank")) and _fnum(bsz.get("stake_per_bank")):
-            sz = bs.last_record(path, ("bank_size",))
-            if sz and (bs._epoch(sz.get("t")) or 0) >= (bs._epoch(r.get("t")) or 0) \
-                    and _fnum(sz.get("contracts")) is not None and _fnum(sz.get("bank")):
-                return "coin race %g contracts a leg, at most %s in play (%.2f%% of a %s bank; sized %s, grows " \
-                       "with the bank)" % (_fnum(sz["contracts"]), _usd2(sz.get("stake")),
-                                           100.0 * _fnum(bsz["stake_per_bank"]), _usd2(sz["bank"]), when(sz))
-            return "coin race: bets grow with the bank (%.2f contracts per $100, %.2f%% of it in play); no size " \
-                   "read logged since its start %s" % (100.0 * _fnum(bsz["contracts_per_bank"]),
-                                                      100.0 * _fnum(bsz["stake_per_bank"]), when(r))
-        return "coin race %g contracts a bet%s (set at its start %s)" % (
-            _fnum(lr["max_contracts"]),
-            (", at most %s in play" % _usd2(lr["max_stake"]).replace(".00", "")) if _fnum(lr.get("max_stake")) else "",
-            when(r))
-
-    def ladder():
-        r = bs.last_record(os.path.join(results, "ladder-live-orders.jsonl"), ("rescale", "start"))
-        size = _fnum(((r or {}).get("rails") or {}).get("size"))
-        if size is None:
-            size = _fnum((r or {}).get("new"))
-        if size is None:
-            return None
-        pot = _fnum(r.get("pot") if r.get("pot") is not None else r.get("sub_balance"))
-        return "ladder %g-contract bids (sized %s%s)" % (size, when(r), (" on a %s pot" % _usd2(pot)) if pot else "")
-
-    def forecaster():
-        r = bs.last_record(os.path.join(results, "forecaster-live-orders.jsonl"), ("rescale", "start"))
-        rails = (r or {}).get("rails") or {}
-        sc = _fnum(rails.get("scale"))
-        if sc is None:
-            return None
-        pot = _fnum(r.get("pot") if r.get("pot") is not None else r.get("sub_balance"))
-        return "forecaster %g%% of the paper bot's size%s (sized %s%s)" % (
-            round(100.0 * sc, 2), (", up to %s contracts a side" % rails["per_side"]) if rails.get("per_side") else "",
-            when(r), (" on a %s pot" % _usd2(pot)) if pot else "")
-
-    def fx(n=None):
-        r = bs.last_record(os.path.join(results, "fxtake-live-orders.jsonl"), ("start",))
-        size = _fnum((r or {}).get("size"))
-        if size is None:
-            return None
-        # since v-fx-twopots its start names a pot per cash pool ({"0": 4, "2": 5}) and each pool's cash: account n's
-        # own pot is the pool it holds; an older start had one pot (sub_balance)
-        pot, what = r.get("sub_balance"), ""
-        for pool, sb in (r.get("subs") or {}).items():
-            if n is not None and _fnum(sb) == n:
-                pot = (r.get("pool_cash") or {}).get(pool)
-                what = " (%s)" % ("the currency pairs" if str(pool) == "0" else "the commodities")
-        return "FX taker%s %g contracts a market (set at its start %s%s)" % (
-            what, size, when(r), (" on a %s pot" % _usd2(pot)) if _fnum(pot) is not None else "")
-
-    def jumpband():
-        r = bs.last_record(os.path.join(results, "jumpband-live.jsonl"), ("start",), lambda x: x.get("live") is True)
-        n = _fnum((r or {}).get("max_contracts"))
-        if n is None:
-            return None
-        return "jump band up to %g contracts a buy%s (set at its start %s)" % (
-            n, (", at most %s an order" % _usd2(r["max_cost"])) if _fnum(r.get("max_cost")) is not None else "", when(r))
-
-    readers = {"pin": pin, "race": race, "ladder": ladder, "forecaster": forecaster, "fx": fx, "jumpband": jumpband}
     out = {}
     for n, bots in FUNDS_SIZE_BOTS.items():
         for b in bots:
             if active is not None and b not in active:
                 continue                                        # v-tg-active: a paused or retired bot's size is not said
             try:
-                w = readers[b](n) if b == "fx" else readers[b]()     # the FX taker: one start, a pot per account
+                # the FX taker: one start, a pot per account (SizeIn.sub)
+                w = _bots.get(b).funds_size(SizeIn(results, n, when, bs.last_record, bs._epoch, _fnum, _usd2, read_json))
             except Exception as e:                              # noqa: BLE001
                 w = "%s: its log could not be read (%s)" % (b, str(e)[:60])
             if w:
@@ -3246,23 +2794,24 @@ def funds_text(f, sizes, now, hist=None, active=None):
     return t
 
 
-# /funds on a phone (2026-10-18): a short name an account goes by in the summary table. Edit beside
-# FUNDS_WHAT when a bot moves; an account not here shows its FUNDS_WHAT words, cut short.
-FUNDS_SHORT = {0: "main+race", 1: "ladder", 2: "forecaster", 3: "jump band", 4: "fx pairs", 5: "fx commod"}
+# /funds on a phone (2026-10-18): a short name an account goes by in the summary table: its pots' Pot.short, joined
+# with '+' (v-tg-rebuild step 5: from the registry); an account not here shows its FUNDS_WHAT words, cut short.
+FUNDS_SHORT = _bots.FUNDS_SHORT
 
 
 def funds_short(n, active=None):
     """FUNDS_SHORT's name for account n -- 'idle' when nothing active runs there, 'main' for the main account while the
-    coin race is not active (v-tg-active; None = the whole roster)."""
+    coin race is not active (v-tg-active; None = the whole roster). v-tg-rebuild step 5: the Pot.short of the active
+    bots' pots there (an always-shown bot's always), joined with '+'; with none, the active bots' pot words (subaccount 3
+    with only the weather dip-seller: 'weather')."""
     if active is None or n not in FUNDS_SHORT:
         return FUNDS_SHORT.get(n)
-    if n == 0:
-        return "main+race" if "race" in active else "main"
     if funds_idle(n, active):
         return "idle"
-    if n == 3 and "jumpband" not in active:
-        return "weather"
-    return FUNDS_SHORT[n]
+    sub = str(n)
+    on = [(b, p) for b in _bots.bots_on(sub) for p in b.pots if p.sub == sub and (b.always_shown or b.name in active)]
+    shorts = [p.short for _b, p in on if p.short]
+    return "+".join(shorts) if shorts else ("+".join(b.pot_word or b.word for b, _p in on) or FUNDS_SHORT[n])
 
 
 def funds_idle(n, active=None):
@@ -3495,48 +3044,11 @@ LADDER_PY = os.path.join(HERE, "cleanroom", "ladder_live.py")
 # the roster: (script file, a flag it must have or None, a flag it must NOT have or None, label, one sentence).
 # A launch in boot_all that matches no row is still shown (by boot_all's own label); a row with no launch says so.
 # v-tg-active (2026-10-30): a money bot's row (FEATURE_BOT) is shown only while that bot is ACTIVE; its paper rows stay.
-FEATURE_BOT = {("pinrun.py", "--live"): "pin", ("pinracearm.py", "--live"): "race", ("forecaster_live.py", None): "forecaster",
-               ("ladder_live.py", None): "ladder", ("dipsell_live.py", None): "weather", ("fxtake_live.py", "--live"): "fx",
-               ("jumpband_live.py", "--live"): "jumpband", ("pinracearm.py", None): "race",
-               ("fc_variants_paper.py", None): "forecaster"}        # the paper rows that are a hidden bot's own family
-FEATURES = (
-    ("pinrun.py", "--live", None, "Pin bot (LIVE, main account)",
-     "Buys the near-certain side of a 15-minute coin market in its last seconds, when the price has pinned."),
-    ("pinracearm.py", "--live", None, "Coin race (LIVE, main account)",
-     "Bets real money on which coin finishes a 15-minute race ahead, with the bet growing with the bank."),
-    ("forecaster_live.py", None, None, "Penny forecaster (LIVE, subaccount 2)",
-     "Buys a 15-minute coin market at 98c when its own forecast says that side is as good as decided."),
-    ("ladder_live.py", None, None, "Penny ladder (LIVE, subaccount 1)",
-     "Rests bids a few cents below fair on the already-decided side of 15-minute coin closes and collects the "
-     "last cents when they fill."),
-    ("dipsell_live.py", None, None, "Weather dip-seller (LIVE, subaccount 3)",
-     "Sells daily high-temperature markets (KXHIGH) into dips, in Kalshi's weather cash pool."),
-    ("fxtake_live.py", "--live", None, "FX taker (LIVE, subaccounts 5 + 4)",
-     "In the last 45 to 15 seconds of each 15-minute currency and commodity market (30 to 15 until 10-30), buys the side already bid 98c "
-     "or more at 99c or less, 10 contracts: the 5 currency pairs from subaccount 4, the 8 commodities from subaccount 5."),
-    ("jumpband_live.py", "--live", None, "Jump band (LIVE, subaccount 3)",
-     "Buys the 70-90c favourite on BNB, HYPE, ZEC and NEAR when the price jumps 2+ standard deviations in the last "
-     "minute, 10 to 60 seconds before the close, 5 contracts, and holds it to the end (live stage 1 since 10-30, $50)."),
-    ("jumpband_live.py", None, "--live", "Jump band paper arm",
-     "The jump band's rule on paper at 100 contracts, beside the live one; no orders."),
-    ("pinracearm.py", None, "--live", "Coin race paper arms",
-     "Watch the same coin races on paper with other entry rules; no orders."),
-    ("pinrun.py", None, "--live", "Pin bot paper arms",
-     "The pin rule under variant settings (bands, early leg, confidence), on paper; no orders."),
-    ("locked_average_ladder_re_paper.py", None, None, "Ladder paper shadow",
-     "The ladder's rule on paper across every coin, to compare with the live one; no orders."),
-    ("bettor_paper.py", None, None, "Clean-room bettor (paper)",
-     "The clean-room bettor's rule on paper; no orders."),
-    ("fc_variants_paper.py", None, None, "Forecaster variants (paper)",
-     "The forecaster's variants side by side on paper (main, quiet and crash-guard runs); no orders."),
-    ("rain_paper.py", None, None, "Rain tail NO desk (paper, SJ02)",
-     "Sells the far tail of rain markets on paper; no orders."),
-    ("pinledgerd.py", None, None, "Ledger refresher",
-     "Fetches Kalshi's settlements and keeps results\\kalshi_ledger.json current; trades nothing."),
-    ("cdc_record.py", None, None, "Crypto.com recorder",
-     "Records Crypto.com prices to the tape (public data, no key, no orders)."),
-    ("pinphone.py", None, None, "Phone link", "This Telegram link: answers one paired chat, opens no port."),
-)
+# v-tg-rebuild step 5 (2026-10-30): both from the registry -- each bot's Bot.features rows (Feature.pos keeps their
+# places) between the other programs' rows (bots.EXTRA_FEATURES); FEATURE_BOT = the rows that are a bot's own
+# (Feature.hides), shown only while it is active.
+FEATURE_BOT = _bots.FEATURE_BOT
+FEATURES = _bots.FEATURES
 
 # plain words for the flags an operator meets most; any other flag is shown by its own name
 FLAG_WORDS = {"subaccount": "subaccount", "live": "real money", "minutes": "runs for (minutes)", "coins": "coins",
@@ -3712,7 +3224,7 @@ def features_html(boot_path=None, ladder_path=None, active=None, procs=None):
         bot = FEATURE_BOT.get((script, must))
         if active is not None and bot is not None and bot not in active:
             continue                                     # v-tg-active: a paused or retired bot is not listed
-        if bot == "jumpband" and not mine:
+        if bot is not None and not mine and _bots.get(bot).keepalive is None:   # started by hand (the jump band)
             L.append("")
             L.append("<b>%s</b>" % esc(label))
             L.append(esc(what))
@@ -3794,15 +3306,11 @@ SPEED_MIN_ORDERS = 50           # fewer pin orders than this on the server: "too
 SPEED_MIN_OTHER = 20            # ... and for another bot's line
 # the other bots whose own logs say, per order, what was asked and what was got: (bot, log, the field that names a
 # record, the order record's name). Only orders Kalshi took count (a refusal, e.g. 'market not found', is no race).
-SPEED_OTHERS = (("fx", "fxtake-live-orders.jsonl", "kind", "placed"),
-                ("forecaster", "forecaster-live-orders.jsonl", "ev", "placed"),
-                ("race", "pinracepenny-live.jsonl", "kind", "live_order"))
-# the jump band (2026-10-30) started on the server, so it has no home window to set its speed against
-SPEED_SKIPPED = (("jumpband", "skipped: it started on the server (10-30), so there is no home window to compare"),
-                 ("ladder", "skipped: its bids rest on the book until a seller hits them, so how fast it sends does "
-                            "not decide what it gets, and its log keeps no send-to-answer time"),)
-SPEED_LABEL = {"fx": "FX taker", "forecaster": "Forecaster", "race": "Coin race", "ladder": "Ladder",
-               "jumpband": "Jump band"}
+# v-tg-rebuild step 5 (2026-10-30): from the registry (each bot's Bot.speed: its order record, or why it is skipped;
+# its log is its Logs.path; its name on the page its Bot.short)
+SPEED_OTHERS = _bots.SPEED_OTHERS
+SPEED_SKIPPED = _bots.SPEED_SKIPPED
+SPEED_LABEL = _bots.SPEED_LABEL
 
 # THE SERVER, as AWS shows it (the console, 10-27). The prices are AWS's on-demand list for us-east-2 and only feed the
 # ESTIMATE /server shows next to (or, until the billing role exists, instead of) AWS's own figures.
@@ -5058,7 +4566,8 @@ class Phone:
         today = et_day(self.now())
         lines.append("")
         lines += self.day_html(self.ledger.settled_on(today), today,
-                               "Pin + race today" if "race" in self.active() else "Main account today")
+                               ("%s today" % main_shared(self.active()).capitalize()) if main_sharers(self.active())
+                               else "Main account today")
         try:
             t_ = self._bs_get("all")["total"]["today"]
             if t_["markets"]:
@@ -5180,7 +4689,8 @@ class Phone:
             mw = main_words(self.active())
             L = [x.replace("<code>", "").replace("</code>", "")
                  for x in self.day_html(self.ledger.settled_on(day), day,
-                                        "Pin + race" if "race" in mw else "Main account")]
+                                        main_shared(self.active()).capitalize() if main_sharers(self.active())
+                                        else "Main account")]
             return Html("\n".join(top + ["", details(L, "🏦 %s (main account): closes, fills, "
                                                         "hours up -- tap" % (mw[:1].upper() + mw[1:])),
                                          i_("each bot in full: /bots · the week: /days")]))
@@ -5305,7 +4815,7 @@ class Phone:
             bs = _bs()
             act = _active_of(a)
             for nm in bs.BOTS:
-                if nm == "pin":
+                if nm == DESK_BOT:                          # its own open bets are listed above (the Ledger)
                     continue
                 bt = a["bots"][nm]
                 o = bt["open"]
@@ -5388,9 +4898,9 @@ class Phone:
         try:
             bs = _bs()
             act = self.active()
-            fl, unread = bs.fills_since(et_day_start(day), [b for b in bs.BOTS if b != "pin"])
+            fl, unread = bs.fills_since(et_day_start(day), [b for b in bs.BOTS if b != DESK_BOT])
             # v-tg-active: a paused or retired bot's fills (there should be none) are 'earlier bots', never its name
-            names = [b for b in act if b != "pin"] + ["earlier"]
+            names = [b for b in act if b != DESK_BOT] + ["earlier"]
             for f in fl:
                 if f["bot"] not in act:
                     f["bot"] = "earlier"
@@ -5536,8 +5046,8 @@ class Phone:
         try:
             bs = _bs()
             act = self.active()
-            fl, unread = bs.fills_since(min(cs) - 2 * 3600, [b for b in bs.BOTS if b != "pin"])
-            names = [b for b in act if b != "pin"] + ["earlier"]       # v-tg-active, as /fills
+            fl, unread = bs.fills_since(min(cs) - 2 * 3600, [b for b in bs.BOTS if b != DESK_BOT])
+            names = [b for b in act if b != DESK_BOT] + ["earlier"]       # v-tg-active, as /fills
             for f in fl:
                 if f["bot"] not in act:
                     f["bot"] = "earlier"
@@ -5601,7 +5111,7 @@ class Phone:
                        _cnt(lost), _cnt(settled), 100.0 * lost / settled if settled else 0.0,
                        sum(p["lost_7d"] for p in per.values())),
                    i_("the last %d, newest first · %% = of that bot's pot when its day began (%s) · Kalshi's books, "
-                      "every pot" % (n, "pin + race share the main account" if "race" in per else
+                      "every pot" % (n, ("%s share the main account" % main_shared(per)) if main_sharers(per) else
                                      "earlier bots = the paused or stopped ones"))]
             if missing:
                 out.append("⚠️ PARTIAL: leaves out %s (Kalshi could not be read)" % esc(", ".join(missing)))
@@ -5716,7 +5226,7 @@ class Phone:
         # bank_at, the /days figure); Life over the money put into the main account (botstats' pot, as /pin says)
         life_in = None
         try:
-            life_in = ((self._bs_get("pin").get("money") or {}).get("all_time") or {}).get("pot")
+            life_in = ((self._bs_get(DESK_BOT).get("money") or {}).get("all_time") or {}).get("pot")
         except Exception:                                       # noqa: BLE001
             log(traceback.format_exc())
         starts = {"7 days": et_day_start(day_minus(today, 6)), "3 days": et_day_start(day_minus(today, 2)),
@@ -5747,8 +5257,9 @@ class Phone:
         by = {}
         for m in sts[0][4]:
             by[m["book"]] = by.get(m["book"], 0.0) + m["pnl"]
-        names = {"crypto": "pin bot", "coin race": "coin race" if "race" in self.active() else "earlier bots",
-                 "commodity": "old oil bot (Sep)", "other": "other"}
+        act_ = self.active()
+        names = dict([(b.ledger_book, b.word if (b.always_shown or b.name in act_) else BOT_WORD["earlier"])
+                      for b in _bots.all_bots() if b.ledger_book] + [("commodity", "old oil bot (Sep)"), ("other", "other")])
         L.append(esc("Lifetime by bot: " + ", ".join("%s %s" % (names.get(b, b), usd(v))
                                                      for b, v in sorted(by.items(), key=lambda kv: -kv[1])) + "."))
         pid = fl["live"][0] if fl["live"] else None
@@ -5953,10 +5464,7 @@ class Phone:
             log(traceback.format_exc())
             return ("Could not build %s: %s\nEverything else still works -- /stats and /race carry the "
                     "main account's numbers." % (cmd, str(e)[:200]))
-        more = {"pin": "More on pin: /stats (win rate vs break-even), /fills (today's orders), /open, /losses, /hedges.",
-                "forecaster": "Every bot: /bots.", "ladder": "Every bot: /bots.",
-                "weather": "Every bot: /bots.", "fx": "Every bot: /bots · both FX pots' cash: /funds.",
-                "jumpband": "Every bot: /bots · its pot (subaccount 3, crypto pool): /funds."}.get(name)
+        more = PAGE_FOOTER.get(name)                    # v-tg-rebuild step 5: the registry's Bot.page_footer
         return Html("\n".join(out) + ("\n\n" + i_(more) if more else ""))
 
     def text_racestats(self):
@@ -6288,10 +5796,10 @@ class Phone:
             return self.text_hedges()
         if cmd == "/stats":
             return self.text_stats()
-        if cmd in ("/race", "/racestats") or cmd in BOT_CMDS:
-            name = BOT_CMDS.get(cmd, "race")
-            if name not in self.active():                # v-tg-active: a paused or retired bot is not shown
-                return self.text_hidden(name)
+        cmd_bot = _bots.by_command(cmd)                 # v-tg-rebuild step 5: /race /racestats and BOT_CMDS
+        if cmd_bot is not None:
+            if cmd_bot.name not in self.active():        # v-tg-active: a paused or retired bot is not shown
+                return self.text_hidden(cmd_bot.name)
         if cmd == "/race":
             return self.text_race()
         if cmd == "/racestats":

@@ -57,6 +57,27 @@ def activity(k, r, out, why, st):
         why[g] = why.get(g, 0) + 1
 
 
+# v-tg-rebuild step 5 (2026-10-30): /funds' bet-size reader, moved verbatim from pinphone.funds_sizes (where it was a
+# closure over its `when` and `results`; spec.SizeIn hands it those and the phone's readers).
+def size_words(si):
+    """/funds: the FX taker's size now, for account si.sub -- one start record, a pot per account."""
+    import os
+    n = si.sub
+    r = si.last_record(os.path.join(si.results, "fxtake-live-orders.jsonl"), ("start",))
+    size = si.num((r or {}).get("size"))
+    if size is None:
+        return None
+    # since v-fx-twopots its start names a pot per cash pool ({"0": 4, "2": 5}) and each pool's cash: account n's
+    # own pot is the pool it holds; an older start had one pot (sub_balance)
+    pot, what = r.get("sub_balance"), ""
+    for pool, sb in (r.get("subs") or {}).items():
+        if n is not None and si.num(sb) == n:
+            pot = (r.get("pool_cash") or {}).get(pool)
+            what = " (%s)" % ("the currency pairs" if str(pool) == "0" else "the commodities")
+    return "FX taker%s %g contracts a market (set at its start %s%s)" % (
+        what, size, si.when(r), (" on a %s pot" % si.usd2(pot)) if si.num(pot) is not None else "")
+
+
 BOT = Bot(
     name="fx", label="FX taker", short="FX taker", word="FX taker",
     what="buys the side already bid 98c+ at 99c or less 45 to 15 s before the close of the 15-minute markets (30 to 15 s "
@@ -86,7 +107,7 @@ BOT = Bot(
     keepalive="boot_all.ps1 (every 10 min) restarts it unless the stop file is there",   # since 10-26 (add_fx_keepalive.ps1)
     page_footer="Every bot: /bots · both FX pots' cash: /funds.",
     activity=activity,
-    funds_size=True,
+    funds_size=size_words,
     speed=Speed(rank=1, field="kind", kind="placed"),
     features=(
         Feature("fxtake_live.py", "--live", None, "FX taker (LIVE, subaccounts 5 + 4)",

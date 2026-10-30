@@ -12,8 +12,12 @@ Deviations from DESIGN 3.1, each because a live table needed it:
     commands are NOT in BOT_CMDS but ARE in tgcharts.CMD_KIND.
   - Pot.short / Pot.part: /funds' short account name (FUNDS_SHORT, joined with '+') and a two-pot bot's name for each
     pot (tgcharts.POT_WHAT).
-  - Bot.funds_size: the bot has a bet-size line on /funds (FUNDS_SIZE_BOTS). The readers themselves stay nested in
-    pinphone.funds_sizes (closures over its `when` and `results`) until step 5.
+  - Bot.funds_size: the bot's /funds bet-size reader, size_words(SizeIn) -> words or None (FUNDS_SIZE_BOTS = the bots
+    that have one). v-tg-rebuild step 5 (2026-10-30): the readers moved here verbatim from pinphone.funds_sizes, where
+    they were closures over its `when` and `results`; SizeIn hands them those and the phone's readers.
+  - Bot.pot_word: its pot's words in the phone's cash lines (pinphone._POT_WORD) when they are not its `word` (the
+    weather dip-seller's pot is 'weather'). Bot.ledger_book: pinday's book name for its main-account markets ('crypto',
+    'coin race': /stats' lifetime-by-bot names and pinphone.main_bot_of's fallback). Both step 5.
   - Logs.start_rule: "first_line" (pin: the first record of its newest log), "pid_then_live" (the forecaster, ladder,
     weather, FX taker, jump band: the start record of the running pid, else the newest live one), "live" (the race).
   - Records.activity / activity_note hooks take (k, r, out, why, st) / (out, st): botstats.activity's per-bot elif
@@ -129,6 +133,20 @@ class SettingsIn:
 
 
 @dataclass(frozen=True)
+class SizeIn:
+    """What a /funds bet-size reader (Bot.funds_size) gets from pinphone.funds_sizes: the results folder, the account it
+    is asked about, and the phone's readers -- so a bot file imports neither pinphone nor botstats. (v-tg-rebuild step 5)"""
+    results: str
+    sub: int                                              # the /funds account number (0 = the main account)
+    when: Callable[[dict], str]                           # a record -> its ET clock words, '?' with no time
+    last_record: Callable                                 # botstats.last_record(path, kinds, pred=None)
+    epoch: Callable                                       # botstats._epoch
+    num: Callable                                         # a float or None (pinphone._fnum)
+    usd2: Callable                                        # '$1,254.69' (pinphone._usd2)
+    read_json: Callable[[str], Optional[dict]]            # a json file's dict or None (pinphone.read_json)
+
+
+@dataclass(frozen=True)
 class Bot:
     name: str
     label: str                                            # SPEC label ('Pin bot')
@@ -159,6 +177,8 @@ class Bot:
     activity: Optional[Callable] = None
     activity_note: Optional[Callable] = None
     halt_why: Optional[Callable[[dict], str]] = None
-    funds_size: bool = False
+    funds_size: Optional[Callable[[SizeIn], Optional[str]]] = None   # /funds' bet-size reader (FUNDS_SIZE_BOTS)
     speed: Optional[Speed] = None
     features: tuple = ()
+    pot_word: Optional[str] = None                        # pinphone._POT_WORD when not `word` (step 5)
+    ledger_book: Optional[str] = None                     # pinday.book_of's name for its markets (step 5)
