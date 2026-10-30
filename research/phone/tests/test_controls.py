@@ -98,7 +98,9 @@ def test_pause_start_stop_vs_phone():
     world = _status_world()
     world.__enter__()
     try:
-        for text in ("/pause", "/start", "/start@kalsbot", "/stop yes", "/stop YES ", "/stop", "/stop no", "/pause now"):
+        # v-tg-step12 (lane R): '/pause now' is no longer the pin bot's pause (a word after /pause names ONE bot --
+        # phone/commands/botctl.py; an unknown word changes nothing): test_botctl.py covers it; '/pause pin' is the pin's
+        for text in ("/pause", "/start", "/start@kalsbot", "/stop yes", "/stop YES ", "/stop", "/stop no", "/pause pin"):
             out = []
             for side in ("old", "new"):
                 ph = _phone()

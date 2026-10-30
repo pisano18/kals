@@ -147,6 +147,19 @@ class SizeIn:
 
 
 @dataclass(frozen=True)
+class Start:
+    """How the phone's /resume STARTS a bot that nothing keeps alive (keepalive None): one PowerShell script in RESULTS,
+    run detached through WMI (Win32_Process.Create: it outlives the phone, and an ssh session cannot kill it), with fixed
+    arguments -- never anything typed in the chat. The script must refuse by itself when a live copy already runs or the
+    stop file is set (results/jb_deploy.ps1 -Stage live does both). v-tg-step12 (2026-10-30, lane R)."""
+    script: str                                           # a .ps1 file name in RESULTS
+    args: tuple = ()                                      # its fixed arguments
+    log: Optional[str] = None                             # the log it writes in RESULTS (its tail is said afterwards)
+    wait_s: int = 40                                      # how long after the launch the phone reads the log back
+    words: str = ""                                       # the recipe in words, for the confirm question
+
+
+@dataclass(frozen=True)
 class Bot:
     name: str
     label: str                                            # SPEC label ('Pin bot')
@@ -182,3 +195,4 @@ class Bot:
     features: tuple = ()
     pot_word: Optional[str] = None                        # pinphone._POT_WORD when not `word` (step 5)
     ledger_book: Optional[str] = None                     # pinday.book_of's name for its markets (step 5)
+    start: Optional[Start] = None                         # /resume's start recipe when keepalive is None (step 12)

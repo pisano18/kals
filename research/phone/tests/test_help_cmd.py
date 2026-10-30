@@ -21,6 +21,7 @@ from phone import command as CM                                     # noqa: E402
 from phone.commands import help_cmd as H                            # noqa: E402
 from phone.context import Ctx, FakeCtx                               # noqa: E402
 from phone.html import Html                                          # noqa: E402
+import _step12 as S12                                                # noqa: E402  (step 12's added /help lines)
 
 T = 1793448000.0
 BOTS = tuple(b for b, _w in bots.HELP_BOT_LINES)
@@ -89,14 +90,19 @@ def test_rows_off_declared_commands_match_the_table():
     cmds = CM.commands()
     rows = H.entries(cmds)
     assert rows, "no listed command declared"
+    added = S12.rows()                                   # v-tg-step12 (lane R): /resume, /approve, /move -- new rows
+    assert added and all(r not in H.HELP_ENTRIES for r in added)
     for r in rows:
-        assert r in H.HELP_ENTRIES, "a declared Command's /help row is not in HELP_ENTRIES: %r" % (r,)
+        assert r in H.HELP_ENTRIES or r in added, "a declared Command's /help row is not in HELP_ENTRIES: %r" % (r,)
     places = [(s, o) for s, o, _l in H.HELP_ENTRIES]
     assert len(places) == len(set(places)), "two HELP_ENTRIES rows share a (section, order)"
     assert len(rows) == len(set(rows)), "two Commands declare the same /help row"
     for c in cmds:
         if c.section == "one_bot":
             assert c.help_line is None, "%s: a one-bot page's line is the registry's Bot.help" % c.name
+    legacy_places = {(se, o) for se, o, _l in H.HELP_ENTRIES}
+    assert not any((se, o) in legacy_places for se, o, _l in added), "a step-12 row takes a legacy row's place"
+    rows = [r for r in rows if r not in added]
     merged = rows + [r for r in H.HELP_ENTRIES if r not in rows]
     assert H.template(merged) == H.template() == pp._HELP_TPL
     saved = H._TPL[0]
@@ -104,7 +110,8 @@ def test_rows_off_declared_commands_match_the_table():
         H.use_commands(cmds + [CM.Command(names=("/zz_missing_%d" % i,), section=s, order=o, help_line=l,
                                           handle=lambda c: None)
                                for i, (s, o, l) in enumerate(r for r in H.HELP_ENTRIES if r not in rows)])
-        assert str(H.help_html(("pin",), pp)) == str(pp.help_text(("pin",)))
+        assert str(H.help_html(("pin",), pp)) == S12.with_step12(pp.help_text(("pin",)))
+        assert str(H.help_html(("pin",), pp)) != str(pp.help_text(("pin",))), "the step-12 lines are listed"
     finally:
         H._TPL[0] = saved
     for name, line in (("/pause", "/pause — "), ("/start", "/start — "), ("/stop", "<code>/stop yes</code>"),
