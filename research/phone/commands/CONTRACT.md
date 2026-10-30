@@ -1,5 +1,13 @@
 # phone/commands: the contract for command-module authors (rebuild step 9)
 
+> **Since steps 10-11 (2026-10-30) these modules ARE the phone.** `phone/router.py` dispatches every message to the
+> Command a module here declares (pairing, the paired chat, the ledger refresh, the paused-bot page and the unknown
+> answer are the router's); `Phone.text_*` is gone. `ctx.pp` is `research/phone/shared.py` (the helpers pinphone's
+> module level held); the runtime is `phone/app.py`; `pinphone.py` is a launcher. A new command is a new module here:
+> declare it, add a test under `phone/tests/`, and it is routed, listed in /help (section + order + help_line) and drawn
+> after (chart) with no other edit. The old-vs-new tests compare against the frozen `research/pinphone_legacy.py` (until
+> step 14). The rules below still hold; read "the old method" as "the frozen legacy phone".
+
 Step 9 ADDS one module per phone command next to the old code. Nothing is switched over: `pinphone.Phone.handle` and
 every `Phone.text_*` method keep answering the phone until the integration flip (step 10, one agent). Your module is
 proven byte-identical to the old method by `research\golden\shadow.py` in all 8 golden worlds. The reference example is

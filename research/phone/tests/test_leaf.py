@@ -28,6 +28,7 @@ if RESEARCH not in sys.path:
 os.environ["KALS_TESTING"] = "1"
 
 import pinphone as pp                                                # noqa: E402
+import phone.shared as PS     # noqa: E402  (step 11: the module whose LOG log() follows; pinphone re-exports it)
 from phone import html as H, log as L, transport as T               # noqa: E402
 
 MOVED = {
@@ -47,10 +48,10 @@ def test_reexported_same_objects():
 
 
 def test_log_follows_pinphone_LOG():
-    old = pp.LOG
+    old = PS.LOG
     with tempfile.TemporaryDirectory() as td:
         try:
-            pp.LOG = os.path.join(td, "x.log")
+            PS.LOG = os.path.join(td, "x.log")
             pp.log("one line 🟢")
             sent = []
             tr = pp.Telegram("tok")
@@ -62,18 +63,18 @@ def test_log_follows_pinphone_LOG():
             tr._call = refuse
             tr.send(1, pp.Html("<b>LOSS -$4.57</b> x &lt; y"))
         finally:
-            pp.LOG = old
+            PS.LOG = old
         with open(os.path.join(td, "x.log"), encoding="utf-8") as fh:
             got = fh.read()
     assert "one line 🟢" in got, got
     assert "Telegram refused the HTML of one part" in got, got        # the transport's line went to the patched LOG
     assert sent == [{"chat_id": 1, "text": "LOSS -$4.57 x < y"}], sent
-    assert L.log_path() == pp.LOG
+    assert L.log_path() == PS.LOG
 
 
 def test_unpatched_log_is_fenced():
     """No patch, KALS_TESTING=1: log() refuses the real log (an OSError inside, nothing raised, nothing written)."""
-    real = pp.LOG
+    real = PS.LOG
     st0 = os.stat(real) if os.path.exists(real) else None
     so = sys.stdout
     try:
@@ -87,10 +88,10 @@ def test_unpatched_log_is_fenced():
 
 def test_log_never_raises_on_cp1252():
     so = sys.stdout
-    old = pp.LOG
+    old = PS.LOG
     with tempfile.TemporaryDirectory() as td:
         try:
-            pp.LOG = os.path.join(td, "x.log")
+            PS.LOG = os.path.join(td, "x.log")
             sys.stdout = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict")
             pp.log("SENT: 🟢 Today +$7.10")
             pp.cprint("🟢 cprint")
@@ -98,7 +99,7 @@ def test_log_never_raises_on_cp1252():
             con = sys.stdout.buffer.getvalue().decode("cp1252")
         finally:
             sys.stdout = so
-            pp.LOG = old
+            PS.LOG = old
     assert "\\U0001f7e2 Today +$7.10" in con and "\\U0001f7e2 cprint" in con, con
 
 

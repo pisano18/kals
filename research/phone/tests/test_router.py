@@ -26,7 +26,10 @@ from phone import router as R                                       # noqa: E402
 from phone.html import Html                                          # noqa: E402
 import phone.commands.day as D                                       # noqa: E402
 
-NEW_PHONE_MOD = sys.modules.get("phone.app") or NEW                  # the runtime's module (step 11: phone.app)
+try:                                                                 # the runtime's module (step 11: phone.app)
+    import phone.app as NEW_PHONE_MOD                                # noqa: E402
+except ModuleNotFoundError:                                          # step 10: the runtime was pinphone's Phone
+    NEW_PHONE_MOD = NEW
 
 
 def _phones(active=("pin",), cfg=None):
