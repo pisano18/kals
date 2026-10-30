@@ -2792,7 +2792,7 @@ def bots_all_text(a):
     """The ALL BOTS row's detail: every pot added up, and what is in which total."""
     t = a.get("total") or {}
     L = ["ALL BOTS -- every pot added together (as of %s)" % (a.get("as_of_et") or "?")]
-    for k in ("today", "yesterday", "last_7_days", "this_month", "all_time"):
+    for k in ("today", "yesterday", "last_7_days", "last_30_days", "this_month", "all_time"):
         w = t.get(k)
         if not w:
             continue

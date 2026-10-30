@@ -108,7 +108,7 @@ def _bot_text(b):
         if m["stale"]:
             head += " -- last read failed, showing %s" % (m["as_of_et"] or "?")
         L.append(head + ":")
-        for k in ("today", "yesterday", "last_7_days", "this_month", "all_time"):
+        for k in _money.WINDOW_KEYS:
             L.append(_wline(m[k], m[k]["label"]))
         if _pot_note(m):
             L.append("  " + _pot_note(m))
@@ -177,7 +177,7 @@ def text_summary(name="all", now=None, getter=None, procs=None):
     a = _report.all_bots(now=now, getter=getter, procs=procs)
     L = ["ALL BOTS -- %s" % a["as_of_et"],
          "% of a pot = of what it held when the window began; all time = of the money put in."]
-    for w in ("today", "yesterday", "last_7_days", "this_month", "all_time"):
+    for w in _money.WINDOW_KEYS:
         t = a["total"][w]
         L.append(_wline(t, t["label"], "all pots"))
         bm, bp = _status.shown_by(a, t["by_bot_markets"]), _status.shown_by(a, t["by_bot_pot_pct"], "none")   # v-tg-active

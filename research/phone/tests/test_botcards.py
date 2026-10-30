@@ -64,6 +64,12 @@ def test_money_table_and_days_table():
     tbl = "\n".join(tbl)
     assert base == 300.0 and "unknown -- Kalshi unread" in tbl and "nothing settled yet" in tbl and "Oct " in tbl
     assert "+0.50%*" in tbl
+    # v-tg-30d (step 12): the last 30 days between the 7 days and the month -- Today, Yest, 7 days, 30 days, <month>, All
+    tbl, _b = B.bs_money_table({"today": w, "yesterday": w, "last_7_days": w, "last_30_days": dict(w, money=42.0),
+                                "this_month": dict(w, label="October"), "all_time": dict(w, pot_kind="money_in")})
+    firsts = [ln.split()[0] for ln in tbl[1:]]
+    assert firsts == ["Today", "Yest", "7", "30", "Oct", "All"], tbl
+    assert "+$42.00" in tbl[4] and tbl[4].startswith("30 days"), tbl
     d = B.bs_days_table([{"label": "Thu 10/29", "markets": 2, "money": -1.0, "return_pct": None, "put_in": 40.0,
                           "pot_pct": None, "lost": 1}, {"label": "Wed 10/28", "markets": 0}], unit="leg")
     d = "\n".join(d)

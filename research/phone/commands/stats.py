@@ -35,6 +35,9 @@ def load(ctx):
     ver = P.live_version(ctx.versions_path)
     _md, day_minus = P._md, P.day_minus
     wins = [("LIFETIME (since %s)" % _md(P.FIRST_LIVE_DAY), ms, P.days_between(P.FIRST_LIVE_DAY, today), "Life"),
+            # v-tg-30d (2026-10-30): the last 30 ET days ending today, between lifetime and the 7 days
+            ("LAST 30 DAYS", [m for m in ms if m["day"] >= day_minus(today, 29)],
+             min(30, P.days_between(P.FIRST_LIVE_DAY, today)), "30 days"),
             ("LAST 7 DAYS", [m for m in ms if m["day"] >= day_minus(today, 6)], 7, "7 days"),
             ("LAST 3 DAYS", [m for m in ms if m["day"] >= day_minus(today, 2)], 3, "3 days"),
             ("TODAY (%s)" % _md(today), [m for m in ms if m["day"] == today], 1, "Today")]
@@ -48,7 +51,7 @@ def load(ctx):
         life_in = ((ctx.bs_get(P.DESK_BOT).get("money") or {}).get("all_time") or {}).get("pot")
     except Exception:                                       # noqa: BLE001
         log(traceback.format_exc())
-    starts = {"7 days": et_day_start(day_minus(today, 6)), "3 days": et_day_start(day_minus(today, 2)),
+    starts = {"30 days": et_day_start(day_minus(today, 29)), "7 days": et_day_start(day_minus(today, 6)), "3 days": et_day_start(day_minus(today, 2)),
               "Today": et_day_start(today), "Version": ver[1] if ver else None}
     banks = {}
     for title, st, nd, lab, sub in sts:

@@ -1,5 +1,5 @@
 """money.py -- one settled market in the operator's terms, and money over windows of ET days: describe, market,
-window, windows (today / yesterday / 7 days / month / all time + days_7 / days_30 / all_days), avg_day / avg_words (the
+window, windows (today / yesterday / 7 days / 30 days / month / all time + days_7 / days_30 / all_days), avg_day / avg_words (the
 30-day average day), window_span. Money is Kalshi's (pinledger.pnl); a market belongs to the ET day of its CLOSE.
 
 v-tg-rebuild step 7 (2026-10-30): split out of botstats.py verbatim (botstats.py is now a facade over botdata).
@@ -113,15 +113,26 @@ def avg_words(a, n=LONG_DAYS):
     return "last %d full days" % n
 
 
+# v-tg-30d (2026-10-30, the operator: "in many places the telegram bot displays the month's gains as the spot between 7
+# days and lifetime ... adding the last 30 days total would be good"): a 'last 30 days' window next to the month. It is
+# the 7-day window's rule with 30: the LAST_DAYS ET days ENDING TODAY (today, still running, and the 29 calendar days
+# before it), by the ET close day of each market -- calendar days (shift_day), so a 25-hour or 23-hour day is one day.
+# Not LONG_DAYS' average (the 30 FULL days before today): a window's total includes today, as the 7-day one does.
+LAST_DAYS = 30
+
+
 def windows(ms, today):
-    """today / yesterday / last 7 days / this month / all time, plus the per-day lists."""
+    """today / yesterday / last 7 days / last 30 days / this month / all time, plus the per-day lists."""
     yday = shift_day(today, -1)
     week = set(shift_day(today, -k) for k in range(7))
+    days30 = set(shift_day(today, -k) for k in range(LAST_DAYS))
     month = today[:7]
     out = {"today": window([m for m in ms if m["day"] == today], "Today", [today]),
            "yesterday": window([m for m in ms if m["day"] == yday], "Yesterday", [yday]),
            "last_7_days": window([m for m in ms if m["day"] in week], "Last 7 days",
                                  [shift_day(today, -6), today]),
+           "last_30_days": window([m for m in ms if m["day"] in days30], "Last %d days" % LAST_DAYS,
+                                  [shift_day(today, -(LAST_DAYS - 1)), today]),
            "this_month": window([m for m in ms if (m["day"] or "")[:7] == month],
                                 time.strftime("%B", time.strptime(today, "%Y-%m-%d")), [month + "-01", today]),
            "all_time": window(ms, "All time", None)}
@@ -161,8 +172,8 @@ def windows(ms, today):
     return out
 
 
-# the five windows every money block has (botdata/pots.py gives each its pot %)
-WINDOW_KEYS = ("today", "yesterday", "last_7_days", "this_month", "all_time")
+# the six windows every money block has (botdata/pots.py gives each its pot %), in the order the phone shows them
+WINDOW_KEYS = ("today", "yesterday", "last_7_days", "last_30_days", "this_month", "all_time")
 
 
 def window_span(key, today):
@@ -173,6 +184,8 @@ def window_span(key, today):
         return shift_day(today, -1), today
     if key == "last_7_days":
         return shift_day(today, -6), None
+    if key == "last_30_days":
+        return shift_day(today, -(LAST_DAYS - 1)), None
     if key == "this_month":
         return today[:7] + "-01", None
     return None, None

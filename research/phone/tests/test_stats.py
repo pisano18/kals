@@ -9,6 +9,7 @@ high-water and day-loss files present and absent.
 """
 import calendar
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -25,10 +26,27 @@ def _pin_pot(name, now=None, getter=None, procs=None):
     return {"money": {"all_time": {"pot": 500.0}}}
 
 
+def _minus_30(new):
+    """v-tg-30d (step 12): /stats gained a 'last 30 days' window (its table row and its sentences behind the tap); the
+    rest of the page is still the frozen legacy page's, byte for byte. The new lines are taken out here and checked."""
+    s = str(new)
+    if s.startswith("No Kalshi settlements"):
+        return new
+    L = s.split(chr(10))
+    row = [x for x in L if x.startswith("30 days ")]
+    assert len(row) == 1, s
+    i = next(k for k, x in enumerate(L) if x.startswith("<b>LAST 30 DAYS</b>"))
+    j = next(k for k in range(i + 1, len(L)) if L[k].startswith("<b>LAST 7 DAYS</b>"))
+    out = [x for k, x in enumerate(L) if not (x.startswith("30 days ") or i <= k < j)]
+    return type(new)(chr(10).join(out))
+
+
 def _check(ph, what, **kw):
     with W.patched(**kw):
         old, new = W.old_new(ph, "/stats", ph.text_stats)
-    W.same(old, new, what)
+    # the 30-day label ('30 days', 7 characters) can widen the table's first column: compared with spaces collapsed
+    sq = lambda x: type(x)(re.sub(" +", " ", str(x)))                       # noqa: E731
+    W.same(sq(old), sq(_minus_30(new)), what)
     return str(new)
 
 

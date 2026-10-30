@@ -103,8 +103,9 @@ def halt_words(what, why):
 BOT_CMDS = _bots.BOT_CMDS
 BOT_CMD_OF = _bots.BOT_CMD_OF
 PAGE_FOOTER = _bots.PAGE_FOOTER             # the line under a one-bot page (Bot.page_footer)
-BS_WINDOWS = ("today", "yesterday", "last_7_days", "this_month", "all_time")
-BS_LABEL = {"today": "Today", "yesterday": "Yesterday", "last_7_days": "Last 7 days",
+# v-tg-30d (2026-10-30): the last 30 days between the 7 days and the month (botdata.money.LAST_DAYS)
+BS_WINDOWS = ("today", "yesterday", "last_7_days", "last_30_days", "this_month", "all_time")
+BS_LABEL = {"today": "Today", "yesterday": "Yesterday", "last_7_days": "Last 7 days", "last_30_days": "Last 30 days",
             "this_month": "This month", "all_time": "All time"}
 
 
@@ -230,7 +231,7 @@ def bs_money_lines(m, unit="market", fmt=None):
         if k == "all_time" and m.get("first_day"):
             label += " (since %s)" % bs.day_label(m["first_day"])
         line = bs_window_line(w, label, unit, fmt)
-        if k in ("last_7_days", "all_time") and w and w["active_days"] > 1:
+        if k in ("last_7_days", "last_30_days", "all_time") and w and w["active_days"] > 1:
             line += "; %s up, %d down" % (_nof(w["days_up"], "day"), w["days_down"])
         L.append(line)
     note = bs._pot_note(m)                  # what '% of its bank' means, or why it is not shown
@@ -528,7 +529,7 @@ def bs_all_text(a):
 # ---- the same pages, laid out for a phone (2026-10-18) ------------------------------------------------
 # The words above stay the authority: the tables are drawn from the same dicts, and the long sentences
 # are quoted whole in each page's tap-to-open details.
-BS_SHORT = {"today": "Today", "yesterday": "Yest", "last_7_days": "7 days", "all_time": "All"}
+BS_SHORT = {"today": "Today", "yesterday": "Yest", "last_7_days": "7 days", "last_30_days": "30 days", "all_time": "All"}
 
 
 def _wlabel(k, w):

@@ -32,7 +32,7 @@ def _money_block(c, name, today, ctx=None):
             "as_of_et": et_clock(x.get("fetched")) if x.get("fetched") else None,
             "stale": bool(err) and have}
     if not have:
-        for k in ("today", "yesterday", "last_7_days", "this_month", "all_time", "first_day"):
+        for k in _money.WINDOW_KEYS + ("first_day",):
             base[k] = None
         base["days_7"], base["days_30"], base["all_days"], base["markets"] = [], [], [], []
         base["error"] = base["error"] or "Kalshi has not been read yet"
@@ -56,7 +56,7 @@ def _earlier_block(c, hidden, today):
     base = {"ok": have, "names": list(hidden), "label": _status.EARLIER_LABEL, "complete": all(bool(y.get("complete")) for _, y in xs),
             "error": err, "stale": bool(err) and have}
     if not have:
-        for k in ("today", "yesterday", "last_7_days", "this_month", "all_time", "first_day"):
+        for k in _money.WINDOW_KEYS + ("first_day",):
             base[k] = None
         base["days_7"], base["days_30"], base["all_days"] = [], [], []
         base["error"] = base["error"] or ("nothing hidden" if not hidden else "Kalshi has not been read yet")
@@ -200,7 +200,7 @@ def all_bots(now=None, getter=None, procs=None):
     other["label"] = "Other main-account markets (the old oil bot, anything unlisted)"
     total, missing = {}, [b for b in _tables.BOTS if not bots[b]["money"]["ok"]] + ([] if other["ok"] else ["other"])
     parts = [(b, bots[b]["money"]) for b in _tables.BOTS] + [("other", other)]
-    for w in ("today", "yesterday", "last_7_days", "this_month", "all_time"):
+    for w in _money.WINDOW_KEYS:
         got = [(b, m[w]) for b, m in parts if m.get(w)]
         mk = sum(x["markets"] for _, x in got)
         money = sum(x["money"] for _, x in got)
