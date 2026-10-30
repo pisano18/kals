@@ -225,7 +225,7 @@ def tick(ctx, st=None, all_bots_day=None):
     if dmsg and not run.muted:
         level = st.disk_level
         msg = fmt_or_plain(lambda: disk_alert_html(dmsg, level), lambda: dmsg)
-        send(msg)
+        send(msg, urgent=(level == 6))               # v-tg-step12 merge: under 6 GB is urgent (recorders stop for good at 5)
     losses = ctx.ledger.losing_closes()
     keys = {k for k, _n, _l in losses}
     if st.seen_losses is None:

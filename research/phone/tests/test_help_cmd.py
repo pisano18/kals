@@ -85,6 +85,8 @@ def _new_since_legacy(line):
     """A /help line of a command the legacy phone never had (step 12 adds /week /month /quiet /alive ...): its first
     /name is nowhere in the legacy template. They are checked on their own below; the legacy comparisons leave them out."""
     import re
+    if line in {h for _s, _o, h in S12.rows()}:                         # lane R's rows are checked via with_step12
+        return False
     m = re.match(r"(?:<code>)?(/[a-z_]+)", line)
     return bool(m) and not re.search(re.escape(m.group(1)) + r"\b", str(pp.help_text(None)))
 
