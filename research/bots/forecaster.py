@@ -47,6 +47,22 @@ def activity(k, r, out, why, st):
         why[g] = why.get(g, 0) + 1
 
 
+# v-tg-rebuild step 5 (2026-10-30): /funds' bet-size reader, moved verbatim from pinphone.funds_sizes (where it was a
+# closure over its `when` and `results`; spec.SizeIn hands it those and the phone's readers).
+def size_words(si):
+    """/funds: the forecaster's scale now -- its newest rescale or start record."""
+    import os
+    r = si.last_record(os.path.join(si.results, "forecaster-live-orders.jsonl"), ("rescale", "start"))
+    rails = (r or {}).get("rails") or {}
+    sc = si.num(rails.get("scale"))
+    if sc is None:
+        return None
+    pot = si.num(r.get("pot") if r.get("pot") is not None else r.get("sub_balance"))
+    return "forecaster %g%% of the paper bot's size%s (sized %s%s)" % (
+        round(100.0 * sc, 2), (", up to %s contracts a side" % rails["per_side"]) if rails.get("per_side") else "",
+        si.when(r), (" on a %s pot" % si.usd2(pot)) if pot else "")
+
+
 BOT = Bot(
     name="forecaster", label="Forecaster", short="Forecaster", word="forecaster",
     what="buys the 15-minute coin side its own forecast calls decided, sized from its bank",
@@ -64,7 +80,7 @@ BOT = Bot(
     keepalive="boot_all.ps1 (every 10 min) restarts it unless the stop file is there",
     page_footer="Every bot: /bots.",
     activity=activity,
-    funds_size=True,
+    funds_size=size_words,
     speed=Speed(rank=2, field="ev", kind="placed"),
     features=(
         Feature("forecaster_live.py", None, None, "Penny forecaster (LIVE, subaccount 2)",

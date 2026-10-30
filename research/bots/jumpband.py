@@ -87,6 +87,19 @@ def activity_note(out, st):
                    % _n(triggers, "price jump"))
 
 
+# v-tg-rebuild step 5 (2026-10-30): /funds' bet-size reader, moved verbatim from pinphone.funds_sizes (where it was a
+# closure over its `when` and `results`; spec.SizeIn hands it those and the phone's readers).
+def size_words(si):
+    """/funds: the jump band's size now -- its newest LIVE start record."""
+    import os
+    r = si.last_record(os.path.join(si.results, "jumpband-live.jsonl"), ("start",), lambda x: x.get("live") is True)
+    n = si.num((r or {}).get("max_contracts"))
+    if n is None:
+        return None
+    return "jump band up to %g contracts a buy%s (set at its start %s)" % (
+        n, (", at most %s an order" % si.usd2(r["max_cost"])) if si.num(r.get("max_cost")) is not None else "", si.when(r))
+
+
 BOT = Bot(
     name="jumpband", label="Jump band", short="Jump band", word="jump band",
     what="buys the 70-90c favourite on BNB/HYPE/ZEC/NEAR when the price jumps 2+ standard deviations in "
@@ -116,7 +129,7 @@ BOT = Bot(
     keepalive=None,            # started by hand on the server (results/jb_deploy.ps1); not in boot_all
     page_footer="Every bot: /bots · its pot (subaccount 3, crypto pool): /funds.",
     activity=activity, activity_note=activity_note, halt_why=jb_why,
-    funds_size=True,
+    funds_size=size_words,
     # the jump band (2026-10-30) started on the server, so it has no home window to set its speed against
     speed=Speed(rank=1, skipped="skipped: it started on the server (10-30), so there is no home window to compare"),
     features=(

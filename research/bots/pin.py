@@ -84,6 +84,27 @@ def activity(k, r, out, why, st):
         why[g] = why.get(g, 0) + 1
 
 
+# v-tg-rebuild step 5 (2026-10-30): /funds' bet-size reader, moved verbatim from pinphone.funds_sizes (where it was a
+# closure over its `when` and `results`; spec.SizeIn hands it those and the phone's readers).
+def size_words(si):
+    """/funds: the main bot's bet size now -- its newest autosize record, else results/pinrun-live-size.json."""
+    import glob
+    import os
+    import re
+    logs = sorted(glob.glob(os.path.join(si.results, "pinrun-live-*.jsonl")))
+    r = si.last_record(logs[-1], ("autosize",)) if logs else None
+    if r and si.num(r.get("new")) is not None:
+        m = re.search(r"bank \$([\d.]+)", str(r.get("why") or ""))
+        return "main bot %g contracts a bet (sized %s%s)" % (
+            si.num(r["new"]), si.when(r), (" on a %s bank" % si.usd2(m.group(1))) if m else "")
+    sz = si.read_json(os.path.join(si.results, "pinrun-live-size.json")) or {}
+    if si.num(sz.get("size")) is None:
+        return None
+    return "main bot %g contracts a bet (sized %s%s)" % (
+        si.num(sz["size"]), si.when({"t": sz.get("at")}),
+        (" on a %s bank" % si.usd2(sz["bank"])) if si.num(sz.get("bank")) is not None else "")
+
+
 BOT = Bot(
     name="pin", label="Pin bot", short="Pin bot", word="pin bot",
     what="15-minute coin markets + hourly Bitcoin",
@@ -106,7 +127,8 @@ BOT = Bot(
     always_shown=True,         # /status, /pause and /start are about it (v-tg-active)
     page_footer="More on pin: /stats (win rate vs break-even), /fills (today's orders), /open, /losses, /hedges.",
     activity=activity,
-    funds_size=True,
+    funds_size=size_words,
+    ledger_book="crypto",           # pinday.book_of's name for its markets (/stats' lifetime by bot)
     speed=None,                # /speed's pin section is its own (speed_gather)
     features=(
         Feature("pinrun.py", "--live", None, "Pin bot (LIVE, main account)",

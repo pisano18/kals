@@ -69,6 +69,35 @@ def activity(k, r, out, why, st):
         why[g] = why.get(g, 0) + 1
 
 
+# v-tg-rebuild step 5 (2026-10-30): /funds' bet-size reader, moved verbatim from pinphone.funds_sizes (where it was a
+# closure over its `when` and `results`; spec.SizeIn hands it those and the phone's readers).
+def size_words(si):
+    """/funds: the coin race's bet size now -- its start record's rails, or (v-race-snowball) its newest bank_size."""
+    import os
+    path = os.path.join(si.results, "pinracepenny-live.jsonl")
+    r = si.last_record(path, ("start",))
+    lr = (r or {}).get("live_rails") or {}
+    if si.num(lr.get("max_contracts")) is None:
+        return None
+    # v-race-snowball (2026-10-11): a start record with bank_sizing takes its size from the bank; the
+    # size in force is the newest bank_size record after that start, not the start-up live_rails.
+    bsz = r.get("bank_sizing") or {}
+    if si.num(bsz.get("contracts_per_bank")) and si.num(bsz.get("stake_per_bank")):
+        sz = si.last_record(path, ("bank_size",))
+        if sz and (si.epoch(sz.get("t")) or 0) >= (si.epoch(r.get("t")) or 0) \
+                and si.num(sz.get("contracts")) is not None and si.num(sz.get("bank")):
+            return "coin race %g contracts a leg, at most %s in play (%.2f%% of a %s bank; sized %s, grows " \
+                   "with the bank)" % (si.num(sz["contracts"]), si.usd2(sz.get("stake")),
+                                       100.0 * si.num(bsz["stake_per_bank"]), si.usd2(sz["bank"]), si.when(sz))
+        return "coin race: bets grow with the bank (%.2f contracts per $100, %.2f%% of it in play); no size " \
+               "read logged since its start %s" % (100.0 * si.num(bsz["contracts_per_bank"]),
+                                                  100.0 * si.num(bsz["stake_per_bank"]), si.when(r))
+    return "coin race %g contracts a bet%s (set at its start %s)" % (
+        si.num(lr["max_contracts"]),
+        (", at most %s in play" % si.usd2(lr["max_stake"]).replace(".00", "")) if si.num(lr.get("max_stake")) else "",
+        si.when(r))
+
+
 BOT = Bot(
     name="race", label="Coin race", short="Coin race", word="coin race",
     what="which coin gains most in 15 minutes",
@@ -90,7 +119,8 @@ BOT = Bot(
     keepalive="boot_all.ps1 (every 10 min) restarts it unless the stop file is there",
     unit="leg",
     activity=activity,
-    funds_size=True,
+    funds_size=size_words,
+    ledger_book="coin race",        # pinday.book_of's name for its markets (/stats' lifetime by bot)
     speed=Speed(rank=3, field="kind", kind="live_order"),
     features=(
         Feature("pinracearm.py", "--live", None, "Coin race (LIVE, main account)",

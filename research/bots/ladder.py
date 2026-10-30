@@ -49,6 +49,21 @@ def activity_note(out, st):
     out["note"] = "resting bids: most are cancelled unfilled at the close, by design"
 
 
+# v-tg-rebuild step 5 (2026-10-30): /funds' bet-size reader, moved verbatim from pinphone.funds_sizes (where it was a
+# closure over its `when` and `results`; spec.SizeIn hands it those and the phone's readers).
+def size_words(si):
+    """/funds: the ladder's bid size now -- its newest rescale or start record."""
+    import os
+    r = si.last_record(os.path.join(si.results, "ladder-live-orders.jsonl"), ("rescale", "start"))
+    size = si.num(((r or {}).get("rails") or {}).get("size"))
+    if size is None:
+        size = si.num((r or {}).get("new"))
+    if size is None:
+        return None
+    pot = si.num(r.get("pot") if r.get("pot") is not None else r.get("sub_balance"))
+    return "ladder %g-contract bids (sized %s%s)" % (size, si.when(r), (" on a %s pot" % si.usd2(pot)) if pot else "")
+
+
 BOT = Bot(
     name="ladder", label="Ladder", short="Ladder", word="ladder",
     what="resting 98c bids on the decided side of NEAR ZEC DOGE HYPE XRP (one rung since 10-23), sized so every bid "
@@ -70,7 +85,7 @@ BOT = Bot(
     goal_pct=LADDER_GOAL_PCT,
     page_footer="Every bot: /bots.",
     activity=activity, activity_note=activity_note,
-    funds_size=True,
+    funds_size=size_words,
     speed=Speed(rank=2, skipped="skipped: its bids rest on the book until a seller hits them, so how fast it sends "
                                 "does not decide what it gets, and its log keeps no send-to-answer time"),
     features=(
