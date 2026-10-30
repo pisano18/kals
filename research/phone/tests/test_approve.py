@@ -220,14 +220,18 @@ def test_the_real_manifest():
     old = P.set_results(os.path.join(P.REPO, "results"))
     try:
         items, why = A.load()
-        assert why is None and [it["id"] for it in items] == ["pin15", "fx30", "fxonepot"], (why, items)
-        it = items[0]
+        assert why is None, why
+        by = {it["id"]: it for it in items}
+        assert {"pin15", "fx30", "fxonepot", "pinsize"} <= set(by), list(by)
+        for it in items:                                  # every listed item runs, or says it was replaced
+            path, why = A.check(it)
+            assert (path is not None and why is None) or it.get("superseded_by"), (it["id"], why)
+        it = by["pin15"]
         assert it["script"] == "pin_size15_nohedgejump.ps1" and it["log"] == "pin_size15.out"
-        assert it["title"] == "Pin: drop the jump hedge and move to a 1.33x bet (trial)"
         assert "-$100" in it["stop_rule"] and "4.00" in it["stop_rule"]
-        path, why = A.check(it)
-        assert path is not None and why is None, why
-        fx30, one = items[1], items[2]
+        ps = by["pinsize"]                                # v-pinsize (10-30 evening): size only, the jump hedge kept
+        assert ps["script"] == "pin_size133.ps1" and "jump hedge" in ps["title"].lower() and "-$100" in ps["stop_rule"]
+        fx30, one = by["fx30"], by["fxonepot"]
         assert fx30["superseded_by"] == "fxonepot" and A.check(fx30) == (None, "superseded by fxonepot: run that one instead")
         assert one["script"] == "fx_onepot_restart.ps1" and one["log"] == "fx_onepot_restart.out"
         assert "NO MONEY MOVE IS NEEDED" in one["description"] and "sub5pool0" in one["description"]

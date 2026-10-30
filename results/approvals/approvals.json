@@ -3,7 +3,7 @@
  "items": [
   {
    "id": "pin15",
-   "title": "Pin: drop the jump hedge and move to a 1.33x bet (trial)",
+   "title": "Pin: drop the jump hedge AND 1.33x bet (trial) -- see pinsize, which keeps the hedge",
    "description": "Two edits to the pin bot's launcher (C:\\kals-live-0925n\\restart_bot.ps1). 1) The jump hedge (--hedge-jump 6) is switched off: the 10-30 read found 7 of its 8 hedges insured bets that won anyway and it caught none of the 3 real losses (about +$2-4 a day without it). 2) The bet goes from --bank-brake 4.00 to 3.00, about 1.33 times today's size (about +$2 a day on the 22 recorded days; the operator asked for caution, so not 1.5x). The script keeps a backup, checks the edited file still parses (else restores it and stops), then restarts pin through restart_bot.ps1, which waits until pin holds no open bet.",
    "stop_rule": "Back to --bank-brake 4.00 if any pin day during the trial is worse than -$100, or if the 11-10 read shows the extra contracts earning under 0c each (over +0.5c each -> consider 2.00).",
    "script": "pin_size15_nohedgejump.ps1",
@@ -34,6 +34,17 @@
    "added_by": "Claude (assistant), for the operator",
    "date": "2026-10-30",
    "sha256": "cff10f4d9145892c4a55e66235dff34acbab618650b8fce0cd5bb8919cdc0369"
+  },
+  {
+   "id": "pinsize",
+   "title": "Pin: 1.33x bet trial, KEEP the jump hedge (recommended over pin15)",
+   "description": "One edit to the pin bot's launcher: the bet goes from --bank-brake 4.00 to 3.00, about 1.33 times today's size (about +$2 a day on the recorded days). The jump hedge stays ON: on pin's history (09-12 to 10-20) it would have cut the big fast losses (NEAR 10-03 -$87, ZEC 10-07 -$83, ZEC 10-18 -$33 to about -$1.50), worth +$76 to +$189 over those weeks, while its one live week (10-24 to 10-30) happened to have no fast loss and cost about $12.50. With a bigger bet, keeping insurance against the big fast losses is the cautious choice. The script keeps a backup, checks the edited file still parses (else restores it and stops), then restarts pin through restart_bot.ps1, which waits until pin holds no open bet. Choose this OR pin15, not both.",
+   "stop_rule": "Back to --bank-brake 4.00 if any pin day during the trial is worse than -$100, or if the 11-10 read shows the extra contracts earning under 0c each.",
+   "script": "pin_size133.ps1",
+   "log": "pin_size133.out",
+   "added_by": "Claude (assistant), for the operator",
+   "date": "2026-10-30",
+   "sha256": "e555297671e051b3de6b0025e74caf30cbab6c98dba655639181ecce8d32d7cc"
   }
  ]
 }
