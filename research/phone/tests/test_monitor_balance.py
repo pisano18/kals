@@ -159,6 +159,20 @@ def test_the_gap_explained():
     assert "• not explained by either: <b>$0.00</b>\n" in msg, msg
 
 
+def test_a_listed_money_move_is_not_a_mismatch():
+    # v-tg-balmove: a phone /move (or a deposit) of $50 into the ladder's pot that Kalshi lists -> no BALANCE alert
+    ladder_log()
+    r = Rig()
+    xfer = [{"amount_cents": 5000, "created_ts": int(T0 - 600), "from_subaccount": 0, "to_subaccount": 1,
+             "exchange_index": 2}]
+    assert r.tick(0, ladder_cash=840.4, transfers=xfer) == []
+    assert r.tick(60, ladder_cash=840.4, transfers=xfer) == []
+    got = r.tick(120, ladder_cash=840.4)            # the same $50 with NO listed move: that is a mismatch again
+    assert got == [], got                           # (read 1 of 2)
+    got = r.tick(180, ladder_cash=840.4)
+    assert len(got) == 1 and "has $50.00 more on Kalshi than its books say" in got[0][0], got
+
+
 def test_in_flight_and_unchecked_pots():
     ladder_log([{"t": iso(T0 + 30), "ev": "live_fill", "ticker": "KXNEAR15M-26OCT301030-30", "delta": 10}])
     r = Rig()

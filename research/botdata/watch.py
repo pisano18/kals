@@ -88,8 +88,10 @@ def compare(c, name, b, read_t):
             continue
         only.append(_money.market(s))
     only.sort(key=lambda m: m["t"] or 0)
+    # v-tg-balmove (2026-10-30): money Kalshi lists moving in or out (a phone /move, a deposit into the pot) is EXPECTED,
+    # not a mismatch -- before this, any /move into a bot's pot raised an urgent BALANCE alert until the bot restarted
     return {"why": None, "kalshi": round(kalshi, 2), "books": round(want, 2), "gap": round(gap, 2),
-            "flows": round(flows, 2), "tol": round(tol, 2), "off": abs(gap) > tol, "kalshi_only": only}
+            "flows": round(flows, 2), "tol": round(tol, 2), "off": abs(gap - flows) > tol, "kalshi_only": only}
 
 
 __all__ = ["watch_in", "gauges", "gauge_level", "books", "pool_only", "compare", "TOL_USD", "TOL_FRAC",
