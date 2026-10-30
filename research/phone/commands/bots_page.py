@@ -14,8 +14,9 @@ def load(ctx):
     return ctx.bs_get("all")
 
 
-def render(a):
-    return Html("\n".join(bs_all_html(a)))
+def render(a, ctx):
+    from phone.monitor import down_lines        # step 12 (lane Q): a DOWN bot's warning line at the top
+    return Html("\n".join(down_lines(ctx) + bs_all_html(a)))
 
 
 def fail(e):

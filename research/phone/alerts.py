@@ -243,4 +243,28 @@ def tick(ctx, st=None, all_bots_day=None):
                            lambda: "YESTERDAY\n" + story_day(ctx.ledger, yday, now=now))
         ctx.say(msg)
         sent.append(msg)
+    if getattr(run, "monitor_on", False):
+        monitor_tick(ctx, st, sent, now)
     return sent
+
+
+# ---- v-tg-rebuild step 12, lane Q: the monitor (phone/monitor.py) -------------------------------------------------------
+def sender(ctx, sent):
+    """send(msg, urgent=False) for the monitor's alerts: nothing while muted (the runtime's flag); else said and kept in
+    `sent`. True when it went."""
+    def send(msg, urgent=False):
+        if ctx.state.muted:
+            return False
+        ctx.say(msg)
+        sent.append(msg)
+        return True
+    return send
+
+
+def monitor_tick(ctx, st, sent, now):
+    """The monitor's checks (DOWN bots, ...) after the old alerts; a failure there is logged, never raised."""
+    try:
+        from phone import monitor as _monitor
+        _monitor.tick(ctx, st, sender(ctx, sent), now)
+    except Exception:                                           # noqa: BLE001
+        log("monitor failed:\n%s" % traceback.format_exc())

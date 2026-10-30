@@ -144,7 +144,8 @@ class Phone:
         self.seen_losses = None
         self.last_daily = None
         self.disk_level = 0                     # disk_alert(): 0 armed, 8 / 6 = that line already sent
-        self.bars_fn = None                     # the self-test plants /bars' text
+        self.monitor_on = False                 # step 12: phone/monitor.py runs in the alerts tick (main() turns it on)
+        self.bars_fn = None                    # the self-test plants /bars' text
         self.busy = False                       # a control is running (phone/commands/controls.py)
         self._updating = False                  # an /update check is running (phone/commands/update.py)
         self._exit_now = False                  # /update passed: the poll loop confirms the offset, then exits
@@ -406,6 +407,7 @@ def main(argv=None, state=None):
         return 2
     ph = Phone(cfg, Telegram(cfg["token"]))
     ph.charts_on = cfg.get("charts", True) is not False         # "charts": false in telegram.json = words only
+    ph.monitor_on = True            # step 12: phone/monitor.py's watch (off in every self-test Phone unless it asks)
     if state is not None:
         state["phone"] = ph
     ph.run()

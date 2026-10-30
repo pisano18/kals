@@ -29,6 +29,11 @@ def selftest():
     # write under the real results\ or C:\kals while KALS_TESTING=1 (before this the pinphone self-test appended its
     # fake sends to the real results\pinphone.log)
     os.environ["KALS_TESTING"] = "1"
+    # v-tg-rebuild step 12 (lane Q): the DOWN warning line at the top of /status and /bots has its own tests
+    # (test_monitor_down.py); these checks read those pages line by line in a planted world where bots that never
+    # existed on 09-16 have no stop file, so the line is left out here
+    import phone.monitor as _mon_q
+    _mon_q.down_lines = lambda ctx: []
 
     def ck(cond, msg):
         cprint(("  ok   " if cond else "  FAIL ") + msg)
