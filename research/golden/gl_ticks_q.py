@@ -7,17 +7,41 @@ Each script turns the monitor on (Phone.monitor_on) on the case's phone and move
 without phone/monitor.py answers {"skipped": ...}.
 """
 import copy
+import glob
+import json
 import os
 import sys
+import time
 
-TICKS = ["alerts-down"]
+TICKS = ["alerts-down", "alerts-stops"]
+
+
+def _iso(t):
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))
+
+
+def _results():
+    """The results folder as the code under test names it (the fence maps it to the world's scratch copy)."""
+    return sys.modules["botdata.paths"].RESULTS
+
+
+def _append(name, recs, mtime):
+    """Append records to a results log; its mtime is set to `mtime` (the world's clock), never this machine's."""
+    p = os.path.join(_results(), name)
+    with open(p, "a", encoding="utf-8") as fh:
+        for r in recs:
+            fh.write(json.dumps(r) + "\n")
+    os.utime(p, (mtime, mtime))
 
 
 def _monitor_state(ph):
     m = getattr(ph, "monitor", None)
     if m is None:
         return None
-    return {"down": {k: {"checks": v.get("checks"), "sent": v.get("sent")} for k, v in sorted(m.down.items())}}
+    out = {"down": {k: {"checks": v.get("checks"), "sent": v.get("sent")} for k, v in sorted(m.down.items())}}
+    if getattr(m, "gauge", None):
+        out["stops"] = {" / ".join(k): v for k, v in sorted(m.gauge.items())}
+    return out
 
 
 def _set_procs(rt, ph, rows):
@@ -61,5 +85,22 @@ def run(rt, ph, which, tick):
         at(330, "check 2")
         _set_procs(rt, ph, copy.deepcopy(rows0))
         at(360, "back within 1 min: nothing was ever sent")
+        return {"ticks": ticks}
+    if which == "alerts-stops":
+        T = T0
+        pin = sorted(glob.glob(os.path.join(_results(), "pinrun-live-*.jsonl")))
+        pin = os.path.basename(pin[-1]) if pin else "pinrun-live-20261028T011720Z.jsonl"
+        _append("jumpband-live.jsonl", [{"t": _iso(T - 60), "kind": "start", "live": True, "stop_line": -25.0,
+                                         "day_stop": -15.0, "line_money": 0.56}], T)
+        _append(pin, [{"t": _iso(T - 60), "kind": "autosize", "loss_abort": -255.3, "why": "bank $1365.22"}], T)
+        at(0, "first (learns, sends nothing)")
+        _append("jumpband-live.jsonl", [{"t": _iso(T + 30), "kind": "settle", "line_money": -15.5, "day_money": -10.2}],
+                T + 30)
+        _append(pin, [{"t": _iso(T + 30), "kind": "settled", "realised": 176.97, "day_realised": -160.0}], T + 30)
+        at(61, "jump band $9.50 from its stop line and $4.80 from its day stop; pin bot at 63% of its loss abort")
+        _append("jumpband-live.jsonl", [{"t": _iso(T + 70), "kind": "settle", "line_money": -25.4, "day_money": -15.4}],
+                T + 70)
+        at(122, "the jump band trips both (urgent)")
+        at(190, "nothing more")
         return {"ticks": ticks}
     return {"skipped": "unknown script %s" % which}

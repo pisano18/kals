@@ -8,6 +8,11 @@ self-tests and the golden harness turn it on only where they test it):
              it is back up (or paused instead). The jump band has NO keep-alive: this is its only safety net.
              /status and /bots print one warning line per DOWN bot at the top (down_lines), with no debounce: a page
              says what is true now.
+  STOPS      early warnings before a stop trips (each bot's own records, through the registry's Bot.stop_gauges hook:
+             botdata/watch.py): the pin bot at 60% and 80% of its loss abort, the jump band $10 and $5 from its -$25
+             stop line and $5 from its -$15 day stop, the FX taker near its stop line and its day stop, the ladder at 60%
+             and 80% of its day-stop rail. Once per level per run / day (Gauge.period), and once more (URGENT) when the
+             stop trips. Read every GAUGE_EVERY_S; the first read after a (re)start learns and says nothing.
 
 Every alert leads with what happened and what it means in $; every one goes through `send(msg, urgent)` (alerts.py:
 muted -> nothing; quiet hours hold what is not urgent). Each check is inside its own try: one failing never costs the
@@ -20,20 +25,25 @@ from dataclasses import dataclass, field
 
 import bots as _bots
 from botdata import status as _status
+from botdata import watch as _watch
 from botdata.fmt import usd
 from phone.html import Html, esc
 from phone.log import log
-from pindesk import et_day, et_str
+from pindesk import et_day, et_str, pct
 
 # ---- DOWN: the debounce (operator 10-30: "alert only after it has been DOWN for > 2 checks / ~3 min, configurable") ----
 DOWN_CHECKS = 2                         # it must be seen DOWN on MORE than this many checks ...
 DOWN_ALERT_S = 180                      # ... and for at least this long (telegram.json "down_alert_s" overrides)
+GAUGE_EVERY_S = 60                      # the stops are read at most this often (the first tick always)
 
 
 @dataclass
 class MonitorState:
     """What the monitor remembers between ticks (on the alert state: st.monitor)."""
     down: dict = field(default_factory=dict)        # bot -> {"since", "checks", "sent", "log"} while it is DOWN
+    gauge: dict = field(default_factory=dict)       # (bot, gauge key, period) -> the level already told
+    gauge_t: float = None                           # when the stops were last read
+    gauge_learnt: bool = False                      # the first read (learns, says nothing) is done
 
 
 def state_of(st):
@@ -161,6 +171,58 @@ def check_down(ctx, m, send, now):
                          lambda: "%s is back (%s)." % (label(name), st_)), urgent=True)
 
 
+# ---- the stops: early warnings, then the trip --------------------------------------------------------------------------
+def _cap(x):
+    return x[:1].upper() + x[1:]
+
+
+def gauge_text(name, g, level, pot):
+    """A warning (level 1..len(warn_at)) or the trip (len(warn_at) + 1) of Gauge g, in the operator's words."""
+    n = len(g.warn_at)
+    of = (" · <b>%s</b> of its pot" % esc(pct(g.money / pot))) if pot else ""
+    if level > n:
+        return Html("🛑 <b>%s hit %s (%s)</b>: %s %s%s.\n%s." % (
+            esc(label(name)), esc(g.what), esc(usd(g.line)), esc(usd(g.money)), esc(g.counted), of, esc(_cap(g.trips))))
+    lines = ["⚠️ <b>%s %s %s: %s from %s (%s)</b>%s" % (
+        esc(label(name)), esc(usd(g.money)), esc(g.counted), esc(usd(g.money - g.line).lstrip("+")), esc(g.what),
+        esc(usd(g.line)), of)]
+    way = ("%d%% of the way there. " % round(100.0 * g.money / g.line)) if g.line < 0 and g.money < 0 else ""
+    lines.append("%sAt %s %s. %s" % (way, esc(usd(g.line)), esc(g.trips), (
+        "Next warning at %s." % esc(usd(g.warn_at[level]))) if level < n else "Next: the stop itself."))
+    return Html("\n".join(lines))
+
+
+def check_gauges(ctx, m, send, now):
+    """Read every running bot's stops (at most every GAUGE_EVERY_S); warn once per level per period; the trip is
+    urgent. The first read learns the levels already reached and says nothing."""
+    if m.gauge_t is not None and 0.0 <= now - m.gauge_t < GAUGE_EVERY_S:
+        return
+    m.gauge_t = now
+    f = _fleet(ctx)
+    wi = _watch.watch_in(now)
+    for s in f.bots:
+        if s.state not in (_status.ACTIVE, _status.UNKNOWN):
+            continue
+        try:
+            gs = _watch.gauges(s.name, now, wi)
+        except Exception:                                       # noqa: BLE001
+            log("stop gauges of %s failed:\n%s" % (s.name, traceback.format_exc()))
+            continue
+        for g in gs:
+            key = (s.name, g.key, g.period)
+            lv, told = _watch.gauge_level(g), m.gauge.get(key, 0)
+            if lv <= told:
+                continue
+            m.gauge[key] = lv
+            if not m.gauge_learnt:
+                continue
+            name = s.name
+            send(fmt(lambda: gauge_text(name, g, lv, pot_value(ctx, name)),
+                     lambda: "%s %s %s, %s %s" % (label(name), usd(g.money), g.counted, g.what, usd(g.line))),
+                 urgent=lv > len(g.warn_at))
+    m.gauge_learnt = True
+
+
 # ---- the tick ------------------------------------------------------------------------------------------------------------
 def fmt(build, plain):
     """An alert laid out, or its plain words if the layout fails (alerts.fmt_or_plain's rule)."""
@@ -171,7 +233,7 @@ def fmt(build, plain):
         return plain()
 
 
-CHECKS = (("down", check_down),)
+CHECKS = (("down", check_down), ("stops", check_gauges))
 
 
 def tick(ctx, st, send, now=None):

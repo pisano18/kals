@@ -147,6 +147,36 @@ class SizeIn:
 
 
 @dataclass(frozen=True)
+class WatchIn:
+    """What a monitor hook (Bot.stop_gauges, Bot.books) reads -- the bot's own log through these readers only, so a bot
+    file imports neither the phone nor botstats. (v-tg-rebuild step 12, lane Q)"""
+    results: str                                          # the results folder
+    now: float                                            # epoch (the phone's clock)
+    today: str                                            # the ET day of `now`
+    last_record: Callable                                 # botdata.logs.last_record(path, kinds, pred=None)
+    read_since: Callable                                  # botdata.logs.read_since(path, since) -> [records] or None
+    epoch: Callable                                       # a record's 't' -> epoch or None
+    et_day: Callable                                      # epoch -> 'YYYY-MM-DD' (ET)
+
+
+@dataclass(frozen=True)
+class Gauge:
+    """One stop a bot trips by itself, read from its own records: where it stands now against the line that stops it.
+    The phone warns once per level per `period` (a run, an ET day, 'live' for a line that never resets) as `money`
+    falls through each of `warn_at` (money levels, highest first), and once more when it trips (money <= line, or its
+    own record says so)."""
+    key: str                                              # 'day', 'line', 'abort' ... (unique within the bot)
+    what: str                                             # 'its day stop'
+    money: float                                          # the settled $ counted against the line now
+    line: float                                           # the line: it trips at money <= line (negative)
+    warn_at: tuple                                        # money levels to warn at, highest first: (-15.0, -20.0)
+    period: str                                           # the episode: '2026-10-30', 'run 20261028T011720Z', 'live'
+    counted: str = ""                                     # what `money` is: 'settled today', 'since it went live'
+    trips: str = ""                                       # what happens at the line: 'it stops for the day'
+    tripped: bool = False                                 # its own record says the line was hit
+
+
+@dataclass(frozen=True)
 class Bot:
     name: str
     label: str                                            # SPEC label ('Pin bot')
@@ -182,3 +212,5 @@ class Bot:
     features: tuple = ()
     pot_word: Optional[str] = None                        # pinphone._POT_WORD when not `word` (step 5)
     ledger_book: Optional[str] = None                     # pinday.book_of's name for its markets (step 5)
+    # v-tg-rebuild step 12, lane Q (2026-10-30): what the phone's monitor reads from the bot's own log
+    stop_gauges: Optional[Callable] = None                # (WatchIn) -> [Gauge]: its stops, for the early warnings

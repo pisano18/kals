@@ -1,8 +1,8 @@
 """The FX taker (research/cleanroom/fxtake_live.py, 2026-10-25): the 8 commodities from subaccount 5 (pool 2) and the
 5 currency pairs from subaccount 4 (pool 0). Every fact copied verbatim from botstats.py / pinphone.py / tgcharts.py at
 8a9c5e1 (v-tg-rebuild step 1, 2026-10-30)."""
-from bots.spec import Bot, Feature, Logs, Pot, Records, Speed, VersionRule, live_flag
-from botdata.fmt import cents as _c, usd
+from bots.spec import Bot, Feature, Gauge, Logs, Pot, Records, Speed, VersionRule, live_flag
+from botdata.fmt import cents as _c, num as _num, usd
 
 # 4: the FX taker's currency pairs (pool 0, created 2026-10-25 ~21:0xZ). The NUMBER 4 also names the old coin-race reward
 # test's pot in pool 2 (stopped 10-23, ~1c left), never counted here: in subaccount 4 only an FX pair is the FX taker's.
@@ -78,6 +78,42 @@ def size_words(si):
         what, size, si.when(r), (" on a %s pot" % si.usd2(pot)) if si.num(pot) is not None else "")
 
 
+# v-tg-rebuild step 12, lane Q (2026-10-30): the phone's early warnings before the FX taker's stops trip
+def stop_gauges(wi):
+    """The FX taker's two stops, from its own records (fxtake_live.py): the stop line (settled money since
+    stop_line_since: its start's line_pnl + this run's run_pnl; warned $5 and $2.50 before it) and the day stop (its
+    day_pnl; warned at 60% and 80% of it)."""
+    import os
+    path = os.path.join(wi.results, "fxtake-live-orders.jsonl")
+    st = wi.last_record(path, ("start",))
+    if not st:
+        return []
+    t0 = wi.epoch(st.get("t")) or 0.0
+    r = wi.last_record(path, ("settle", "health")) or {}
+    rt = wi.epoch(r.get("t"))
+    if rt is None or rt < t0:
+        r, rt = {"run_pnl": 0.0, "day_pnl": 0.0}, t0
+    run = _num(r.get("run_pnl")) or 0.0
+    out = []
+    line, base = _num(st.get("stop_line")), _num(st.get("line_pnl"))
+    if line is not None and base is not None:
+        since = str(st.get("stop_line_since") or "")
+        hit = bool(wi.last_record(path, ("stop_line",), lambda x: str(x.get("since") or "") == since))
+        out.append(Gauge(key="line", what="its stop line", money=round(base + run, 2), line=line,
+                         warn_at=(line + 5.0, line + 2.5), period="since %s" % since,
+                         counted="settled since %s" % since[:10],
+                         trips="it stands down for good (it writes its stop file; boot_all will not start it again)",
+                         tripped=hit))
+    ds = _num(st.get("day_stop"))
+    if ds is not None and ds < 0:
+        day = (_num(r.get("day_pnl")) or 0.0) if wi.et_day(rt) == wi.today else 0.0
+        d = wi.last_record(path, ("day_stop",)) or {}
+        out.append(Gauge(key="day", what="its day stop", money=round(day, 2), line=ds,
+                         warn_at=(round(0.6 * ds, 2), round(0.8 * ds, 2)), period=wi.today, counted="settled today",
+                         trips="it stops for the rest of the day", tripped=str(d.get("day") or "") == wi.today))
+    return out
+
+
 BOT = Bot(
     name="fx", label="FX taker", short="FX taker", word="FX taker",
     what="buys the side already bid 98c+ at 99c or less 45 to 15 s before the close of the 15-minute markets (30 to 15 s "
@@ -108,6 +144,7 @@ BOT = Bot(
     page_footer="Every bot: /bots · both FX pots' cash: /funds.",
     activity=activity,
     funds_size=size_words,
+    stop_gauges=stop_gauges,     # step 12 (lane Q): the phone's early warnings
     speed=Speed(rank=1, field="kind", kind="placed"),
     features=(
         Feature("fxtake_live.py", "--live", None, "FX taker (LIVE, subaccounts 5 + 4)",

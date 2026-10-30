@@ -2,8 +2,8 @@
 pinphone.py / tgcharts.py at 8a9c5e1 (v-tg-rebuild step 1, 2026-10-30)."""
 import re
 
-from bots.spec import Bot, Feature, Logs, Pot, Records, Speed, VersionRule, live_flag
-from botdata.fmt import usd
+from bots.spec import Bot, Feature, Gauge, Logs, Pot, Records, Speed, VersionRule, live_flag
+from botdata.fmt import num as _num, usd
 
 LADDER_GOAL_PCT = 1.0       # operator 10-22: the ladder's target is 1% of its bank a day -- shown next to its %
 
@@ -64,6 +64,28 @@ def size_words(si):
     return "ladder %g-contract bids (sized %s%s)" % (size, si.when(r), (" on a %s pot" % si.usd2(pot)) if pot else "")
 
 
+# v-tg-rebuild step 12, lane Q (2026-10-30): the phone's early warning before the ladder's day-stop rail trips
+def stop_gauges(wi):
+    """The ladder's day-stop rail (ladder_live.py: rails.day_stop of its newest start / rescale record, 20% of its pot),
+    against its day_pnl (its newest live_settle of this run, today); warned at 60% and 80% of it."""
+    import os
+    path = os.path.join(wi.results, "ladder-live-orders.jsonl")
+    r0 = wi.last_record(path, ("start", "rescale"))
+    ds = _num(((r0 or {}).get("rails") or {}).get("day_stop"))
+    if ds is None or ds >= 0:
+        return []
+    st = wi.last_record(path, ("start",)) or r0
+    t0 = wi.epoch(st.get("t")) or 0.0
+    s = wi.last_record(path, ("live_settle",)) or {}
+    stt = wi.epoch(s.get("t"))
+    day = (_num(s.get("day_pnl")) or 0.0) if stt is not None and stt >= t0 and wi.et_day(stt) == wi.today else 0.0
+    d = wi.last_record(path, ("day_stop",)) or {}
+    return [Gauge(key="day", what="its day-stop rail", money=round(day, 2), line=ds,
+                  warn_at=(round(0.6 * ds, 2), round(0.8 * ds, 2)), period=wi.today, counted="settled today",
+                  trips="it stops for the rest of the day",
+                  tripped=str(d.get("day") or "") == wi.today and (wi.epoch(d.get("t")) or 0) >= t0)]
+
+
 BOT = Bot(
     name="ladder", label="Ladder", short="Ladder", word="ladder",
     what="resting 98c bids on the decided side of NEAR ZEC DOGE HYPE XRP (one rung since 10-23), sized so every bid "
@@ -86,6 +108,7 @@ BOT = Bot(
     page_footer="Every bot: /bots.",
     activity=activity, activity_note=activity_note,
     funds_size=size_words,
+    stop_gauges=stop_gauges,     # step 12 (lane Q): the phone's early warnings
     speed=Speed(rank=2, skipped="skipped: its bids rest on the book until a seller hits them, so how fast it sends "
                                 "does not decide what it gets, and its log keeps no send-to-answer time"),
     features=(
