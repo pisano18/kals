@@ -13,7 +13,7 @@ import os
 import sys
 import time
 
-TICKS = ["alerts-down", "alerts-stops", "alerts-balance", "alerts-reports"]
+TICKS = ["alerts-down", "alerts-stops", "alerts-balance", "alerts-reports", "alerts-quiet"]
 
 
 def _iso(t):
@@ -138,7 +138,7 @@ def run(rt, ph, which, tick):
                            ((2026, 11, 2, 2, 0), "9:00 PM: nothing more")):
             t = float(calendar.timegm(utc + (0,)))
             put(t - 5)
-            at(int(t - T0), label)
+            at(t - T0, label)
         return {"ticks": ticks}
     if which == "alerts-balance":
         at(0, "first (judges the fixture's own read; never refreshes Kalshi on the first tick)")
@@ -150,5 +150,32 @@ def run(rt, ph, which, tick):
         at(150, "read 3: nothing more")
         put(T0 + 175, 0.0)
         at(180, "read 4: agrees again")
+        return {"ticks": ticks}
+    if which == "alerts-quiet":
+        import calendar
+        h0 = copy.deepcopy(rt.health0)
+        rows0 = copy.deepcopy(rt.procs)
+        gone = None if rows0 is None else [r for r in rows0 if "ladder_live.py" not in str(r[2])]
+        script = (((2026, 10, 31, 6, 0), "Sat Oct 31 2:00 AM ET, quiet hours (default 11 PM to 7 AM): first (learns)", None),
+                  ((2026, 10, 31, 6, 5), "2:05 AM: disk 7.5 GB -- not urgent: HELD", "disk"),
+                  ((2026, 10, 31, 6, 6), "2:06 AM: the ladder's live copy gone (check 1)", "gone"),
+                  ((2026, 10, 31, 6, 7), "2:07 AM: check 2", None),
+                  ((2026, 10, 31, 6, 8), "2:08 AM: check 3", None),
+                  ((2026, 10, 31, 6, 9, 30), "2:09:30 AM: DOWN is urgent: sent in quiet hours", None),
+                  ((2026, 10, 31, 11, 5), "7:05 AM: quiet hours over: ONE summary of what was held", None),
+                  ((2026, 10, 31, 11, 6), "7:06 AM: the ladder back up", "back"))
+        for utc, label, step in script:
+            if step == "disk":
+                rt.health = copy.deepcopy(h0)
+                rt.health["disk_gb"] = 7.5
+            elif step == "gone" and gone is not None:
+                _set_procs(rt, ph, gone)
+            elif step == "back" and rows0 is not None:
+                _set_procs(rt, ph, copy.deepcopy(rows0))
+            t = float(calendar.timegm(tuple(utc) + (0,) * (6 - len(utc))))
+            put(t - 5)
+            at(t - T0, label)
+            m = getattr(ph, "monitor", None)
+            ticks[-1]["held"] = None if m is None else len(m.held)
         return {"ticks": ticks}
     return {"skipped": "unknown script %s" % which}

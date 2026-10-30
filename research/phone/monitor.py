@@ -64,6 +64,7 @@ class MonitorState:
     weekly: str = None                              # the Sunday (ET day) whose weekly report went (or was due at start)
     monthly: str = None                             # the 'YYYY-MM' whose monthly report went (or was due at start)
     reports_learnt: bool = False
+    held: list = field(default_factory=list)        # [(epoch, msg)] what quiet hours held (alerts.flush_held)
 
 
 def state_of(st):
@@ -348,6 +349,20 @@ def check_balance(ctx, m, send, now):
                 send(fmt(lambda: balance_ok_text(name, b, r),
                          lambda: "BALANCE: %s agrees with its books again" % pot_words(name, b)), urgent=True)
             e.update(streak=0, sent=False, reads=[])
+
+
+# ---- quiet hours: the summary of what was held (phone/quiet.py; alerts.flush_held sends it) -----------------------------
+def held_summary(held, cfg, now):
+    """ONE message for every alert quiet hours held: a headline, then each alert as it would have gone, under the time
+    it was held."""
+    from phone import quiet as _quiet
+    out = ["🌅 <b>Quiet hours are over: %d alert%s held</b> (%s; only urgent ones came then)" % (
+        len(held), "" if len(held) == 1 else "s", esc(_quiet.words(cfg)) if _quiet.hours(cfg) else "quiet hours off")]
+    for t, msg in held:
+        out.append("")
+        out.append("<i>— held at %s ET —</i>" % esc(when_words(t, now)))
+        out.append(str(msg) if getattr(msg, "is_html", False) else esc(str(msg)))
+    return Html("\n".join(out))
 
 
 # ---- the weekly and monthly reports ---------------------------------------------------------------------------------------

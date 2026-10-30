@@ -25,6 +25,7 @@ from typing import Optional
 
 import pindesk
 from botdata.fmt import usd                       # == pinphone.usd
+from phone import quiet as _quiet
 from phone.html import Html, details, esc, norm_money
 from phone.log import log
 from pindesk import Ledger, et_day, et_day_start, et_str, pct, status_of, story_day, story_loss
@@ -182,6 +183,11 @@ def tick(ctx, st=None, all_bots_day=None):
     state, hl, det, _c = status_of(h)
     now = ctx.now()
     today = et_day(now)
+    # step 12 (lane Q): every alert goes through send(msg, urgent) -- with the monitor on, quiet hours hold what is not
+    # urgent (phone/quiet.py); with it off, send is exactly ctx.say + sent.append, as before
+    send = sender(ctx, sent, st, now)
+    if getattr(run, "monitor_on", False):
+        flush_held(ctx, st, sent, now)
     if st.last_state is None:
         # first tick after a (re)start: learn, do not announce. A daily
         # summary already due today is marked done, or every restart of
@@ -192,8 +198,7 @@ def tick(ctx, st=None, all_bots_day=None):
         prev = st.last_state
         msg = fmt_or_plain(lambda: alert_state_text(prev, state, hl, det, pp),
                            lambda: "STATE CHANGED: %s -> %s\n%s\n%s" % (prev, state, hl, det))
-        ctx.say(msg)
-        sent.append(msg)
+        send(msg, urgent=True)                       # the pin bot's crash / halt / pause: urgent
     st.last_state = state
     # THE RECORDERS. 2026-09-21 the Kalshi recorder was alive and deaf for
     # 4 h 47 min and nothing told the operator; the tape from those hours
@@ -213,16 +218,14 @@ def tick(ctx, st=None, all_bots_day=None):
         else:
             msg = fmt_or_plain(lambda: alert_recorder_back_text(was),
                                lambda: "RECORDERS WRITING AGAIN (was %s)" % was)
-        ctx.say(msg)
-        sent.append(msg)
+        send(msg)
     st.last_rec = rec
     # THE DISK. Tracked even when muted, so an unmute does not replay it.
     st.disk_level, dmsg = disk_alert(st.disk_level, h.get("disk_gb"))
     if dmsg and not run.muted:
         level = st.disk_level
         msg = fmt_or_plain(lambda: disk_alert_html(dmsg, level), lambda: dmsg)
-        ctx.say(msg)
-        sent.append(msg)
+        send(msg)
     losses = ctx.ledger.losing_closes()
     keys = {k for k, _n, _l in losses}
     if st.seen_losses is None:
@@ -234,37 +237,66 @@ def tick(ctx, st=None, all_bots_day=None):
             if not run.muted:
                 msg = fmt_or_plain(lambda: alert_loss_text(ctx.ledger, close, net, legs, pp),
                                    lambda: "LOSS " + story_loss(ctx.ledger, close, net, legs))
-                ctx.say(msg)
-                sent.append(msg)
+                # urgent: over $50, or over 3% of the bank before it (asked only while it is quiet)
+                send(msg, urgent=lambda close=close, net=net: _quiet.loss_is_urgent(
+                    net, ctx.ledger.bank_at(close - 1) if close else None))
     if (now - et_day_start(today)) >= DAILY_AT_S and st.last_daily != today and not run.muted:
         st.last_daily = today
         yday = et_day(now - 86400)
         msg = fmt_or_plain(lambda: daily_alert(ctx, yday, now, all_bots_day),
                            lambda: "YESTERDAY\n" + story_day(ctx.ledger, yday, now=now))
-        ctx.say(msg)
-        sent.append(msg)
+        send(msg)
     if getattr(run, "monitor_on", False):
-        monitor_tick(ctx, st, sent, now)
+        monitor_tick(ctx, st, send, now)
     return sent
 
 
-# ---- v-tg-rebuild step 12, lane Q: the monitor (phone/monitor.py) -------------------------------------------------------
-def sender(ctx, sent):
-    """send(msg, urgent=False) for the monitor's alerts: nothing while muted (the runtime's flag); else said and kept in
-    `sent`. True when it went."""
+# ---- v-tg-rebuild step 12, lane Q: quiet hours and the monitor (phone/quiet.py, phone/monitor.py) ----------------------
+def sender(ctx, sent, st=None, now=None):
+    """send(msg, urgent=False) -> True when it went. Muted (the runtime's flag): nothing. With the monitor on
+    (Phone.monitor_on) and the ET clock inside the quiet hours (telegram.json "quiet_hours", default 11 PM - 7 AM), an
+    alert that is not urgent is HELD (sent later as one summary: flush_held); `urgent` may be a function, asked only
+    then. Otherwise: ctx.say(msg) and kept in `sent` -- exactly what every alert did before."""
+    run = ctx.state
+
     def send(msg, urgent=False):
-        if ctx.state.muted:
+        if run.muted:
             return False
+        if getattr(run, "monitor_on", False) and st is not None and _quiet.is_quiet(ctx.cfg, now):
+            u = urgent() if callable(urgent) else urgent
+            if not u:
+                from phone import monitor as _monitor
+                _monitor.state_of(st).held.append((now, msg))
+                log("HELD (quiet hours): %s" % " | ".join(str(msg).splitlines())[:200])
+                return False
         ctx.say(msg)
         sent.append(msg)
         return True
     return send
 
 
-def monitor_tick(ctx, st, sent, now):
+def flush_held(ctx, st, sent, now):
+    """Quiet hours are over (or off): everything held goes as ONE summary. Muted: what was held is dropped (an unmute
+    replays nothing). Never raises."""
+    try:
+        from phone import monitor as _monitor
+        m = _monitor.state_of(st)
+        if not m.held or _quiet.is_quiet(ctx.cfg, now):
+            return
+        held, m.held = list(m.held), []
+        if ctx.state.muted:
+            return
+        msg = _monitor.held_summary(held, ctx.cfg, now)
+        ctx.say(msg)
+        sent.append(msg)
+    except Exception:                                           # noqa: BLE001
+        log("quiet hours: the held summary failed:\n%s" % traceback.format_exc())
+
+
+def monitor_tick(ctx, st, send, now):
     """The monitor's checks (DOWN bots, ...) after the old alerts; a failure there is logged, never raised."""
     try:
         from phone import monitor as _monitor
-        _monitor.tick(ctx, st, sender(ctx, sent), now)
+        _monitor.tick(ctx, st, send, now)
     except Exception:                                           # noqa: BLE001
         log("monitor failed:\n%s" % traceback.format_exc())
