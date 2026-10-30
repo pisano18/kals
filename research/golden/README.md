@@ -92,6 +92,12 @@ a chart diff).
 - `tick/alerts-state` (bot down / back / stand-down flag), `tick/alerts-recorder` (silent, both silent, back),
   `tick/alerts-disk` (7.5 / 5.9 / 4.0 / 9.5 GB), `tick/alerts-loss` (the newest losing close is new),
   `tick/alerts-daily` (8 AM summary, then muted), `tick/update-flag` (results\pinphone.update in the scratch copy).
+  Step 12 (lane Q, `gl_ticks_q.py`, the phone's monitor turned on): `tick/alerts-down` (the ladder's live copy gone:
+  the 3-min debounce, the DOWN alert, back up, a quick restart that never alerts), `tick/alerts-stops` (jump band /
+  pin records appended: the early warnings, then both jump band stops trip), `tick/alerts-balance` (the ladder's pot
+  $25 light on two Kalshi reads, then agrees again), `tick/alerts-reports` (Sun Nov 1: the monthly report at 8 AM, the
+  weekly at 8 PM), `tick/alerts-quiet` (2 AM: low disk held, DOWN sent; 7:05 AM: the one summary), `tick/alerts-alive`
+  (the outside ping, its GET planted: every 5 min, none while a bot is DOWN).
 - `data/all_bots` (canonical JSON), `data/active_bots`, `data/owner` (every fixture ticker in its sub + synthetic
   tickers in every sub), `data/version_of` (every bot), `data/kind_of`, `data/tables` (the per-bot tables the
   registry must reproduce).

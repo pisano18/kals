@@ -11,7 +11,6 @@ a URL), on its own short thread so the poll loop never waits for it (RUN_IN_THRE
 GET is logged and counted; it never raises and never alerts (the outside service is the alert).
 """
 import threading
-import traceback
 from dataclasses import dataclass
 
 from phone.log import log

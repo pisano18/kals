@@ -32,7 +32,6 @@ muted -> nothing; quiet hours hold what is not urgent). Each check is inside its
 others or the old alerts. The state lives on the alert state (st.monitor: MonitorState), so a phone restart forgets it
 (a bot still DOWN then is alerted again after the debounce).
 """
-import time
 import traceback
 from dataclasses import dataclass, field
 
