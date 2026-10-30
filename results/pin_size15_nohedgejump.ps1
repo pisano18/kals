@@ -2,7 +2,11 @@
 # from editing the live launcher). Two edits to C:\kals-live-0925n\restart_bot.ps1:
 #  1. comment out  "--hedge-jump", "6",   (hedgejump6 read: 7 of 8 hedges insured winners, 0 of 3 real losses caught;
 #     about +$2-4/day)
-#  2. "--bank-brake", "4.00"  ->  "2.70"   (v-size15, operator 10-30: "You decide on pin size. Do the math and figure out
+#  2. "--bank-brake", "4.00"  ->  "3.00"   (CHANGED 10-30 PM from 2.70 = 1.5x to 3.00 = 1.33x: the operator asked for caution;
+#     the full ledger since 08-15 has a -$223 day (09-19, six losses) and a -$109 day (09-27) that the 22-day study
+#     did not contain. 1.33x keeps +$2.04/day of the +$2.98 and cuts the extra tail by a third. Stop rule: any pin day
+#     worse than -$100 during the trial, or the 11-10 read showing the extra contracts under 0c -> back to 4.00.)
+#     Original 1.5x reasoning:   (v-size15, operator 10-30: "You decide on pin size. Do the math and figure out
 #     what makes the most after accounting for losses realistically." Scratchpad pinsize\sizes.py on 22 recorded days with
 #     real results, book depth and the 77%/60% fill rate: 1.5x = +$2.98/day mean, beats 1x in 83% of 4,000 resamples;
 #     2x = +$4.96 but a 90% range of -$6 to +$15 and one ETH-size loss = 94% of the run abort. Worst market -$119 -> -$178,
@@ -19,7 +23,7 @@ $edits = @(
   @('    "--hedge-jump", "6",',
     '    # "--hedge-jump", "6",   # 2026-10-30 REMOVED (hedgejump6 read: 7 of 8 hedges insured winners, 0 of 3 real losses caught)'),
   @('    "--bank-brake", "4.00",',
-    ('    # v-size15 2026-10-30 (operator: "You decide on pin size"): 4.00 -> 2.70 = 1.5x bet; pinsize read +$3/day, 83% of resamples; re-read 11-10' + $nl + '    "--bank-brake", "2.70",'))
+    ('    # v-size15 2026-10-30 (operator: "You decide on pin size"): 4.00 -> 3.00 = 1.33x bet (trial; operator asked for caution); +$2/day, 84% of resamples; back to 4.00 on a day under -$100 or a bad 11-10 read' + $nl + '    "--bank-brake", "3.00",'))
 )
 foreach ($e in $edits) {
   $n = ([regex]::Matches($t, [regex]::Escape($e[0]))).Count
@@ -34,10 +38,10 @@ foreach ($e in $edits) { $t = $t.Replace($e[0], $e[1]) }
 $errs = $null
 [void][System.Management.Automation.Language.Parser]::ParseFile($f, [ref]$null, [ref]$errs)
 if ($errs.Count) { Copy-Item $bak $f -Force; Say ("PARSE ERRORS: {0}; backup restored, nothing restarted" -f $errs.Count); exit 1 }
-Say "CHANGED restart_bot.ps1: --hedge-jump 6 commented out, --bank-brake 2.70; parses OK (backup $bak)"
+Say "CHANGED restart_bot.ps1: --hedge-jump 6 commented out, --bank-brake 3.00; parses OK (backup $bak)"
 $chk = & powershell -NoProfile -ExecutionPolicy Bypass -File $f -Check 2>&1 | Out-String
 Add-Content -Path $log -Value $chk
-if ($chk -notmatch '2\.70') { Copy-Item $bak $f -Force; Say "-Check did not show --bank-brake 2.70; backup restored, nothing restarted"; exit 1 }
+if ($chk -notmatch '3\.00') { Copy-Item $bak $f -Force; Say "-Check did not show --bank-brake 3.00; backup restored, nothing restarted"; exit 1 }
 Say "restart_bot -Check ran (output above in this log); starting restart_bot by WMI (it waits for pin to be flat)"
 $cmd = 'cmd /c "powershell -NoProfile -ExecutionPolicy Bypass -File C:\kals-live-0925n\restart_bot.ps1 > C:\kals-repo\results\pin_size15_restart.out 2>&1"'
 $r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $cmd; CurrentDirectory = 'C:\kals-live-0925n' }
