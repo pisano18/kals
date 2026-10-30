@@ -222,7 +222,8 @@ def test_text_bot_footers():
     pinphone reads them from the registry."""
     eq_ordered(bots.PAGE_FOOTER, LEGACY_TEXT_BOT_FOOTERS, "text_bot footers")
     eq(pp.PAGE_FOOTER, LEGACY_TEXT_BOT_FOOTERS, "pinphone.PAGE_FOOTER")
-    assert "more = PAGE_FOOTER.get(name)" in _src(pp)
+    import phone.commands.bot_page as _bp          # v-tg-rebuild step 10: the page is a command module
+    assert "more = PAGE_FOOTER.get(name)" in _src(_bp)
 
 
 def test_units_and_goal_rules():

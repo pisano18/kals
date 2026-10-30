@@ -85,7 +85,12 @@ def _no_pp():
 
 def phone_markets(pp, led):
     """pinphone's main-account markets for the ledger snapshot `led`: markets_from(raw_ledger(the Kalshi ledger file),
-    Phone._sides over `led`) -- tgcharts.markets_of, verbatim."""
+    Phone._sides over `led`) -- tgcharts.markets_of, verbatim. A helpers module that names it (pinphone's chart_markets
+    since v-tg-rebuild step 10, when Phone._sides went into the command modules) is asked for it directly."""
+    cm = getattr(pp, "chart_markets", None)
+    if cm is not None:
+        return cm(led)
+
     class _S:
         ledger = led
     sides = pp.Phone._sides(_S())

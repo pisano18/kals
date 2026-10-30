@@ -151,11 +151,15 @@ def daily_alert(ctx, d, now, all_bots_day=None):
     """The 8 AM summary (Phone.daily_alert, 2026-10-26 screen pass): yesterday over EVERY pot -- /yesterday's headline (its
     % of all pots), the bot-by-bot table (each bot's % of its bank) and the averages -- then the main account's story
     (story_day, pindesk) behind a tap. The old main-account-only summary when botstats cannot be read.
-    all_bots_day(d, title) -> [lines] is /today's every-bot block (Phone._all_bots_day; None = ctx.state's, until D1's
-    day module provides it: the integrator passes that function in step 10)."""
+    all_bots_day(d, title) -> [lines] is /today's every-bot block (None = phone.commands.day.all_bots_day on this ctx:
+    the ONE copy, v-tg-rebuild step 10)."""
     pp = ctx.pp
     base = alert_daily_text(ctx.ledger, d, now)
-    top = (all_bots_day or ctx.state._all_bots_day)(d, "Yesterday")
+    if all_bots_day is None:
+        from phone.commands import day as _day
+        top = _day.all_bots_day(ctx, d, "Yesterday")
+    else:
+        top = all_bots_day(d, "Yesterday")
     if not top or top[0].startswith("❔"):
         return base
     return Html("\n".join(["☀️ <b>YESTERDAY, %s</b> · every bot" % esc(pp._day_long(d))] + top + [

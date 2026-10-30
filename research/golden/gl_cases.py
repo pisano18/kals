@@ -170,13 +170,18 @@ class Runtime:
 def apply_seams(rt):
     """Point the code's machine readers at the recorded values. A seam the tree no longer has is listed (meta.json)."""
     pp, bs, pd = rt.mods.get("pinphone"), rt.mods.get("botstats"), rt.mods.get("pindesk")
+    # v-tg-rebuild step 11: pinphone.py is a launcher; the helpers the commands read (ctx.pp) live in phone.shared, and
+    # the AWS reader in phone.commands.server.aws (step 9). Seams go where the code looks them up; an older tree has
+    # neither module and keeps every seam on pinphone itself.
+    ppm = sys.modules.get("phone.shared") or pp
+    aws = sys.modules.get("phone.commands.server.aws")
 
     def put(mod, name, fn):
         if mod is None or not hasattr(mod, name):
             rt.missing_seams.append("%s.%s" % (getattr(mod, "__name__", "?"), name))
             return
         setattr(mod, name, fn)
-    put(pp, "list_python_procs", lambda timeout=30: rt.pp_rows())
+    put(ppm, "list_python_procs", lambda timeout=30: rt.pp_rows())
     put(bs, "_procs_native", lambda: rt.bs_native())
     put(bs, "read_procs", lambda timeout=40: rt.bs_native())
     # botdata.procs (v-tg-rebuild step 4): the ONE process table. Every reader of every python.exe -> the recorded table
@@ -187,9 +192,11 @@ def apply_seams(rt):
         for name, fn in (("native_rows", lambda: rt.bs_rows_all()), ("wmi_rows", lambda timeout=40: rt.bs_rows_all()),
                          ("read_all", lambda timeout=40: rt.bs_rows_all())):
             put(bp, name, fn)
-    put(pp, "machine_read", lambda sample_s=0.5: copy.deepcopy(rt.env.get("machine")))
-    put(pp, "kalshi_ping", lambda max_age_s=60: copy.deepcopy(rt.env.get("ping")))
-    put(pp, "_aws_http", _refuse_aws)
+    put(ppm, "machine_read", lambda sample_s=0.5: copy.deepcopy(rt.env.get("machine")))
+    put(ppm, "kalshi_ping", lambda max_age_s=60: copy.deepcopy(rt.env.get("ping")))
+    put(ppm, "_aws_http", _refuse_aws)
+    if aws is not None:
+        put(aws, "_aws_http", _refuse_aws)
     put(pd, "health", lambda ledger=None: copy.deepcopy(rt.health))
 
     def stub(name):
@@ -420,7 +427,12 @@ def run_chart(rt, kind):
     out = {"kind": kind}
     if kind == "bars":
         try:
-            ph.text_bars()
+            if hasattr(ph, "text_bars"):
+                ph.text_bars()
+            else:               # v-tg-rebuild step 10: /bars is a command module; its reply gathers the picture's numbers
+                import importlib
+                cm, cx = importlib.import_module("phone.command"), importlib.import_module("phone.context")
+                cm.by_name("/bars").run(cx.Ctx.from_phone(ph, "/bars"))
         except Exception as e:                                  # noqa: BLE001
             out["bars_error"] = _err(e)
     try:

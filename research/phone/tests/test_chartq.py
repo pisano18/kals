@@ -20,7 +20,8 @@ if RESEARCH not in sys.path:
     sys.path.insert(0, RESEARCH)
 os.environ["KALS_TESTING"] = "1"
 
-import pinphone as pp                                                # noqa: E402
+from _legacy import pp, NEW                                         # noqa: E402  (pp: pinphone_legacy + NEW)
+from phone.charts.ctx import as_ctx                                   # noqa: E402
 from phone import chartq as Q                                       # noqa: E402
 from phone.context import Ctx, FakeCtx                               # noqa: E402
 from phone.transport import FakeTelegram                            # noqa: E402
@@ -74,7 +75,10 @@ TGC = types.SimpleNamespace(kind_of=lambda c: {"/status": "status", "/bars": "ba
                                                "/s": "status"}.get(c),
                             LEDGER_KINDS={"status", "hedges"}, STALE_S=120,
                             build=lambda kind, ctx: (b"PNG-" + kind.encode(), "caption " + kind))
-FAKE_PP = types.SimpleNamespace(FUNDS_WHAT={"0": 1, "3": 1}, funds_what=lambda n, act: "%s:%s" % (n, "+".join(act)))
+FAKE_PP = types.SimpleNamespace(FUNDS_WHAT={"0": 1, "3": 1}, funds_what=lambda n, act: "%s:%s" % (n, "+".join(act)),
+                                _bs=lambda: "botstats", chart_markets=lambda led: {"m": 1},
+                                window_stats=lambda ms, taus: {"w": 1}, FIRST_LIVE_DAY="2026-09-08",
+                                main_words=lambda act: "words")
 
 
 def ledger():
@@ -126,14 +130,16 @@ def test_after_job_and_chart_ctx():
     assert q.after(c, 7, "  /Status@kalsbot now") is True and q.after(c, 7, "/bars") is True
     j1, j2 = q.q.get_nowait(), q.q.get_nowait()
     assert (j1["kind"], j1["cmd"], j1["chat"], j1["queued"]) == ("status", "/status", 7, 555.0)
-    x = j1["ctx"]
-    assert (x["now"], x["pp"], x["bs_getter"], x["bs_procs"], x["active"]) == (T, FAKE_PP, "getter", "procs", ("pin", "fx"))
-    assert x["funds_what"] == {"0": "0:pin+fx", "3": "3:pin+fx"} and "bars" not in x
-    assert x["ledger"] is not led and x["ledger"].settled == led.settled and x["ledger"].settled is not led.settled
-    assert x["ledger"].other == "kept"
+    x = j1["ctx"]                      # a ChartCtx since v-tg-rebuild step 10 (was the dict with "pp")
+    assert (x.now, x.bs_getter, x.bs_procs, x.active) == (T, "getter", "procs", ("pin", "fx"))
+    assert (x.botstats, x.markets, x.window_stats, x.first_live_day, x.main_words) == (
+        FAKE_PP._bs, FAKE_PP.chart_markets, FAKE_PP.window_stats, "2026-09-08", FAKE_PP.main_words)
+    assert x.funds_what == {"0": "0:pin+fx", "3": "3:pin+fx"} and x.bars is None
+    assert x.ledger is not led and x.ledger.settled == led.settled and x.ledger.settled is not led.settled
+    assert x.ledger.other == "kept"
     led.orders.append(3)
-    assert x["ledger"].orders == [1, 2], "the snapshot does not see later appends"
-    assert j2["kind"] == "bars" and j2["ctx"]["bars"] == {"b": 1} and "ledger" not in j2["ctx"]
+    assert x.ledger.orders == [1, 2], "the snapshot does not see later appends"
+    assert j2["kind"] == "bars" and j2["ctx"].bars == {"b": 1} and j2["ctx"].ledger is None
 
 
 def test_after_never_raises():
@@ -153,7 +159,7 @@ def test_queue_of_two_never_waits():
     def slow(kind, c):
         drawing.set()
         release.wait(10)
-        return b"PNG", "cap %s" % c["now"]
+        return b"PNG", "cap %s" % c.now
     st = state(chart_fn=slow)
     q = Q.ChartQueue(st, tgc=lambda: TGC)                 # real clock: nothing here may sleep
     c = ctx(st)
@@ -304,9 +310,11 @@ def test_chart_ctx_and_after_vs_phone():
                     r = cq_.after(c, 7, text)
                     q = cq_.q
                 j = q.get_nowait() if q.qsize() else None
-                if j is not None:
-                    x = dict(j["ctx"])
-                    led = x.pop("ledger", None)
+                if j is not None:               # the legacy dict and the new ChartCtx, as the pictures read them
+                    x = as_ctx(j["ctx"])
+                    led = x.ledger
+                    x = {k: getattr(x, k) for k in ("now", "bs_getter", "bs_procs", "funds_what", "active", "bars",
+                                                     "first_live_day")}
                     j = dict(j, ctx=x, ledger=None if led is None else {k: getattr(led, k) for k in Q.LEDGER_LISTS})
                 jobs.append((r, j))
             assert jobs[0] == jobs[1], (text, jobs)

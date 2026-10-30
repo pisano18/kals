@@ -105,17 +105,16 @@ def pace_data(ctx, so_far, day, base=None):
     """The numbers of '📈 Ahead of pace ...' (every bot, today against the same ET clock on the days before), or None
     when they cannot be worked out (logged; it never costs the rest of /today)."""
     try:
-        T = ctx.pp._tgc()
+        from botdata import series          # v-tg-rebuild step 10: the numbers straight from botdata (was via tgcharts)
         now = ctx.now()
-        b_, _p, rows, miss = T.all_day_markets({"now": now, "pp": ctx.pp,
-                                                "bs_getter": ctx.bs_getter, "bs_procs": ctx.bs_procs})
+        b_, _p, rows, miss = series.all_day_markets(ctx.bs(), now, ctx.bs_getter, ctx.bs_procs)
         if miss:
             return None
-        _sf, avg, n = T.by_now(rows, b_, day, now)
+        _sf, avg, n = series.by_now(rows, b_, day, now)
         if avg is None:
             return None
         # 2026-10-29: the 30-day average day at the same clock after the 7-day one (ahead / behind stays the 7-day's)
-        _sf30, avg30, n30 = T.by_now(rows, b_, day, now, getattr(b_, "LONG_DAYS", 0))
+        _sf30, avg30, n30 = series.by_now(rows, b_, day, now, getattr(b_, "LONG_DAYS", 0))
         return {"bs": b_, "now": now, "so_far": so_far, "day": day, "base": base, "avg": avg, "n": n,
                 "avg30": avg30, "n30": n30}
     except Exception:                                       # noqa: BLE001
@@ -213,6 +212,14 @@ def top_lines(t, day, label):
         L.append("")
         L.append("📈 " + esc(" · ".join(more)))
     return L
+
+
+def all_bots_day(ctx, day, label):
+    """Phone._all_bots_day: the every-bot top of /today and /yesterday as lines -- [] when the day is neither today nor
+    yesterday on botstats' clock; one warning line when botstats fails. ONE copy (v-tg-rebuild step 10): /brief
+    (brief_cmd) and the 8 AM summary (phone/alerts.daily_alert) use this too."""
+    t = top_data(ctx, day)
+    return [] if t is None else top_lines(t, day, label)
 
 
 # ---- the command ------------------------------------------------------------------------------------------------------

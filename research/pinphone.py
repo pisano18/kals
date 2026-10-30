@@ -149,18 +149,8 @@ from phone.html import (MAX_LEN, Html, esc, html_to_plain, _MONEY_SIGN, _MONEY_B
 _plog.set_path(lambda: LOG)
 
 
-def usd(x):
-    """+$1,234.56 / -$4.57 / $0.00 (botstats.usd's style, kept here so a broken botstats costs only the
-    pages that need it). None -> '?'."""
-    if x is None:
-        return "?"
-    s = "{:,.2f}".format(abs(x))
-    return ("+$" if x > 0.004 else ("-$" if x < -0.004 else "$")) + s
-
-
-def dollars(x):
-    """An amount with no sign (a bank, a stake): $1,294.50. None -> '?'."""
-    return "?" if x is None else "$" + "{:,.2f}".format(x)
+# v-tg-rebuild step 10 (2026-10-30): usd / dollars are botdata.fmt's (the very code that stood here)
+from botdata.fmt import usd, dollars                                 # noqa: E402,F401
 
 
 # v-tg-rebuild step 9 (lane D2, 2026-10-30): moved verbatim to research/phone/render/botcards.py; re-exported
@@ -201,6 +191,13 @@ from phone.render.botcards import ret   # noqa: E402,F401
 # v-tg-rebuild step 6 (2026-10-30): Telegram, photo_body, net_error and FakeTelegram live in research/phone/transport.py
 # (moved verbatim); re-exported here (phone_alert.py uses pinphone.Telegram).
 from phone.transport import Telegram, photo_body, net_error, FakeTelegram   # noqa: E402,F401
+# v-tg-rebuild step 10 (2026-10-30): the router, the alerts, the update flag and the chart queue
+from phone import router as _router                                  # noqa: E402
+from phone import alerts as _alerts                                  # noqa: E402
+from phone.chartq import ChartQueue                                  # noqa: E402
+from phone import chartq as _chartq                                  # noqa: E402
+from phone.context import Ctx                                        # noqa: E402
+from phone.commands import update as _update                         # noqa: E402
 
 
 SUPPLY_STALE_D = 3.0        # /market: an opportunity trend measured longer ago than this is left out (2026-10-23)
@@ -218,70 +215,24 @@ PHOTO_TRIES = (5, 20)       # a chart the connection dropped: sent again after t
 # ===========================================================================
 # the bot
 # ===========================================================================
-HELP_TEXT = """📱 <b>Commands</b>
-
-💰 <b>Money</b>
-/today · /yesterday — every bot's money that day: % of all pots, and a table with each bot's % of its bank
-/days — the last 7 days, every bot: each day's % of all pots, each bot's week
-/stats — the whole record by window: money, win rate vs break-even, losses, timing
-/funds (or /bank, /accounts) — the money in every account and subaccount: cash, open bets, total, what runs there, bet size now, each account's last 7 days{funds_split}, and the grand total
-/bots — every bot running now: money today / 7 days / all time, each pot's cash, and the total of all of them
-
-🤖 <b>One bot</b> <i>(the bots running now; a paused or stopped one comes back here when it runs again)</i>
-{bot_lines}
-
-🔎 <b>Right now</b>
-/status — is it trading, with the evidence
-/open — open bets in every pot
-/fills — the pin bot's orders today: filled, price paid, seconds out; then every other bot's fills, each named
-/market — how active sellers are, and which bot bought what at each of the last closes
-/losses — every bot's losing markets: which bot, $ and % of its pot
-/hedges — the pin bot's insurance, whether it was needed, % of the bank
-/brief — the daily briefing: money, what changed, what it did, the market, what to watch
-/bars — the September tests against their pre-registered bars (all finished; kept for the record)
-/features — what each bot does and the settings it runs with now (read from boot_all.ps1), and the rules they run under
-
-🖥 <b>Server</b> (every bot runs on an AWS server in Ohio since 12:20 AM ET Oct 27)
-/speed: did the move win orders the laptop lost: the pin bot's order times and empty orders, home against server, and what speed added in $ (an estimate); a line for the other bots
-/server: the server's CPU, memory, disk, uptime and Windows restarts, the time to Kalshi, every pot's money, and the AWS bill this month (<code>/server help</code>: connect the AWS cost)
-
-🎛 <b>Controls</b>
-/pause — no new bets, wait for open ones, then stop
-/start — trade again
-<code>/stop yes</code> — stop right now
-/mute · /unmute — alerts off / on
-/update — load the newest phone code (self-tests it first; back within ~10 min)
-
-📈 Most commands send a chart right after the words (not /open, /help, /speed, /server or the controls).
-
-<i>Alerts come by themselves: state changes, every losing close (with its % of the bank), low disk (under 8 GB, again under 6 GB), and yesterday's summary for every bot at 8 AM ET. Long details sit behind a tap on the quoted block.</i>"""
-
-# v-tg-active (2026-10-30, the operator: "remove the paused and removed until they're added back, and show the details
-# for the new one in any relevant commands"): /help lists a bot's command only while it is ACTIVE (botstats.active_bots).
-# v-tg-rebuild step 5 (2026-10-30): each bot's lines are its Bot.help (research/bots/<name>.py), in bot order
+# /help (v-tg-rebuild step 10, 2026-10-30): built by research/phone/commands/help_cmd.py from the declared commands (the
+# router calls help_cmd.use_commands after discover()): the same sections, order and lines HELP_TEXT always had; the
+# one-bot lines are the registry's (bots.HELP_BOT_LINES), only the ACTIVE bots' (v-tg-active).
 HELP_BOT_LINES = _bots.HELP_BOT_LINES
 
 
 def help_text(active=None):
     """/help with the one-bot commands of the ACTIVE bots only (None = every bot: the whole roster)."""
-    act = set(active) if active is not None else None
-    lines = [w for b, w in HELP_BOT_LINES if act is None or b in act]
-    return Html(_HELP_TPL.replace("{bot_lines}", "\n".join(lines)).replace(
-        "{funds_split}", (" (main bot and %s apart)" % " and ".join(BOT_WORD[x] for x in main_sharers(act)[1:]))
-        if main_sharers(act) else ""))
+    from phone.commands import help_cmd
+    return help_cmd.help_html(active, sys.modules[__name__])
 
 
-_HELP_TPL = HELP_TEXT
 HELP_TEXT = help_text()                  # the whole roster (the self-test's reference); /help sends help_text(active)
 
 # the immediate reply to a control (the work itself runs on a thread, see Phone.control)
-CONTROL_REPLY = {"start": Html("▶️ <b>Starting…</b>"),
-                 "pause": Html("⏸ <b>Pausing</b>: no new bets; waiting for open ones to settle…"),
-                 "stop": Html("⏹ <b>Stopping now…</b>"),
-                 "busy": Html("⏳ Still working on the last command.")}
+# the controls' replies: research/phone/commands/controls.py (re-exported, the very same objects)
+from phone.commands.controls import CONTROL_REPLY, STOP_ASK            # noqa: E402,F401
 UP_TEXT = Html("📱 <b>Pin Bot phone link is up.</b> /status for the state, /help for commands.")
-STOP_ASK = Html("⚠️ <b>STOP stops right now</b>, even with a bet open (it settles by itself but will not be "
-                "hedged).\nTo confirm, send:  <code>/stop yes</code>\nOr use /pause to finish open bets first.")
 
 
 def state_dot(state):
@@ -289,82 +240,10 @@ def state_dot(state):
             "BRAKE": "🔴", "DOWN": "🔴"}.get(state, "⚪")
 
 
-def alert_state_text(prev, state, hl, det):
-    """STATE CHANGED: the words alerts_tick always sent, under a coloured headline."""
-    body, _nl, ev = str(det).rpartition("\n")
-    if not body:
-        body, ev = ev, ""
-    return Html("%s <b>STATE CHANGED: %s -&gt; %s</b>\n<b>%s</b>\n%s%s" % (
-        state_dot(state), esc(prev), esc(state), esc(hl), esc(body), ("\n<i>%s</i>" % esc(ev)) if ev else ""))
-
-
-def alert_recorder_text(rec, minutes):
-    return Html("⚠️ <b>RECORDER %s</b> -- nothing written for %d+ min.\nThat tape cannot be recreated later. "
-                "If the bot is also BLIND, the problem is the connection to Kalshi, not our programs."
-                % (esc(rec), minutes))
-
-
-def alert_recorder_back_text(was):
-    return Html("✅ <b>RECORDERS WRITING AGAIN</b> (was %s)" % esc(was))
-
-
-def disk_alert_html(msg, level):
-    """disk_alert()'s words (unchanged, the self-test pins them) with the first sentence as a headline."""
-    msg = str(msg)
-    if level == 8:
-        head, sep, rest = msg.partition(". ")
-        head += "." if sep else ""
-    else:
-        head, _sep, rest = msg.partition(" -- ")
-    return Html("%s <b>%s</b>%s" % ("🚨" if level == 6 else "⚠️", esc(head), ("\n" + esc(rest)) if rest else ""))
-
-
-def alert_loss_text(ledger, close, net, legs):
-    """A new losing close: story_loss's facts (pindesk), laid out -- the loss as the headline, one line a
-    leg, why it hurts. The desktop's 'double-click a row' hint is left out: there is no row on a phone.
-    2026-10-26 (operator: "anywhere that trades or transactions are listed list the account or which bot"): the headline
-    names the bot and its account; each leg names its bot too when one close holds both main-account bots' legs."""
-    b0 = ledger.bank_at(close - 1) if close else None
-    whose = [BOT_WORD.get(main_bot_of(l_["tk"]), "?") for l_ in legs]
-    who = list(dict.fromkeys(whose))
-    L = ["🔴 <b>LOSS %s%s</b> · %s (main account) · the quarter-hour closing %s ET on %s" % (
-        esc(usd(net)), (" (%s of the bank)" % esc(pct(net / b0))) if b0 else "", esc(" + ".join(who) or "?"),
-        esc(et_str(close)), esc(et_str(close, "%b %d")))]
-    for l_, w in zip(legs, whose):
-        n = ledger.contracts_for(l_["tk"]) or _f(l_.get("n"))      # a coin-race leg is not in the pin bot's orders
-        L.append("• %s<b>%s</b> %s at %.1fc, %g contracts → settled %s: <b>%s</b>" % (
-            (esc(w) + " · ") if len(who) > 1 else "", esc(_mkt_short(l_["tk"])), esc(str(l_["want"]).upper()),
-            100 * float(l_["cost"] or 0), n, esc(str(l_["result"]).upper()), esc(usd(l_["pnl"]))))
-    L.append("")
-    L.append("<b>WHY IT HURTS:</b> <i>a win here makes 2c to 4c a contract; a loss costs most of the 96c-98c "
-             "paid. So one losing close wipes out many winning ones.</i>")
-    L.append("<i>/losses for the list, /today for the day.</i>")
-    return Html("\n".join(L))
-
-
-def alert_daily_text(ledger, d, now):
-    """The 8 AM summary: story_day's own lines (pindesk), under a headline with yesterday's money and its
-    % of the bank at the start of the day -- the same two numbers its MONEY line carries."""
-    s = Ledger.summary(ledger.settled_on(d))
-    b0 = ledger.bank_at(et_day_start(d))
-    lines = story_day(ledger, d, now=now).split("\n")
-    body = [x for x in lines[1:] if x.strip()]
-    out = ["☀️ <b>YESTERDAY %s (%s)</b> · %s" % (esc(usd(s["net"])), esc(pct((s["net"] / b0) if b0 else None)),
-                                                  esc(time.strftime("%a %b %d", time.strptime(d, "%Y-%m-%d"))))]
-    for x in body:
-        head, sep, rest = norm_money(x).partition(": ")
-        out.append(("<b>%s:</b> %s" % (esc(head), esc(rest))) if sep and head.isupper() else esc(norm_money(x)))
-    return Html("\n".join(out))
-
-
-def fmt_or_plain(build, plain):
-    """An alert laid out (build()), or -- if laying it out fails -- the plain words it always had (plain()),
-    so a layout bug can never swallow an alert."""
-    try:
-        return build()
-    except Exception:                                           # noqa: BLE001
-        log("alert layout failed, sending the plain words: %s" % traceback.format_exc()[-400:])
-        return plain()
+# the alerts (their layouts, fmt_or_plain, the disk rule) live in research/phone/alerts.py since v-tg-rebuild step 10
+from phone.alerts import (alert_recorder_text, alert_recorder_back_text, disk_alert_html,   # noqa: E402,F401
+                          alert_daily_text, fmt_or_plain, disk_alert, DISK_WARN_GB, DISK_STOP_GB, DISK_REARM_GB,
+                          DISK_HARD_STOP_GB, DISK_GB_PER_DAY)
 
 
 _CAPS_HEAD = re.compile(r"^[A-Z][A-Z0-9 ,'/&-]{4,}(?:\b|$)")
@@ -488,21 +367,9 @@ VERSIONS_MD = os.path.join(RESULTS, "VERSIONS.md")
 RACE30_EPOCH = calendar.timegm(time.strptime(RACE30_UTC, "%Y-%m-%dT%H:%M:%SZ"))
 
 
-def _f(x, default=0.0):
-    try:
-        return float(x)
-    except (TypeError, ValueError):
-        return default
-
-
-def _cnt(n):
-    """A count with thousands separators. Kalshi sells fractional contracts
-    (26.31 of them, say): under 100 the decimals are kept, past it they are
-    noise on a total and rounded away."""
-    n = _f(n)
-    if abs(n - round(n)) < 0.005 or n >= 100:
-        return "{:,}".format(int(round(n)))
-    return "{:,.2f}".format(n)
+# v-tg-rebuild step 10: _f and _cnt are botdata.fmt's, day_minus / days_between botdata.clock's (the same code)
+from botdata.fmt import _f, cnt as _cnt                             # noqa: E402,F401
+from botdata.clock import day_minus, days_between                  # noqa: E402,F401
 
 
 def _usd(x):
@@ -524,16 +391,6 @@ def _leg_name(tk):
     if tk.startswith(RACE_SERIES):
         return tk.rsplit("-", 1)[-1]
     return coin(tk)
-
-
-def day_minus(day, k):
-    d = datetime.date.fromisoformat(day) - datetime.timedelta(days=k)
-    return d.isoformat()
-
-
-def days_between(day0, day1):
-    """Calendar days from day0 to day1 inclusive (1 when equal)."""
-    return (datetime.date.fromisoformat(day1) - datetime.date.fromisoformat(day0)).days + 1
 
 
 # ---- Kalshi's rows, cached on the file ------------------------------------
@@ -630,6 +487,29 @@ def markets_from(rows, sides=None):
             vh = (1.0 - v) if side == "yes" else v
             m["hedge_pnl"] = hn * vh - hc
     return out
+
+
+def sides_of(ledger):
+    """{ticker: entry side} from the bot's own records. A hedge record
+    names the side the hedge BOUGHT, so the entry is the other one --
+    that is the authority, sent or not. Markets with no hedge record
+    take the ledger's `want` (pindesk's own reading, count rule first,
+    the log breaking an equal count). (Phone._sides; Ctx.sides is the same)"""
+    out = {}
+    for g in ledger.hedges:
+        if g.get("tk") and g.get("side") in ("yes", "no"):
+            out[g["tk"]] = "no" if g["side"] == "yes" else "yes"
+    for x in ledger.settled:
+        if x.get("tk") and x["tk"] not in out and x.get("want") in ("yes", "no"):
+            out[x["tk"]] = x["want"]
+    return out
+
+
+def chart_markets(led):
+    """The main account's markets for a picture (ChartCtx.markets): markets_from over Kalshi's ledger file with the
+    entry sides of the ledger snapshot `led` (phone.charts.ctx.phone_markets, the same reads in the same order)."""
+    sides = sides_of(led)
+    return markets_from(raw_ledger(os.path.join(led.results, pinday.LEDGER_NAME)), sides)
 
 
 def first_entries(orders):
@@ -795,70 +675,29 @@ def live_version(path):
     return None
 
 
-# ---- the process table ------------------------------------------------------
-_PROCS = {"t": 0.0, "rows": None}
-PROC_REFRESH_S = 90                     # the background refresher's period
-_PS_LIST = ("Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
-            "ForEach-Object { \"$($_.ProcessId)" + chr(96) + "t$($_.CommandLine)\" }")
+# ---- the process table: botdata/procs.py (v-tg-rebuild step 10) ----------------------------------------------------
+# ONE reader for the phone and botstats: Windows itself in milliseconds (ctypes), PowerShell WMI only when that fails
+# (10-35 s), a TTL cache and a background refresher. These names keep pinphone's shape: [(pid, command line)] or None
+# (None, never [] -- an empty list would read as 'nothing running', the one thing a failed read must never say).
+from botdata import procs as _bdprocs                                # noqa: E402
+PROC_REFRESH_S = _bdprocs.TABLE_TTL_S     # the background refresher's period
 
 
 def list_python_procs(timeout=30):
-    """[(pid, command line)] for every python.exe, from Windows itself, or
-    None when the call fails. It takes 10-12 s on the operator's box with
-    sixty python processes up, which is why it runs on a background thread
-    (proc_refresher) and never inside a command. None, not [] -- an empty
-    list would read as 'nothing running', and that is the one thing a
-    failed read must never say."""
-    rows = []
-    try:
-        out = subprocess.run(
-            ["powershell", "-NoProfile", "-Command", _PS_LIST],
-            capture_output=True, text=True, timeout=timeout,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        if out.returncode != 0:
-            return None
-        for line in (out.stdout or "").splitlines():
-            pid, _tab, cl = line.partition("\t")
-            if not cl.strip():
-                continue
-            try:
-                rows.append((int(pid.strip()), cl.strip()))
-            except ValueError:
-                pass
-    except Exception:                                           # noqa: BLE001
-        return None
-    return rows
+    """[(pid, command line)] for every python.exe, read now (native first, WMI fallback), or None."""
+    return _bdprocs.pid_cmd(_bdprocs.read_all(timeout))
 
 
 def python_procs(max_age_s=None):
-    """The cached process table, or None when it cannot be read. Fresh
-    enough (the refresher keeps it under PROC_REFRESH_S old) it is returned
-    at once; stale or empty, one synchronous read is made."""
-    age = time.time() - _PROCS["t"]
-    if _PROCS["rows"] is not None and age < (max_age_s or 2 * PROC_REFRESH_S):
-        return _PROCS["rows"]
-    rows = list_python_procs()
-    if rows is not None:
-        _PROCS.update(t=time.time(), rows=rows)
-    return rows
+    """The cached process table, or None when it cannot be read. Fresh enough (the refresher keeps it under
+    PROC_REFRESH_S old) it is returned at once; stale or empty, one synchronous read is made (natively: milliseconds)."""
+    return _bdprocs.pid_cmd(_bdprocs.table(max_age_s))
 
 
 def cached_python_procs():
     """The table the refresher last read while it is fresh, else None (= 'could not be read'). Never asks
-    Windows itself, so a page that can live with 'unknown' (/racestats) never holds the poll thread -- and
-    the alerts behind it -- for a 10-30 s WMI read when the cache is cold or stale."""
-    if _PROCS["rows"] is not None and time.time() - _PROCS["t"] < 2 * PROC_REFRESH_S:
-        return _PROCS["rows"]
-    return None
-
-
-def proc_refresher(period=None):
-    """Background thread body: re-read the process table every `period` s."""
-    while True:
-        rows = list_python_procs()
-        if rows is not None:
-            _PROCS.update(t=time.time(), rows=rows)
-        time.sleep(period or PROC_REFRESH_S)
+    Windows itself, so a page that can live with 'unknown' (/racestats) never holds the poll thread."""
+    return _bdprocs.pid_cmd(_bdprocs.cached())
 
 
 def argv_opt(cl, flag):
@@ -877,15 +716,16 @@ def _log_name(path, prefix):
 
 
 def _fleet_scripts():
-    """fleet()'s scripts in the order they are tried, and {script: Bot} of the main account's other live bot (the coin
+    """fleet_roles()' scripts in the order they are tried, and {script: Bot} of the main account's other live bot (the coin
     race). v-tg-rebuild step 5: the desk bot's and the race's scripts are the registry's Bot.script (every bot with a pot
     in subaccount 0); the desk bot's two older copies and the command-line paper arm are no registry bot's."""
     other = {b.script: b for b in _bots.bots_on("0") if b.name != DESK_BOT}
     return ("pinrun_afternoon.py", "pinrun913.py", _bots.get(DESK_BOT).script, "cmdarm.py") + tuple(other), other
 
 
-def fleet(procs):
-    """What is running, by role: the live up/down bot, the penny race bot,
+def fleet_roles(procs):
+    """(Was pinphone.fleet; renamed in v-tg-rebuild step 10 -- botdata.status.fleet is the bots' states.)
+    What is running, by role: the live up/down bot, the penny race bot,
     the paper arms (by --arm-name / log name) and the paper race arms."""
     out = {"live": None, "penny": None, "arms": [], "race_arms": [], "unknown": procs is None}
     scripts, race = _fleet_scripts()
@@ -1240,38 +1080,6 @@ def z3_progress(results, races_all):
     return {"races": len(rows), "losses": sum(losses), "first50_losses": sum(losses[:Z3_KILL[1]])}
 
 
-# ---- the disk ---------------------------------------------------------------
-# run_all.ps1 line 41: `if ($free -lt 5) { Write-Host "LOW DISK - stopping" ; break }`
-# -- the watchdog leaves its loop and BOTH recorders stop being restarted. The
-# tape ends there and cannot be recreated. So: one alert under 8 GB, one more
-# under 6, re-armed only when free space climbs back over 9.
-DISK_WARN_GB, DISK_STOP_GB, DISK_REARM_GB = 8.0, 6.0, 9.0
-DISK_HARD_STOP_GB = 5.0
-DISK_GB_PER_DAY = 4.0                   # OPEN_WORK C1: the recorders write ~4 GB a day
-
-
-def disk_alert(level, disk_gb):
-    """(new level, message or None). `level` is the line already announced:
-    0 none, 8 the under-8 alert went, 6 the under-6 alert went. A reading over
-    9 GB re-arms both. An unreadable reading (None) changes nothing."""
-    if disk_gb is None:
-        return level, None
-    if disk_gb > DISK_REARM_GB:
-        return 0, None
-    if disk_gb < DISK_STOP_GB and level != 6:
-        return 6, ("DISK %.1f GB FREE -- %.1f GB from the %.0f GB line where the recorders STOP FOR GOOD "
-                   "and the tape ends. Free space or plug in the new drive NOW. (Sent again only if it "
-                   "climbs over %.0f GB and falls back.)"
-                   % (disk_gb, disk_gb - DISK_HARD_STOP_GB, DISK_HARD_STOP_GB, DISK_REARM_GB))
-    if disk_gb < DISK_WARN_GB and level == 0:
-        return 8, ("DISK %.1f GB free, under %.0f GB. The recorders stop themselves for good at %.0f GB and "
-                   "that tape cannot be recreated; at about %.0f GB a day that is roughly %.1f days. "
-                   "Next warning under %.0f GB."
-                   % (disk_gb, DISK_WARN_GB, DISK_HARD_STOP_GB, DISK_GB_PER_DAY,
-                      max(0.0, disk_gb - DISK_HARD_STOP_GB) / DISK_GB_PER_DAY, DISK_STOP_GB))
-    return level, None
-
-
 # ===========================================================================
 # /bots /pin /forecaster /ladder, and the money windows under /race: the bot cards (every bs_* renderer and its
 # helpers). v-tg-rebuild step 9 (lane D2, 2026-10-30): moved verbatim to research/phone/render/botcards.py (the
@@ -1592,6 +1400,11 @@ from phone.commands.server.page import (SERVER_WARN_CPU, SERVER_WARN_MEM, SERVER
 
 
 class Phone:
+    """The phone's runtime: the Telegram poll loop and what it keeps between messages. v-tg-rebuild step 10 (2026-10-30):
+    every reply comes from phone/router.py (dispatch: pairing, the paired chat, the ledger refresh, a paused bot's page,
+    the command modules in research/phone/commands, the unknown-message answer); the alerts are phone/alerts.py, the
+    update flag phone/commands/update.py, the pictures phone/chartq.py. What stays here is state and the loop."""
+
     def __init__(self, cfg, transport, ledger=None, health_fn=None, cfg_path=CONFIG, now_fn=None,
                  procs_fn=None, versions_path=None, race30_epoch=None):
         self.cfg = cfg
@@ -1601,14 +1414,19 @@ class Phone:
         self.health_fn = health_fn or (lambda: pindesk.health(self.ledger))
         self.now = now_fn or time.time
         self.offset = None
+        self.polled_ok = False                  # a getUpdates has answered (the launcher's fallback stops counting)
         self.muted = False
+        # the alerts tick's memory (phone/alerts.py reads and writes these five on the runtime)
         self.last_state = None
         self.last_rec = None
         self.seen_losses = None
         self.last_daily = None
         self.disk_level = 0                     # disk_alert(): 0 armed, 8 / 6 = that line already sent
         self.bars_fn = None                     # the self-test plants /bars' text
-        self.busy = False
+        self.busy = False                       # a control is running (phone/commands/controls.py)
+        self._updating = False                  # an /update check is running (phone/commands/update.py)
+        self._exit_now = False                  # /update passed: the poll loop confirms the offset, then exits
+        self.update_start = None                # the update flag's /update (None = update.start_update; tests plant)
         # /stats, /race, /racestats read the process table, VERSIONS.md and
         # the v-race30 clock; the self-test plants all three.
         self.procs_fn = procs_fn or python_procs
@@ -1616,20 +1434,19 @@ class Phone:
         self.race30_epoch = race30_epoch or RACE30_EPOCH
         # /bots /pin /forecaster /ladder and /race's money windows read Kalshi
         # through botstats. None = botstats' own: kauth.get (GET only, 60 s
-        # cache) and its own process-table read (about 1.5 s natively; the
-        # WMI read behind procs_fn now takes 28-35 s). The self-test plants
+        # cache) and its own process-table read (about 1.5 s natively). The self-test plants
         # a fake Kalshi and a process table here.
         self.bs_getter = None
         self.bs_procs = None
         # /funds reads Kalshi through this getter; None = botstats.default_getter() (kauth.get, GET only).
         # The self-test plants a fake Kalshi here.
         self.funds_getter = None
-        # CHARTS (2026-10-18): a picture after the words, drawn on one background thread (chart_after).
+        # CHARTS (2026-10-18): a picture after the words, drawn on one background thread (phone/chartq.py).
         # Off unless main() turns them on, so every self-test Phone sends words only unless it asks.
         self.charts_on = False
         self.chart_fn = None                    # None = tgcharts.build; the self-test plants its own
         self.chart_stale_s = None               # None = tgcharts.STALE_S
-        self._chart_q = None
+        self.charts = ChartQueue(self, kind_of=_router.kind_of)
         self._bars_d = None                     # /bars' gathered numbers, for its picture
         self._resend = []                       # sends the connection dropped (say -> resend_tick)
         self._resend_lock = threading.Lock()
@@ -1645,34 +1462,14 @@ class Phone:
     def chat_id(self):
         return self.cfg.get("chat_id")
 
+    def ctx(self, text="", chat_id=None):
+        """The Ctx a command, an alert or a picture reads (phone/context.py): this runtime's seams, now."""
+        return Ctx.from_phone(self, text, chat_id=chat_id)
+
     def active(self):
         """The bots shown now (v-tg-active, 2026-10-30): botstats.active_bots -- a live copy running and no stop file; the
         pin bot always. Fail-safe: any error shows every bot (a command never dies on it)."""
-        bs = _bs()
-        try:
-            return tuple(bs.active_bots(procs=self.bs_procs))
-        except Exception:                                       # noqa: BLE001
-            log(traceback.format_exc())
-            return tuple(bs.BOTS)
-
-    def text_hidden(self, name):
-        """The answer to a paused or retired bot's own command (/race, /fc, /wx ... while it is not active)."""
-        bs = _bs()
-        label = bs.SPEC[name]["label"] if name in bs.SPEC else name
-        why = "its stop file is set" if bs.stop_set(name) else "no live copy of it is running"
-        return Html("⏸ <b>%s is not running now</b> (%s), so it is left off every page and /help.\n%s\n%s" % (
-            esc(label), esc(why), i_("It comes back by itself -- here, in /help, /bots and the rest -- once it runs "
-                                     "again with no stop file. Its past money stays in every total, on the 'earlier bots' "
-                                     "line of /bots."),
-            i_("The bots running now: %s" % " ".join(BOT_CMD_OF.get(b, "/" + b) for b in self.active()))))
-
-    def save_cfg(self):
-        try:
-            _paths.check_write(self.cfg_path)        # v-tg-rebuild step 2: never C:\kals under KALS_TESTING=1
-            with open(self.cfg_path, "w", encoding="utf-8") as fh:
-                json.dump(self.cfg, fh, indent=2)
-        except OSError as e:
-            log("could not save config: %s" % e)
+        return self.ctx().active()
 
     def say(self, text, chat_id=None):
         """Send, and LOG WHAT WAS SENT. 2026-09-23: the operator got a
@@ -1730,1643 +1527,42 @@ class Phone:
                 log("resend failed: %s" % e)
                 break                                     # the connection is still down: the rest wait too
 
-    def summary_line(self, rows, day=None, label=""):
-        s = Ledger.summary(rows)
-        dep = self.ledger.deposited()
-        if day:
-            b0 = self.ledger.bank_at(et_day_start(day))
-            r = (s["net"] / b0) if b0 else None
-        else:
-            r = (s["net"] / dep) if dep else None
-        out = "%s %s (%s)" % (label, money(s["net"]), pct(r))
-        if s["closes"]:
-            out += "\n  %d closes (%d bets): %d won, %d lost (%.1f%%)" % (s["closes"], s["markets"], s["won"], s["lost"], s["loss_rate"])
-        else:
-            out += "\n  no settled bets"
-        if day:
-            fs = Ledger.fill_stats(self.ledger.fills_on(day))
-            try:
-                up = hours_up_et_day(day, self.now() if day == et_day(self.now()) else et_day_start(day) + 86400)
-            except Exception:                            # noqa: BLE001
-                up = None
-            out += "\n  %d fills, %g contracts, %d lost races" % (fs["fills"], fs["contracts"], fs["zero"])
-            if up:
-                out += "\n  %.1f h up, %s/h" % (up, money(s["net"] / up))
-        return out
-
-    def _staked(self, net, day=None):
-        """What the bets of one ET day (None = every day) cost, from Kalshi's books (the /stats source:
-        cost + fees of every main-account market) -- or None when that source's money for the same window
-        is not the `net` shown (then a 'return on staked' would mix two sources, so none is shown)."""
-        try:
-            ms = [m for m in self._markets().values() if day is None or m["day"] == day]
-        except Exception:                                       # noqa: BLE001
-            return None
-        if not ms:
-            return None
-        st = window_stats(ms, {})
-        return st["risked"] if abs(st["net"] - net) <= 0.011 else None
-
-    def day_html(self, rows, day=None, label=""):
-        """summary_line's numbers laid out: the money and its % (of the bank at the start of the ET day; all
-        time, of the money put in) as the headline; then closes won (count and %), the return on what the
-        bets cost (when Kalshi's books give the same money), fills, hours, and the day as a sparkline of the
-        running total close by close. Html lines."""
-        s = Ledger.summary(rows)
-        if day:
-            b0 = self.ledger.bank_at(et_day_start(day))
-            r = (s["net"] / b0) if b0 else None
-            base = ("%% of the bank = of the %s it held at the start of the ET day" % dollars(b0)) if b0 else None
-            what = "of the bank"
-        else:
-            dep = self.ledger.deposited()
-            r = (s["net"] / dep) if dep else None
-            base = None
-            what = ("on the %s put in" % dollars(dep)) if dep else ""
-        L = ["%s <b>%s %s (%s%s)</b>" % (dot(s["net"]), esc(label), esc(usd(s["net"])), esc(pct(r)),
-                                           (" " + esc(what)) if r is not None and what else "")]
-        if s["closes"]:
-            staked = self._staked(s["net"], day) if s["markets"] else None
-            L.append("<b>%d of %d</b> closes won (<b>%s</b>), %d lost (%.1f%%) · %s%s" % (
-                s["won"], s["closes"], pct_of(s["won"], s["closes"], 1), s["lost"], s["loss_rate"],
-                esc(_nof(s["markets"], "bet")),
-                (" · <b>%s</b> on the %s staked" % (esc(ret(s["net"], staked, 2)), esc(dollars(staked))))
-                if staked else ""))
-        else:
-            L.append("No settled bets.")
-        if day:
-            fs = Ledger.fill_stats(self.ledger.fills_on(day))
-            try:
-                up = hours_up_et_day(day, self.now() if day == et_day(self.now()) else et_day_start(day) + 86400)
-            except Exception:                            # noqa: BLE001
-                up = None
-            L.append("Pin bot: %s, %s contracts%s" % (            # its own orders; the coin race's are in /race
-                esc(_nof(fs["fills"], "fill")), "{:,.0f}".format(fs["contracts"] or 0),
-                (" · %d of %d orders filled nothing (%s)" % (fs["zero"], fs["orders"], pct_of(fs["zero"], fs["orders"])))
-                if fs["orders"] else ""))
-            if up:
-                L.append("%.1f h up · <b>%s</b> an hour" % (up, esc(usd(s["net"] / up))))
-            closes = Ledger.by_close(rows)
-            if len(closes) >= 3:
-                run, cum = [], 0.0
-                for k in sorted(closes):
-                    cum += closes[k]
-                    run.append(cum)
-                L.append("Close by close, the running total: <code>%s</code>" % esc(spark(run)))
-        if base and r is not None:
-            L.append(i_(base))
-        return L
-
-    # ---- command texts ----
-    def text_status(self):
-        h = self.health_fn()
-        state, hl, det, _c = status_of(h)
-        b = self.ledger.bank()
-        dep = self.ledger.deposited()
-        body, _nl, ev = det.rpartition("\n")
-        if not body:
-            body, ev = ev, ""
-        lines = ["%s <b>%s</b>" % (state_dot(state), esc(hl)), esc(body)]
-        if ev:
-            lines.append(i_(ev))
-        if b:
-            # 2026-10-26: was 'Bank $1,340.77 (+19.34% on the $1,123.46 put in)' -- the main account's bank against
-            # the money put into EVERY pot (about $1,024 of it now sits in the other bots' pots), so the % read low
-            lines.append("")
-            lines.append("🏦 <b>Main account %s</b> (%s) · bet size %g contracts" % (
-                esc(dollars(b["bank"])), esc(main_words(self.active())), b.get("size") or 0))
-            try:
-                a = self._bs_get("all")
-                at, allc = a["total"]["all_time"], a["balances"].get("all")
-                if allc is not None:
-                    lines.append("💼 All pots %s%s · /bots" % (esc(dollars(allc)), (
-                        " · all time <b>%s</b> (<b>%s</b> on the %s put in)" % (
-                            esc(usd(at["money"])), esc(_bs().pot_pct_txt(at["pot_pct"])), esc(dollars(at["pot"]))))
-                        if at.get("pot_pct") is not None and at.get("pot") else ""))
-            except Exception:                                   # noqa: BLE001
-                log(traceback.format_exc())
-        today = et_day(self.now())
-        lines.append("")
-        lines += self.day_html(self.ledger.settled_on(today), today,
-                               ("%s today" % main_shared(self.active()).capitalize()) if main_sharers(self.active())
-                               else "Main account today")
-        try:
-            t_ = self._bs_get("all")["total"]["today"]
-            if t_["markets"]:
-                lines.append("🤖 All bots today <b>%s</b>%s · /today" % (esc(usd(t_["money"])), (
-                    " (<b>%s</b> of all pots)" % esc(_bs().pot_pct_txt(t_["pot_pct"]))) if t_.get("pot_pct") is not None else ""))
-        except Exception:                                       # noqa: BLE001
-            log(traceback.format_exc())
-        opn = pinflat.positions(self.ledger.newest_rows) if h["alive"] else {}
-        if opn:
-            lines.append("")
-            lines.append("📂 <b>Pin bot open:</b> " + esc(", ".join("%s %s closes %s" % (coin(t), "x%g" % self.ledger.contracts_for(t), close_et(t)) for t in opn)))
-        wd = h.get("watchdog_s")
-        rec = "both writing" if (h.get("kalshi_ok") and h.get("feeds_ok")) else "CHECK RECORDERS"
-        lines.append("")
-        lines.append("🖥 Watchdog %s · recorders %s · disk %.1f GB free" % (
-            ("ok, %ds ago" % wd) if wd is not None and wd < 120 else "<b>NOT RUNNING</b>",
-            esc(rec) if rec == "both writing" else "<b>%s</b>" % esc(rec), h.get("disk_gb") or 0))
-        return Html("\n".join(lines))
-
-    def _all_bots_day(self, day, label):
-        """/today and /yesterday's top: EVERY bot's money that ET day from Kalshi's books (botstats.all_bots, the
-        /bots source). The operator, 2026-10-23: "/today doesn't show the right total it says 11.22 right now it's
-        really 24.85" -- the old headline was the main account only. 2026-10-26: "/yesterday doesn't look good or
-        show % of bank return" -- now the headline carries the % of all pots, a bot-by-bot table carries each
-        bot's % of its own bank and its return on the bets, and the averages carry their % too. [] when the day
-        is neither today nor yesterday; one warning line when botstats fails."""
-        try:
-            a = self._bs_get("all")
-        except Exception:                                        # noqa: BLE001
-            log(traceback.format_exc())
-            return ["❔ <b>All bots %s: could not be read</b> -- below is the main account only" % esc(label.lower())]
-        bs = _bs()
-        today = a["today_et"]
-        key = "today" if day == today else ("yesterday" if day == bs.shift_day(today, -1) else None)
-        if key is None:
-            return []
-        w = a["total"][key]
-        if w["partial"] and not w["markets"]:
-            L = ["❔ <b>All bots %s: unknown -- Kalshi could not be read</b>" % esc(label.lower())]
-        else:
-            L = [bs_headline(w, "of all pots", "All bots", when=label.lower())]
-        L.append(i_("%s ET%s · every pot, Kalshi's books" % (
-            _day_long(day), (" · %d of %d markets won" % (w["won"], w["markets"])) if w["markets"] else "")))
-        if key == "today" and not w["partial"]:
-            pace = self._pace_line(w["money"], day, w.get("pot"))
-            if pace:
-                L.append(pace)
-        if w["partial"] and w["markets"]:
-            L.append("⚠️ PARTIAL: leaves out %s (Kalshi could not be read)" % esc(", ".join(w["missing"])))
-        tbl = bots_window_table(a, key)
-        if tbl:
-            L += ["", "📊 <b>By bot</b>"] + tbl
-        avg, n = all_bots_avg_before(a, day)
-        base = w.get("pot")
-
-        def share(x):
-            return (" (%s of all pots)" % bs.pot_pct_txt(100.0 * x / base)) if base else ""
-        more = []
-        if key == "today" and a["total"]["yesterday"]["markets"]:
-            y = a["total"]["yesterday"]
-            more.append("yesterday %s%s" % (usd(y["money"]), (" (%s)" % bs.pot_pct_txt(y["pot_pct"]))
-                                             if y.get("pot_pct") is not None else ""))
-        if avg is not None:
-            if key == "today":
-                more.append("%d-day average %s a day%s" % (n, usd(avg), share(avg)))
-            elif w["markets"]:
-                gap = w["money"] - avg
-                more.append("the %d days before averaged %s a day%s, so this day was %s %s average" % (
-                    n, usd(avg), share(avg), dollars(abs(gap)), "above" if gap >= 0 else "below"))
-        # 2026-10-29: the 30-day average beside the 7-day one, the same rule (all_bots_avg_before: a quiet day counts $0,
-        # days before the first market on any pot are left out -- so fewer than 30 only while the books are younger)
-        avg30, n30 = all_bots_avg_before(a, day, bs.LONG_DAYS) if hasattr(bs, "LONG_DAYS") else (None, 0)
-        if avg30 is not None and n30 > n:
-            if key == "today":
-                more.append("%d-day average %s a day%s" % (n30, usd(avg30), share(avg30)))
-            elif w["markets"]:
-                gap = w["money"] - avg30
-                more.append("the %d days before averaged %s a day%s, %s %s that" % (
-                    n30, usd(avg30), share(avg30), dollars(abs(gap)), "above" if gap >= 0 else "below"))
-        if more:
-            L.append("")
-            L.append("📈 " + esc(" · ".join(more)))
-        return L
-
-    def _pace_line(self, so_far, day, base=None):
-        """'📈 Ahead of pace: +$76.44 (+3.3%) so far vs +$20.10 (+0.86%) by 10:45 PM on an average day (last 7)' --
-        every bot, today against the same ET clock on the days before (operator: judge 'on track' from midnight
-        ET, and say 'behind' plainly); the % are of all pots at midnight (`base`). None when it cannot be worked
-        out (it never costs the rest of /today)."""
-        try:
-            T = _tgc()
-            now = self.now()
-            b_, _p, rows, miss = T.all_day_markets({"now": now, "pp": sys.modules[__name__],
-                                                    "bs_getter": self.bs_getter, "bs_procs": self.bs_procs})
-            if miss:
-                return None
-            _sf, avg, n = T.by_now(rows, b_, day, now)
-            if avg is None:
-                return None
-            ahead = so_far >= avg
-
-            def sh(x):
-                return (" (%s)" % b_.pot_pct_txt(100.0 * x / base)) if base else ""
-            # 2026-10-29: the 30-day average day at the same clock after the 7-day one (ahead / behind stays the 7-day's)
-            _sf30, avg30, n30 = T.by_now(rows, b_, day, now, getattr(b_, "LONG_DAYS", 0))
-            more = (" · last %d: %s%s" % (n30, usd(avg30), sh(avg30))) if avg30 is not None and n30 > n else ""
-            return "%s <b>%s</b>: %s%s so far vs %s%s by %s on an average day (last %d)%s" % (
-                "📈" if ahead else "📉", "Ahead of pace" if ahead else "Behind pace", esc(usd(so_far)), esc(sh(so_far)),
-                esc(usd(avg)), esc(sh(avg)),
-                esc(et_str(b_.day_start(day) + (max(0.0, now - b_.day_start(day)) // 900) * 900)), n, esc(more))
-        except Exception:                                       # noqa: BLE001
-            log(traceback.format_exc())
-            return None
-
-    def text_day(self, day, label):
-        top = self._all_bots_day(day, label)
-        if top:
-            # inside the tap's quote: no <code> (Telegram refuses code inside a blockquote -- tg_html_problems)
-            mw = main_words(self.active())
-            L = [x.replace("<code>", "").replace("</code>", "")
-                 for x in self.day_html(self.ledger.settled_on(day), day,
-                                        main_shared(self.active()).capitalize() if main_sharers(self.active())
-                                        else "Main account")]
-            return Html("\n".join(top + ["", details(L, "🏦 %s (main account): closes, fills, "
-                                                        "hours up -- tap" % (mw[:1].upper() + mw[1:])),
-                                         i_("each bot in full: /bots · the week: /days")]))
-        L = self.day_html(self.ledger.settled_on(day), day, label)
-        if day == et_day(self.now()):                          # /today: yesterday beside it, for scale
-            y = et_day(self.now() - 86400)
-            s = Ledger.summary(self.ledger.settled_on(y))
-            b0 = self.ledger.bank_at(et_day_start(y))
-            L.append(i_("Yesterday %s (%s) · /days for the week" % (usd(s["net"]), pct((s["net"] / b0) if b0 else None))))
-        return Html("\n".join(L))
-
-    def _main_days(self):
-        """The main account's (pin + race) last 7 ET days from the bot's own ledger: [(day, net, % of the bank
-        that began it or None, lost closes, closes)], newest first."""
-        out = []
-        for d in list(reversed(self.ledger.days()))[:7]:
-            s_ = Ledger.summary(self.ledger.settled_on(d))
-            b0 = self.ledger.bank_at(et_day_start(d))
-            out.append((d, s_["net"], (s_["net"] / b0) if b0 else None, s_["lost"], s_["closes"]))
-        return out
-
-    def _version_line(self):
-        """'🏷 SINCE v-x (10/23 09:45 PM ET): +$58.11, 97 markets, 5 lost (5.2%)' for the pin bot's running
-        version, or None. 2026-10-01, the operator: "/days doesn't show any recent negative days on this
-        version" -- a deploy day mixes two versions, so the running one gets its own line (Kalshi's books, main
-        account, markets closing after its deploy)."""
-        ver = live_version(self.versions_path)
-        if not ver:
-            return None
-        try:
-            vs = [m for m in self._markets().values() if m["close"] is not None and m["close"] >= ver[1]]
-        except Exception:                                    # noqa: BLE001
-            return None
-        lost = sum(1 for m in vs if m["pnl"] < -0.004)
-        if not vs:
-            return "🏷 <b>Pin bot since %s</b> (%s ET): nothing settled since" % (
-                esc(ver[0]), esc(et_str(ver[1], "%m/%d %I:%M %p")))
-        return "🏷 <b>Pin bot since %s</b> (%s ET): <b>%s</b>, %d markets, %d lost%s" % (
-            esc(ver[0]), esc(et_str(ver[1], "%m/%d %I:%M %p")), esc(usd(sum(m["pnl"] for m in vs))), len(vs),
-            lost, (" (%s)" % pct_of(lost, len(vs), 1)) if vs else "")
-
-    def text_days(self):
-        """/days: EVERY bot's last 7 ET days (2026-10-26, operator: "add the percentage anywhere it applied") --
-        a day table with each day's % of all pots and its return on the bets, the week bot by bot with each bot's
-        % of its bank, the all-time line; then the main account's own days (pin + race, behind a tap) and the pin
-        bot's running version. Falls back to the main account's table alone when botstats cannot be read."""
-        try:
-            a = self._bs_get("all")
-        except Exception:                                        # noqa: BLE001
-            log(traceback.format_exc())
-            a = None
-        main = self._main_days()
-        out = []
-        if a is not None:
-            bs = _bs()
-            tot = a["total"]
-            out.append(bs_headline(tot["last_7_days"], "of all pots", "All bots", when="last 7 days"))
-            at = tot["all_time"]
-            if at["markets"]:
-                out.append(i_("all time %s%s · %s, %d lost · every pot, Kalshi's books; ET days" % (
-                    usd(at["money"]), (" (%s on the %s put in)" % (bs.pot_pct_txt(at["pot_pct"]), dollars(at["pot"])))
-                    if at.get("pot_pct") is not None and at.get("pot") else "", _nof(at["markets"], "market"), at["lost"])))
-            firsts = [mm.get("first_day") for mm in [a["bots"][x]["money"] for x in bs.BOTS] + [a["other"]]
-                      if mm.get("first_day")]               # every bot's books, hidden ones too: the totals' days
-            days = [d for d in a["total_days_7"] if not (firsts and d["day"] < min(firsts))]
-            if days:
-                mx = max([abs(d["money"]) for d in days if d["markets"]] or [0])
-                rows = [("Day", "Money", "of pots", "Return", "Lost", "")]
-                for d in days:
-                    if not d["markets"]:
-                        rows.append((d["label"], "nothing settled"))
-                        continue
-                    rows.append((d["label"], usd(d["money"]),
-                                 bs.pot_pct_txt(d["pot_pct"]) if d.get("pot_pct") is not None else "-",
-                                 bs.pct(d["return_pct"]) if d.get("return_pct") is not None else "-",
-                                 "%d/%d" % (d["lost"], d["markets"]), hbar(d["money"], mx, 4)))
-                out += ["", "📅 <b>Last 7 days, every bot</b>", pre(table(rows, "lrrrrl")),
-                        i_("of pots = share of all the pots when that day began · Return = on what the bets cost · "
-                           "Lost = markets lost / settled")]
-            tbl = bots_window_table(a, "last_7_days", "7 days")
-            if tbl:
-                out += ["", "📊 <b>Last 7 days, by bot</b>"] + tbl
-            out += bots_avg_table(a)
-            det = ["%s: <b>%s</b> (%s of the bank) · %d of %d closes lost" % (
-                esc(bs.day_label(d)), esc(usd(v)), esc(pct(r)), lost, closes) for d, v, r, lost, closes in main]
-            if det:
-                mw = main_words(a.get("active"))
-                out += ["", details(det, "🏦 %s (main account), day by day -- tap" % (mw[:1].upper() + mw[1:]))]
-        else:
-            rows, vals = [("Day", "Money", "% bank", "Lost", "")], []
-            for d, v, r, lost, closes in main:
-                vals.append(v)
-                rows.append((d[5:], usd(v), pct(r), "%d/%d" % (lost, closes)))
-            mx = max([abs(v) for v in vals] or [0])
-            rows = [rows[0]] + [r + (hbar(v, mx, 4),) for r, v in zip(rows[1:], vals)]
-            at_ = self.day_html(self.ledger.settled, None, "All time")
-            out = [at_[0]] + at_[1:] + ["", "📅 <b>Last %d days</b> <i>(Kalshi's books, main account; ET days)</i>"
-                                        % len(vals), pre(table(rows, "lrrrl")),
-                                        i_("% bank = of the bank at the start of that day · Lost 1/25 = 1 losing close of 25")]
-        vl = self._version_line()
-        if vl:
-            out += ["", vl]
-        return Html("\n".join(out))
-
-    def text_open(self):
-        """Open bets in EVERY pot (2026-10-26 screen pass): the pin bot's own, with the seconds to each close, from
-        its log; every other bot's from Kalshi's positions (botstats), with what is at risk and its share of
-        that bot's cash."""
-        h = self.health_fn()
-        opn = pinflat.positions(self.ledger.newest_rows) if h["alive"] else {}
-        L = []
-        if opn:
-            rows = []
-            for t in opn:
-                c = pinflat.close_epoch(t)
-                rows.append((nice_coin(t), "x%g" % self.ledger.contracts_for(t), "closes %s" % close_et(t),
-                             "(%d s)" % max(0, (c or 0) - self.now())))
-            L += ["📂 <b>Pin bot: %d open</b>" % len(rows), pre(table(rows, "lrll"))]
-        others, unread = [], []
-        try:
-            a = self._bs_get("all")
-            bs = _bs()
-            act = _active_of(a)
-            for nm in bs.BOTS:
-                if nm == DESK_BOT:                          # its own open bets are listed above (the Ledger)
-                    continue
-                bt = a["bots"][nm]
-                o = bt["open"]
-                if nm not in act and not (o["ok"] and o["count"]):
-                    continue                             # v-tg-active: a hidden bot only if it still holds a bet
-                label = bt["label"] if nm in act else "Earlier bot (not running)"
-                if not o["ok"]:
-                    unread.append(label.lower())
-                    continue
-                if not o["count"]:
-                    continue
-                cash = (bt.get("balance") or {}).get("dollars")
-                others.append("📂 <b>%s: %d open</b> · %s at risk%s" % (
-                    esc(label), o["count"], esc(_cash(o["at_risk"])),
-                    (" (%s of its cash)" % esc(pct_of(o["at_risk"], cash + o["at_risk"], 1))) if cash else ""))
-                for p_ in o["positions"][:8]:
-                    others.append("  %s %s x%g · %s" % (esc(p_["what"]), esc(str(p_["side"]).upper()), p_["contracts"],
-                                                       esc(_cash(p_["at_risk"]))))
-        except Exception:                                       # noqa: BLE001
-            log(traceback.format_exc())
-            unread.append("the other bots (Kalshi could not be read)")
-        L += others
-        if not L:
-            L.append("📂 <b>No open bets</b> in any pot.")
-        if unread:
-            L.append(i_("could not read: %s" % ", ".join(unread)))
-        return Html("\n".join(L))
-
-    def text_fills(self, day=None):
-        """Every order the bot sent today: what filled, what we paid, how late.
-
-        The operator, 2026-09-18: *"Make a telegram command to see the filled,
-        paid, and seconds out info for the days bets."* He had asked where to
-        see a fill price and the only answer was a column in the desktop app.
-
-        ZERO-FILL ORDERS ARE SHOWN, not hidden. An order that filled nothing is
-        a race we lost, and it is about one in five -- a list that quietly drops
-        them would report a fill rate of 100%.
-
-        2026-10-26 (operator: "anywhere that trades or transactions are listed list the account or which bot"): the
-        table is the PIN BOT's orders (its own log) and says so; every other bot's fills that day follow, each line
-        naming its bot (_other_fills_html).
-        """
-        day = day or et_day(self.now())
-        rows = [o for o in self.ledger.orders
-                if o.get("t") and et_day(o["t"]) == day]
-        other = self._other_fills_html(day)
-        if not rows:
-            return Html("\n".join(["No pin bot orders today (%s)." % esc(day)] + other))
-        rows.sort(key=lambda o: o["t"])
-        tbl = [("Time", "Coin", "Got/asked", "Paid", "Left")]
-        nf = got = asked = 0.0
-        zero = 0
-        for o in rows:
-            f = float(o.get("filled") or 0)
-            a = float(o.get("asked") or 0)
-            got += f
-            asked += a
-            if f <= 0:
-                zero += 1
-            else:
-                nf += 1
-            px = o.get("price") or o.get("ask_seen")
-            tau = o.get("tau")
-            tbl.append((hm(o["t"]), coin(o.get("tk") or ""), ("%g/%g" % (f, a)) if a else ("%g" % f),
-                        ("%.1fc" % (100 * float(px))) if px else "-",
-                        ("%ss" % tau) if tau is not None else "(oil)"))
-        out = ["🧾 <b>Pin bot orders today: %d</b> · %d filled · %d filled nothing%s" % (
-            len(rows), int(nf), zero, (" (%s)" % pct_of(zero, len(rows))) if rows else ""),
-            i_("%s ET · Left = seconds before the close when it was sent" % day),
-            pre(table(tbl, "llrrr")),
-            "Asked %g contracts, got <b>%g</b> (<b>%s</b>). %d orders: %d filled, %d lost the race." % (
-                asked, got, esc(pct(got / asked, False) if asked else "-"), len(rows), int(nf), zero)]
-        return Html("\n".join(out + other))
-
-    def _other_fills_html(self, day, shown=8):
-        """/fills' second part (2026-10-26): every OTHER bot's fills on ET day `day`, from its own log
-        (botstats.fills_since, today's part only) -- how many each bot had, then the newest few, every line naming its
-        bot. Html lines; a failure costs these lines only."""
-        try:
-            bs = _bs()
-            act = self.active()
-            fl, unread = bs.fills_since(et_day_start(day), [b for b in bs.BOTS if b != DESK_BOT])
-            # v-tg-active: a paused or retired bot's fills (there should be none) are 'earlier bots', never its name
-            names = [b for b in act if b != DESK_BOT] + ["earlier"]
-            for f in fl:
-                if f["bot"] not in act:
-                    f["bot"] = "earlier"
-            unread = {(b if b in act else "earlier"): w for b, w in unread.items()}
-        except Exception:                                       # noqa: BLE001
-            log(traceback.format_exc())
-            return ["", i_("The other bots' fills could not be read.")]
-        fl = [f for f in fl if f["t"] is not None and et_day(f["t"]) == day]
-        when = "today" if day == et_day(self.now()) else _day_long(day)
-        L = ["", "🧾 <b>Other bots' fills %s: %d</b> <i>(each bot's own log)</i>" % (esc(when), len(fl))]
-        if fl:
-            per = []
-            for b in names:
-                mine = [f for f in fl if f["bot"] == b]
-                if mine:
-                    per.append("%s %s, %s contracts" % (BOT_WORD.get(b, b), _nof(len(mine), "fill"),
-                                                        _cnt(sum(f["contracts"] for f in mine))))
-            L.append(esc(" · ".join(per)))
-            for f in list(reversed(fl))[:shown]:
-                side = " ".join(x for x in ("sold" if f["act"] == "sold" else "", (f["side"] or "").upper()) if x)
-                what = f["what"][5:] if f["bot"] == "race" and f["what"].startswith("race ") else f["what"]
-                L.append(esc("%s · %s · %s%s x%s%s" % (
-                    hm(f["t"]), BOT_WORD.get(f["bot"], f["bot"]), what, (" " + side) if side else "",
-                    _cnt(f["contracts"]), (" · %.1fc" % (100.0 * f["price"])) if f["price"] else "")))
-            if len(fl) > shown:
-                L.append(i_("the newest %d of %d, newest first" % (shown, len(fl))))
-        else:
-            L.append("None.")
-        bad = [BOT_WORD.get(b, b) for b, why in unread.items() if why != "no log file found"]
-        if bad:
-            L.append(i_("could not read: %s" % ", ".join(bad)))
-        return L
-
-    def text_brief(self):
-        """The daily briefing, from pinbrief -- the same words the CLI prints.
-
-        NOT rebuilt here. The operator asked for one daily summary, and a
-        phone copy that assembles its own version is a second summary to keep
-        honest; the app and this bot have already disagreed about one day.
-        """
-        try:
-            import pinbrief
-            body = brief_html(pinbrief.text(pinbrief.brief(ledger=self.ledger)))
-            top = self._all_bots_day(et_day(self.now()), "Today")      # 2026-10-26: every pot first, with its %
-            if not top:
-                return body
-            mw = main_words(self.active())
-            return Html("\n".join(top + ["", "🏦 <b>%s (main account)</b>" % esc(mw[:1].upper() + mw[1:]), str(body)]))
-        except Exception as e:                                  # noqa: BLE001
-            return ("Could not build today's briefing: %s\n"
-                    "Everything else still works -- try /today again, or "
-                    "/days for the plain numbers." % str(e)[:160])
-
-    def text_market(self):
-        act = self.ledger.activity()
-        if act["recent"] is not None:
-            out = ["🛒 <b>Sellers: %s</b> · <b>%.0f%%</b> of looks" % (esc(act["level"]), 100 * act["recent"]),
-                   "Last 4 quarter-hours: someone selling the winning side on <b>%.0f%%</b> of looks (quiet &lt; %.0f%%, "
-                   "typical %.0f%%, busy &gt; %.0f%%)."
-                   % (100 * act["recent"], 100 * act["p25"], 100 * act["median"], 100 * act["p75"])]
-        else:
-            out = ["🛒 <b>Sellers: %s</b>" % esc(act["level"])]
-        out.append("")
-        # 2026-10-26, the operator: "On /market it lists the last closes can you include which bot made the trades". The
-        # close summaries and their count are the PIN BOT's own (its log; the coin race's orders are in the race's log),
-        # so each close says 'pin bot ...', then every other bot's buys on the markets closing then, from its own log.
-        closes = list(reversed(self.ledger.closes))[:8]
-        out.append("<b>Last %d closes</b> <i>(who bought, in contracts; sellers = share of the pin bot's looks with a "
-                   "seller)</i>" % min(8, len(self.ledger.closes)))
-        others, unread = self._close_buys(closes)
-        want = {s["tk"]: s["want"] for s in self.ledger.signals if s.get("tk") and s.get("want") in ("yes", "no")}
-        for c in closes:
-            share = Ledger.offer_share(c)
-            parts = [self._pin_close_words(c, want)] + others.get(int(c["close"]) if c["close"] else None, [])
-            out.append("<b>%s</b> · sellers %s · %s" % (esc(et_str(c["close"]) if c["close"] else "?"),
-                                                       esc(pct(share, False) if share is not None else "-"),
-                                                       esc(" · ".join(parts))))
-        if unread:
-            out.append(i_("could not read %s, so its buys are not listed" % unread))
-        today = et_day(self.now())
-        fs = Ledger.fill_stats(self.ledger.fills_on(today))
-        out.append("")
-        out.append("<b>Pin bot today</b>: %d orders · %d filled · %d got nothing%s · wanted %s contracts, got <b>%s</b> "
-                   "(%s)." % (fs["orders"], fs["fills"], fs["zero"],
-                              (" (%s)" % pct_of(fs["zero"], fs["orders"])) if fs["orders"] else "",
-                              "{:,.0f}".format(fs["asked"] or 0), "{:,.0f}".format(fs["contracts"] or 0),
-                              esc(pct(fs["share"], False) if fs["share"] is not None else "-")))
-        # IS THE OPPORTUNITY GOING AWAY. Same lines the desktop shows, from
-        # the same function, so the phone and the app cannot drift apart.
-        # Read from health() rather than recomputed: it is already there.
-        try:
-            h = self.health_fn()
-            sl = h.get("supply_lines") or []
-            age = h.get("supply_age_d")
-            if sl and age is not None and age > SUPPLY_STALE_D:
-                # 2026-10-23: the measurement stopped in September; a month-old trend is not shown as news
-                out.append("")
-                out.append(i_("The opportunity trend was last measured %.0f days ago, so it is left out." % age))
-            elif sl:
-                out.append("")
-                out.append("📉 <b>IS THE OPPORTUNITY GOING AWAY?</b>")
-                out += elines(sl)
-                if age is not None:
-                    out.append(i_("(measured up to %.1f days ago)" % age))
-        except Exception:                                   # noqa: BLE001
-            pass
-        return Html("\n".join(out))
-
-    def _pin_close_words(self, c, want):
-        """What the PIN BOT did on one quarter-hour, from its own log (close summary, orders, hedges; `want` = {ticker:
-        side} from its signals): 'pin bot bought 115 (NEAR NO)', '... + hedge 4 YES', 'pin bot LOST THE RACE: ordered 50,
-        got 0 (someone bought it first)' or 'pin bot passed: <why>'. The count is Ledger.reason's: every pin order
-        filled for that close."""
-        why = self.ledger.reason(c)
-        if not why.startswith("BOUGHT"):
-            if why.startswith("LOST THE RACE"):
-                return "pin bot " + why
-            return "pin bot passed: " + ("nothing met its rules" if why == "nothing passed" else why)
-        legs = []
-        for o in self.ledger.orders:
-            if o["close"] == c["close"] and o["filled"] > 0:
-                side = want.get(o["tk"]) or (c.get("best_want") if o["tk"] == c.get("best_ticker") else None)
-                k = " ".join(x for x in (_mkt_short(o["tk"]), str(side or "").upper()) if x)
-                if k and k not in legs:
-                    legs.append(k)
-        s = "pin bot bought %g%s" % (sum(o["filled"] for o in self.ledger.orders if o["close"] == c["close"]),
-                                     (" (%s)" % ", ".join(legs)) if legs else "")
-        hed = [g for g in self.ledger.hedges if g.get("kind") == "hedge" and str(g.get("status")) == "executed"
-               and g.get("tk") and pinflat.close_epoch(g["tk"]) == c["close"]]
-        if hed:
-            s += " + hedge " + ", ".join(" ".join(x for x in ("%g" % _f(g.get("n")), str(g.get("side") or "").upper())
-                                                  if x) for g in hed)
-        return s
-
-    def _close_buys(self, closes):
-        """({close epoch: ['coin race 2 (SOL YES)', 'forecaster 26 (ETH YES)', 'FX taker 3 markets x10']}, the bots whose
-        log could not be read, in words, or None): what every bot but the pin bot bought on the markets closing at each
-        of `closes`, from its own log (botstats.fills_since, back two hours past the oldest close: hundredths of a
-        second). A failure costs these words only."""
-        cs = {int(c["close"]) for c in closes if c.get("close")}
-        if not cs:
-            return {}, None
-        try:
-            bs = _bs()
-            act = self.active()
-            fl, unread = bs.fills_since(min(cs) - 2 * 3600, [b for b in bs.BOTS if b != DESK_BOT])
-            names = [b for b in act if b != DESK_BOT] + ["earlier"]       # v-tg-active, as /fills
-            for f in fl:
-                if f["bot"] not in act:
-                    f["bot"] = "earlier"
-            unread = {(b if b in act else "earlier"): w for b, w in unread.items()}
-        except Exception:                                       # noqa: BLE001
-            log(traceback.format_exc())
-            return {}, "the other bots' logs"
-        by = {}
-        for f in fl:
-            if f["close"] is not None and int(f["close"]) in cs:
-                by.setdefault(int(f["close"]), {}).setdefault(f["bot"], []).append(f)
-        out = {k: [buys_words(b, v[b]) for b in names if b in v] for k, v in by.items()}
-        bad = [BOT_WORD.get(b, b) for b, why in unread.items() if why != "no log file found"]
-        return out, (", ".join(bad) if bad else None)
-
-    def text_losses(self):
-        """/losses: EVERY bot's losing markets (operator 10-26: "Make it so /losses outputs losses not just for pin and
-        race and show which bot it lost. Show all the same information and show a bit more than just the last ten")
-        from tgcharts.all_losses (botstats, Kalshi's books, every pot -- the chart's own source): the last
-        LOSSES_SHOWN by ET day, each with its bot, the market, side and contracts, $ and % of that bot's pot, then
-        every bot's count, last 7 days, $ lost and worst. The main account's losing closes (text_losses_main) when
-        botstats cannot be read at all."""
-        try:
-            bs, rows, per, missing = _tgc().all_losses({"now": self.now(), "pp": sys.modules[__name__],
-                                                         "bs_getter": self.bs_getter, "bs_procs": self.bs_procs})
-        except Exception:                                       # noqa: BLE001
-            log(traceback.format_exc())
-            return self.text_losses_main()
-        if not per:
-            return self.text_losses_main()
-        short = _tgc().BOT_SHORT
-        lost = sum(p["lost"] for p in per.values())
-        settled = sum(p["settled"] for p in per.values())
-        if not rows:
-            return Html("No losing markets in any pot (%s settled)." % _cnt(settled)
-                        + (" ⚠️ Leaves out %s (Kalshi could not be read)." % esc(", ".join(missing)) if missing else ""))
-
-        def line(r):
-            what = r["what"][5:] if r["bot"] in ("race", "earlier") and r["what"].startswith("race ") else r["what"]
-            held = ("hedged x%s" % _cnt(r["contracts"])) if r["side"] == "both" else \
-                ("%s x%s" % (r["side"].upper(), _cnt(r["contracts"])) if r["side"] in ("yes", "no") else "")
-            return "<b>%s</b>%s · %s · %s" % (esc(usd(r["money"])),
-                                             (" (%s)" % esc(bs.pot_pct_txt(r["pct"]))) if r["pct"] is not None else "",
-                                             esc(short.get(r["bot"], r["bot"])), esc(" ".join(x for x in (what, held) if x)))
-
-        tbl = [("Bot", "Lost", "7d", "$ lost", "Worst")]
-        for nm in tuple(bs.BOTS) + ("earlier", "other"):         # all_losses folds hidden bots into one row
-            p = per.get(nm)
-            if p and p["settled"]:
-                tbl.append((short.get(nm, nm), "%d/%d" % (p["lost"], p["settled"]), str(p["lost_7d"]),
-                            "%.2f" % p["money_lost"], "%.2f" % p["worst"] if p["worst"] is not None else "-"))
-        worst = min((p["worst"] for p in per.values() if p["worst"] is not None), default=None)
-        tbl.append(("ALL", "%d/%d" % (lost, settled), str(sum(p["lost_7d"] for p in per.values())),
-                    "%.2f" % sum(p["money_lost"] for p in per.values()), "%.2f" % worst if worst is not None else "-"))
-        tail = ["", "📊 <b>By bot, all time</b>", pre(table(tbl, "lrrrr")),
-                i_("Lost = markets lost / settled · 7d = lost in the last 7 days · $ lost = all its losing markets "
-                   "added up · Worst = its worst single market · /losses chart: every loss, coloured by bot")]
-        n = min(LOSSES_SHOWN, len(rows))
-        while True:
-            out = ["🔴 <b>%s losing markets</b> of %s settled, every bot (%.1f%%) · %d in the last 7 days" % (
-                       _cnt(lost), _cnt(settled), 100.0 * lost / settled if settled else 0.0,
-                       sum(p["lost_7d"] for p in per.values())),
-                   i_("the last %d, newest first · %% = of that bot's pot when its day began (%s) · Kalshi's books, "
-                      "every pot" % (n, ("%s share the main account" % main_shared(per)) if main_sharers(per) else
-                                     "earlier bots = the paused or stopped ones"))]
-            if missing:
-                out.append("⚠️ PARTIAL: leaves out %s (Kalshi could not be read)" % esc(", ".join(missing)))
-            day = None
-            for r in rows[:n]:
-                if r["day"] != day:
-                    day = r["day"]
-                    out += ["", "<b>%s</b>" % esc(_day_long(day))]
-                out.append(line(r))
-            msg = "\n".join(out + tail)
-            if len(msg) <= MAX_LEN or n <= 5:
-                return Html(msg)
-            n -= 5
-
-    def text_losses_main(self):
-        """The main account's losing closes from its own ledger (pin + race; the /losses of before 10-26), for when
-        botstats cannot be read."""
-        rows = self.ledger.losing_closes()[:LOSSES_SHOWN]
-        if not rows:
-            return Html("No losing closes.")
-        s = Ledger.summary(self.ledger.settled)
-        out = ["🔴 <b>%d losing closes</b> of %d all time (%.1f%%)" % (s["lost"], s["closes"], s["loss_rate"]),
-               i_("the last %d, newest first · %% = of the bank just before it (Kalshi's books, main account: pin + "
-                  "race)" % len(rows))]
-        for close, net, legs in rows:
-            b0 = self.ledger.bank_at(close - 1) if close else None
-            out.append("<b>%s</b>%s · %s · %s" % (
-                esc(usd(net)), (" (%s)" % esc(pct(net / b0))) if b0 else "",
-                esc(et_str(close, "%a %b %d %I:%M %p").replace(" 0", " ") if close else "?"),
-                esc(", ".join(sorted({nice_coin(l["tk"]) for l in legs})))))
-        return Html("\n".join(out))
-
-    def text_hedges(self):
-        ho = list(reversed(self.ledger.hedge_outcomes()))[:8]
-        if not ho:
-            return Html("No hedges yet.")
-        out = ["🛡 <b>Pin bot's insurance</b> (the last %d hedges, newest first)" % len(ho)]
-        for g in ho:
-            mark = {"NEEDED": "✅", "WASTED": "➖"}.get(g["verdict"], "⏳")
-            b0 = self.ledger.bank_at(g["t"]) if g.get("t") and g.get("net") is not None else None
-            out.append("%s <b>%s</b> · %s %s · belief %.0f%% · net <b>%s</b>%s" % (
-                mark, esc(g["verdict"] or "pending"),
-                esc(et_str(g["t"], "%a %b %d %I:%M %p").replace(" 0", " ") if g["t"] else "?"),
-                esc(nice_coin(g["tk"])), 100 * float(g.get("belief") or 0),
-                esc(usd(g["net"]) if g["net"] is not None else "-"),
-                (" (%s of the bank)" % esc(pct(g["net"] / b0))) if b0 else ""))
-        out.append(i_("belief = the bot's odds its side wins when it bought the insurance · NEEDED = the bet lost and "
-                      "the insurance covered part of it; WASTED = the bet held and the insurance expired (its premium)"))
-        return Html("\n".join(out))
-
-    # ---- /stats /race /racestats ----
-    def _sides(self):
-        """{ticker: entry side} from the bot's own records. A hedge record
-        names the side the hedge BOUGHT, so the entry is the other one --
-        that is the authority, sent or not. Markets with no hedge record
-        take the ledger's `want` (pindesk's own reading, count rule first,
-        the log breaking an equal count)."""
-        out = {}
-        for g in self.ledger.hedges:
-            if g.get("tk") and g.get("side") in ("yes", "no"):
-                out[g["tk"]] = "no" if g["side"] == "yes" else "yes"
-        for x in self.ledger.settled:
-            if x.get("tk") and x["tk"] not in out and x.get("want") in ("yes", "no"):
-                out[x["tk"]] = x["want"]
-        return out
-
-    def _markets(self):
-        return markets_from(raw_ledger(os.path.join(self.ledger.results, pinday.LEDGER_NAME)), self._sides())
-
-    def _race_summary(self, races):
-        rs = [r for r in races.values() if r["close"] is not None and r["close"] >= self.race30_epoch]
-        t = race_tally(rs)
-        if not t["races"]:
-            return "no real races on Kalshi's books since v-race30."
-        return "%d races since %s: %d won (%s), %d tie, %d lost, %s (/race)." % (
-            t["races"], et_str(self.race30_epoch, "%m/%d"), t["won"], pct_of(t["won"], t["races"], 1), t["tie"],
-            t["lost"], usd(t["net"]))
-
-    def text_stats(self):
-        """Everything he would show a friend, by window. Money is Kalshi's;
-        the seconds-left split is from the bots' order records; the bank,
-        size and day count are the live bot's own files. On the phone: the
-        lifetime money as the headline, the live bot, one table of every
-        window, and each window's full sentences (stats_block) behind a tap."""
-        now = self.now()
-        today = et_day(now)
-        res = self.ledger.results
-        mk = self._markets()
-        ms = [m for m in mk.values() if m["day"] >= FIRST_LIVE_DAY]
-        if not ms:
-            return Html("No Kalshi settlements on file since %s (results/kalshi_ledger.json)." % FIRST_LIVE_DAY)
-        taus = first_entries(self.ledger.orders)
-        fl = fleet(self.procs_fn())
-        ver = live_version(self.versions_path)
-        wins = [("LIFETIME (since %s)" % _md(FIRST_LIVE_DAY), ms, days_between(FIRST_LIVE_DAY, today), "Life"),
-                ("LAST 7 DAYS", [m for m in ms if m["day"] >= day_minus(today, 6)], 7, "7 days"),
-                ("LAST 3 DAYS", [m for m in ms if m["day"] >= day_minus(today, 2)], 3, "3 days"),
-                ("TODAY (%s)" % _md(today), [m for m in ms if m["day"] == today], 1, "Today")]
-        if ver:
-            wins.append(("SINCE %s (%s ET)" % (ver[0], et_str(ver[1], "%m/%d %I:%M %p")),
-                         [m for m in ms if m["close"] is not None and m["close"] >= ver[1]], None, "Version"))
-        sts = [(title, window_stats(sub, taus), nd, lab, sub) for title, sub, nd, lab in wins]
-        life = sts[0][1]
-        # "every bot" was true until the forecaster and the ladder got their
-        # own subaccounts; kalshi_ledger.json is the main account only now.
-        L = ["%s <b>Lifetime %s</b> (<b>%s</b> on $%s risked) · since %s" % (
-                 dot(life["net"]), esc(usd(life["net"])), esc(ret(life["net"], life["risked"], 2)),
-                 esc(_usd(life["risked"])), esc(_md(FIRST_LIVE_DAY))),
-             i_("📊 STATS · %s ET · Kalshi's books, main account (%s; every other bot: /bots); "
-                "days are ET." % (et_str(now, "%a %m/%d %I:%M %p"), main_words(self.active())))]
-        # % of the bank (2026-10-26): each window's money over the main account's bank when it began (pindesk's
-        # bank_at, the /days figure); Life over the money put into the main account (botstats' pot, as /pin says)
-        life_in = None
-        try:
-            life_in = ((self._bs_get(DESK_BOT).get("money") or {}).get("all_time") or {}).get("pot")
-        except Exception:                                       # noqa: BLE001
-            log(traceback.format_exc())
-        starts = {"7 days": et_day_start(day_minus(today, 6)), "3 days": et_day_start(day_minus(today, 2)),
-                  "Today": et_day_start(today), "Version": ver[1] if ver else None}
-        rows = [("", "Money", "Return", "of bank", "Won", "Lost")]
-        for title, st, nd, lab, sub in sts:
-            if not st["markets"]:
-                rows.append((lab, "nothing settled"))
-                continue
-            if lab == "Life":
-                ob = (ret(st["net"], life_in, 0) + "*") if life_in else "-"
-            else:
-                b0 = self.ledger.bank_at(starts[lab]) if starts.get(lab) else None
-                ob = ret(st["net"], b0, 2 if b0 and abs(st["net"] / b0) < 0.01 else 1) or "-"
-            rows.append((lab, usd(st["net"]), ret(st["net"], st["risked"], 1) or "-", ob,
-                         pct1(st["won"], st["markets"]), st["losses"]))
-        L.append("")
-        L.append("💰 <b>By window</b>")
-        L.append(pre(table(rows)))
-        L.append(i_("Return = on what the bets cost (fees in) · of bank = of the main account's bank when the window "
-                    "began%s · Won = markets won · Lost = markets that lost" % (
-                        (" (* Life: of the %s put into it)" % dollars(life_in)) if life_in else "")))
-        if life["breakeven_d"] is not None and life["win_n"] is not None:
-            L.append("🎯 Lifetime: won <b>%s%%</b> of markets (break-even needs %s%%) · contracts paid %s%% vs "
-                     "break-even %s%%: <b>%+.1f pts</b>" % (
-                         _of100(life["win_c"]), _of100(life["breakeven_c"]), _of100(life["win_n"]),
-                         _of100(life["breakeven_d"]), 100.0 * (life["win_n"] - life["breakeven_d"])))
-        by = {}
-        for m in sts[0][4]:
-            by[m["book"]] = by.get(m["book"], 0.0) + m["pnl"]
-        act_ = self.active()
-        names = dict([(b.ledger_book, b.word if (b.always_shown or b.name in act_) else BOT_WORD["earlier"])
-                      for b in _bots.all_bots() if b.ledger_book] + [("commodity", "old oil bot (Sep)"), ("other", "other")])
-        L.append(esc("Lifetime by bot: " + ", ".join("%s %s" % (names.get(b, b), usd(v))
-                                                     for b, v in sorted(by.items(), key=lambda kv: -kv[1])) + "."))
-        pid = fl["live"][0] if fl["live"] else None
-        live_cl = fl["live"][1] if fl["live"] else ""
-        if pid:
-            where = ", pid %d" % pid
-        elif fl["unknown"]:
-            where = " (process table could not be read)"
-        else:
-            where = ", NOT in the process table"
-        L.append("")
-        if ver:
-            L.append("⚙️ <b>LIVE %s</b> since %s ET%s%s." % (esc(ver[0]), esc(et_str(ver[1], "%m/%d %I:%M %p")),
-                                                          " (about)" if ver[2] else "", esc(where)))
-        else:
-            L.append("⚙️ <b>LIVE version</b>: no readable header in VERSIONS.md%s." % esc(where))
-        parts = []
-        hb = argv_opt(live_cl, "--hedge-belief")
-        if hb:
-            parts.append("Hedge trigger: belief %.0f%%" % (100.0 * _f(hb)))
-        sz = read_json(os.path.join(res, "pinrun-live-size.json")) or {}
-        hwm = read_json(os.path.join(res, "pinrun-hwm.json")) or {}
-        dl = read_json(os.path.join(res, "pinrun-dayloss.json")) or {}
-        if sz.get("size") is not None:
-            s = "Size %g contracts (auto)" % _f(sz["size"])
-            if sz.get("bank") is not None:
-                s += ", bank %s read %s" % (dollars(_f(sz["bank"])), et_str(pindesk.parse_t(sz.get("at")) or now))
-            parts.append(s)
-        if parts:
-            L.append(esc(". ".join(parts) + "."))
-        if hwm.get("hwm") and sz.get("bank") is not None:
-            h = _f(hwm["hwm"])
-            line = (1.0 - MAX_DRAWDOWN) * h
-            room = _f(sz["bank"]) - line
-            L.append("🛑 Halt if the bank falls to %s (%.0f%% under its high of %s): <b>%s of room</b>%s." % (
-                esc(dollars(line)), 100.0 * MAX_DRAWDOWN, esc(dollars(h)), esc(dollars(room)),
-                (" (%s of the bank)" % pct_of(room, _f(sz["bank"]), 1)) if _f(sz["bank"]) > 0 else ""))
-        cap = argv_opt(live_cl, "--loss-cap")
-        if dl.get("day") == today and dl.get("realised") is not None:
-            L.append("Today by the bot's own count: <b>%s</b>%s." % (
-                esc(usd(_f(dl["realised"]))), esc(" (stops at -$%s for the day)" % cap) if cap else ""))
-        if fl["unknown"]:
-            L.append("Paper arms: the process table could not be read.")
-        else:
-            arms = [a[4:] if a.startswith("arm-") else a for a in fl["arms"]]
-            race_on = "race" in self.active()            # v-tg-active: the paused race and its arms are not said
-            L.append(esc("Paper arms: %d%s%s." % (
-                len(arms), (" (" + ", ".join(arms) + ")") if arms else "",
-                (" + %d race arms%s" % (len(fl["race_arms"]), (" (" + ", ".join(fl["race_arms"]) + ")")
-                                        if fl["race_arms"] else "")) if race_on else "")))
-        if "race" in self.active():
-            L.append("🏁 Coin race: " + esc(self._race_summary(races_from(mk))))
-        det, seen = [], []
-        for title, st, nd, lab, sub in sts:                 # every window's full sentences, one quote
-            keys = frozenset(m["tk"] for m in sub)
-            same = next((t0 for t0, k0 in seen if k0 == keys), None) if keys else None
-            seen.append((title, keys))
-            if same:                                        # e.g. a version deployed at midnight = TODAY
-                det.append("%s: the same %s as %s, so the same numbers." % (b_(title), esc(_nof(len(keys), "market")),
-                                                                           esc(same)))
-                continue
-            det.append(b_(title))
-            det += elines(stats_block(title, st, nd).split("\n")[1:])
-        L.append("")
-        L.append(details(det, "🔎 Every window in words (tap)"))
-        return Html("\n".join(L))
-
-    def text_race(self):
-        """The coin race's /market: the live race now (its own log and the
-        process table), the last 10 races and today's money from Kalshi.
-
-        2026-10-18: it is NOT the penny test any more and the page says so --
-        real money in the main account, and since v-race-snowball its bets
-        grow with the bank (race_size_words reads the size it last took from
-        the bank, not the start record's 20 / $40 it starts from)."""
-        now = self.now()
-        today = et_day(now)
-        res = self.ledger.results
-        races = races_from(self._markets())
-        fl = fleet(self.procs_fn())
-        recs = log_records(os.path.join(res, "pinracepenny-live.jsonl"),
-                           ("start", "live_halt", "live_order", "live_settled", "bank_size"))
-        pv = penny_view(recs, now, ledger_events=set(races))
-        st = pv["start"] or {}
-        t = race_tally([r for r in races.values() if r["day"] == today])
-        if t["races"]:
-            L = ["%s <b>Coin race today %s</b> (<b>%s</b> on %s staked) · %d of %d won (%s)%s" % (
-                dot(t["net"]), esc(usd(t["net"])), esc(ret(t["net"], t["paid"])), esc(dollars(t["paid"])),
-                t["won"], t["races"], pct_of(t["won"], t["races"]),
-                (" · %d tie, %d lost" % (t["tie"], t["lost"])) if (t["tie"] or t["lost"]) else "")]
-        else:
-            L = ["⚪ <b>Coin race today: no races settled yet</b>"]
-        L.append(i_("🏁 COIN RACE · %s ET · live, real money, main account (Kalshi's books)"
-                    % et_str(now, "%a %m/%d %I:%M %p")))
-        if fl["penny"]:                 # 2026-10-26: a red / green dot means money; the state is an icon and words
-            L.append("▶️ <b>RUNNING</b>, pid %d" % fl["penny"][0])
-        elif fl["unknown"]:
-            L.append("❔ <b>Running? The process table could not be read.</b>")
-        else:
-            L.append("⚠️ <b>NOT RUNNING</b> (no pinracearm --live in the process table).")
-        if os.path.exists(os.path.join(res, "pinracepenny.stop")):
-            L.append("⏸ <b>STOOD DOWN</b>: the stop file results/pinracepenny.stop is present.")
-        L.append("")
-        size, rules = race_size_words(pv["start"], pv["bank_size"]), race_rule_words(pv["start"])
-        L.append("📏 <b>How it bets</b>%s" % ("" if fl["penny"] else " <i>(its last start record)</i>"))
-        if size:
-            head, _sep, rest = size.partition(": ")
-            L.append("<b>%s</b>: %s" % (esc(head[:1].upper() + head[1:]), esc(rest)) if rest else esc(size))
-            L.append(esc("Buys " + rules + "."))
-        else:
-            L.append("Rails unknown (no start record).")
-        if pv["halt"]:
-            L.append("🛑 <b>STOP RAIL FIRED %s ET</b>: %s. No real order since." % (
-                esc(et_str(pindesk.parse_t(pv["halt"].get("t")) or now, "%m/%d %I:%M %p")), esc(pv["halt"].get("why"))))
-        elif st:
-            L.append("Stop rail: not fired since the restart at %s ET."
-                     % esc(et_str(pindesk.parse_t(st.get("t")) or now, "%m/%d %I:%M %p")))
-        else:
-            L.append("Stop rail: unknown -- no start record in its log.")
-        nxt = (int(now) // 900 + 1) * 900
-        left = int(nxt - now)
-
-        def legs_of(ls):
-            return ", ".join("%s %s %.0fc x%g" % (_leg_name(o.get("ticker")), o.get("side"),
-                                                  100.0 * _f(o.get("exec_price") or o.get("ask_seen")),
-                                                  _f(o.get("filled"))) for o in ls)
-        held = [x for x in pv["open"] if x[1] == nxt]
-        others = [x for x in pv["open"] if x[1] != nxt]
-        legs = "; ".join(legs_of(ls) for _e, _c, ls in held)
-        L.append("")
-        L.append("⏱ <b>Now</b>: race closing %s ET (%d:%02d left) -- %s. <b>%s out.</b>" % (
-            esc(et_str(nxt)), left // 60, left % 60, esc(("holding " + legs) if legs else "no legs yet"),
-            esc(dollars(pv["staked"] or 0.0))))
-        if others:
-            L.append("Awaiting Kalshi's result: " + esc("; ".join(
-                "%s ET %s" % (et_str(c) if c else "?", legs_of(ls)) for _e, c, ls in others) + "."))
-        if pv["pending"]:
-            L.append("⚠️ %d older leg(s) the bot never scored and Kalshi has no row for (oldest %s ET)."
-                     % (sum(len(ls) for _e, _c, ls in pv["pending"]),
-                        esc(et_str(pv["pending"][0][1], "%m/%d %I:%M %p") if pv["pending"][0][1] else "?")))
-        L.append("")
-        L.append("🏆 <b>Last 10 races</b> <i>(Kalshi's books)</i>")
-        if races:
-            L.append(pre(race_rows(races, 10)))
-        else:
-            L.append("none on file.")
-        L.append("Paper race arms running: %s." % esc(
-            "process table could not be read" if fl["unknown"] else
-            (", ".join(fl["race_arms"]) if fl["race_arms"] else "none")))
-        L += self._race_money_lines()
-        return Html("\n".join(L))
-
-    def _race_money_lines(self):
-        """/race's money by window (2026-09-30), from botstats: every coin-race
-        market in the main account, read from Kalshi live, one leg = one coin's
-        market. Plus what /race did not say: the version, its keep-alive, what
-        Kalshi holds open, the shared cash and today's refusals. A failure
-        costs these lines only -- the rest of /race still answers. Html lines;
-        botstats' Settings line is left to /race's 'How it bets' above (it
-        words the start-up size from the command line, not the size the race
-        now takes from the bank)."""
-        try:
-            b = self._bs_get("race")
-        except Exception as e:                                  # noqa: BLE001
-            log(traceback.format_exc())
-            return ["", "Money by window: could not build it (%s). The lines above still stand." % esc(str(e)[:160])]
-        L = [""]
-        L += bs_money_html(b["money"], "leg")
-        L.append("")
-        L += elines([x for x in bs_setup_lines(b["running"]) if not x.startswith("Settings: ")])
-        ol = elines(bs_open_lines(b["open"], "leg"))
-        L.append("📂 " + ol[0].replace("Open now:", "<b>Open now:</b>", 1))
-        L += ol[1:]
-        L.append("💵 " + esc(bs_cash_line(b["balance"])).replace("Cash:", "<b>Cash:</b>", 1))
-        det = (elines(_money_detail(b["money"], "leg")) if b["money"]["ok"] else [])
-        det += elines(bs_activity_lines("race", b["activity_today"]))
-        L.append(details(det, "🔎 Details: every window in words, today's log"))
-        return L
-
-    # ---- /bots /pin /forecaster /ladder ----
-    def _bs_get(self, name):
-        """botstats' dict for one bot, or for 'all'. Kalshi is read at most once a minute."""
-        bs = _bs()
-        if name == "all":
-            return bs.all_bots(now=self.now(), getter=self.bs_getter, procs=self.bs_procs)
-        return bs.bot(name, now=self.now(), getter=self.bs_getter, procs=self.bs_procs)
-
-    def text_bots(self):
-        try:
-            return Html("\n".join(bs_all_html(self._bs_get("all"))))
-        except Exception as e:                                  # noqa: BLE001
-            log(traceback.format_exc())
-            return ("Could not build /bots: %s\nEverything else still works -- /stats and /race carry the "
-                    "main account's numbers." % str(e)[:200])
-
-    def text_bot(self, name):
-        cmd = BOT_CMD_OF.get(name, "/" + name)
-        try:
-            b = self._bs_get(name)
-            out = bs_bot_html(b, _bs().et_clock(self.now()))
-        except Exception as e:                                  # noqa: BLE001
-            log(traceback.format_exc())
-            return ("Could not build %s: %s\nEverything else still works -- /stats and /race carry the "
-                    "main account's numbers." % (cmd, str(e)[:200]))
-        more = PAGE_FOOTER.get(name)                    # v-tg-rebuild step 5: the registry's Bot.page_footer
-        return Html("\n".join(out) + ("\n\n" + i_(more) if more else ""))
-
-    def text_racestats(self):
-        """The live coin race's record by window (Kalshi's books) and every
-        paper race arm on the same races.
-
-        2026-10-18 (race-arms + skeptic, .sweep\\q-2026-10-18e\\prior): the
-        five arms are PAPER and STOPPED (09-27 .. 10-01), and their own-log
-        dollars were the arms' paper size (up to 250 contracts, priced at the
-        touch) with ties booked as wins. So each arm now says PAPER and
-        STOPPED with its dates (log_span; the process table says if one runs
-        again), and its money is shown three ways on the same races: at its
-        own size re-scored on Kalshi's results (a tie pays 50c), at the live
-        bot's size, and what the live bot really made there. The first two
-        come from results/race_arms_scored.json, used only while the arm's
-        log is the size it was scored at; otherwise the arm's own-log money is
-        shown and labelled so. Wins / ties / losses are this page's own count
-        (a race Kalshi tied is a tie), as always."""
-        now = self.now()
-        today = et_day(now)
-        res = self.ledger.results
-        races = races_from(self._markets())
-        if not races:
-            return Html("No coin-race settlements on Kalshi's books yet.")
-        r30 = self.race30_epoch
-        first_day = min(r["day"] for r in races.values())
-        allr = list(races.values())
-        wins = [("ALL TIME (since %s)" % _md(first_day), allr, "All"),
-                ("LAST 7 DAYS", [r for r in allr if r["day"] >= day_minus(today, 6)], "7 days"),
-                ("LAST 3 DAYS", [r for r in allr if r["day"] >= day_minus(today, 2)], "3 days"),
-                ("TODAY", [r for r in allr if r["day"] == today], "Today"),
-                ("SINCE v-race30 (%s ET)" % et_str(r30, "%m/%d %I:%M %p"),
-                 [r for r in allr if r["close"] is not None and r["close"] >= r30], "v30")]
-        at = race_tally(allr)
-        L = ["%s <b>Coin race all time %s</b> (<b>%s</b> on %s staked) · %d races, <b>%s</b> won" % (
-                 dot(at["net"]), esc(usd(at["net"])), esc(ret(at["net"], at["paid"])), esc(dollars(at["paid"])),
-                 at["races"], pct_of(at["won"], at["races"], 1)),
-             i_("🏁 COIN RACE STATS · %s ET · Kalshi's books, real money. A race = one 15-min contest; a tie pays "
-                "50c a leg and counts as a loss." % et_str(now, "%a %m/%d %I:%M %p"))]
-        rows = [("", "Money", "Return", "Races", "Won", "T/L")]
-        det = []
-        for title, rs, lab in wins:
-            t = race_tally(rs)
-            if not t["races"]:
-                rows.append((lab, "no races"))
-                continue
-            rows.append((lab, usd(t["net"]), ret(t["net"], t["paid"]) or "-", t["races"],
-                         pct_of(t["won"], t["races"]), "%d/%d" % (t["tie"], t["lost"])))
-            det.append(esc(norm_money("%s: %s" % (title, race_tally_line(t)))))
-        L.append("")
-        L.append(pre(table(rows)))
-        L.append(i_("Return = on what the bets cost (fees in) · Won = races won · T/L = ties / losses · v30 = since "
-                    "v-race30, %s ET (today's rules)" % et_str(r30, "%m/%d %I:%M %p")))
-        # ---- the paper arms, on the races the live bot played since v-race30 ----
-        since = {e: r for e, r in races.items() if r["close"] is not None and r["close"] >= r30}
-        # the cached table only (the arms are stopped; 'unknown' is fine here, a cold-cache read is not)
-        fl = fleet(cached_python_procs() if self.procs_fn is python_procs else self.procs_fn())
-        sc = race_arms_scored(res) or {}
-        cards, rec_rows, money_rows, said, run_det = [], [("Arm", "In", "Won", "W/T/L")], \
-            [("Arm", "Own size", "At live", "Live bot")], [], []
-        n_stopped = n_arms = n_scored = 0
-        starred, star_ties = [], []
-        z3res, z3_span = None, None
-        last_ran = None
-        for name in RACE_ARMS:
-            p = os.path.join(res, "pinracearm-%s.jsonl" % name)
-            if not os.path.exists(p):
-                cards.append("<b>%s</b>: no log." % esc(name))
-                continue
-            n_arms += 1
-            ar = arm_results(p)
-            span = log_span(p) or {}
-            if name == "z3":
-                z3res, z3_span = ar, span
-            if span.get("last") is not None:
-                last_ran = max(last_ran or span["last"], span["last"])
-            running = None if fl["unknown"] else (name in fl["race_arms"])
-            quiet = span.get("last") is not None and now - span["last"] > 6 * 3600
-            ran = "%s to %s" % (et_str(span["first"], "%b %d") if span.get("first") else "?",
-                                et_str(span["last"], "%b %d") if span.get("last") else "?")
-            if running:
-                status = "PAPER, RUNNING (since %s)" % (et_str(span["first"], "%b %d") if span.get("first") else "?")
-            elif span.get("end") or quiet:
-                status = "PAPER, STOPPED · ran %s" % ran
-                n_stopped += 1
-            else:
-                status = "PAPER · log written %s ET%s" % (
-                    et_str(span["last"], "%b %d %I:%M %p") if span.get("last") else "?",
-                    "; not in the process table" if running is False else "")
-            a = (sc.get("arms") or {}).get(name) or {}
-            try:
-                fresh = bool(a) and int(a.get("log_size") or -1) == os.path.getsize(p)
-            except OSError:
-                fresh = False
-            cards.append("<b>%s</b> · %s%s" % (esc(name), esc(status),
-                                               (" · " + esc(a["own_size"])) if a.get("own_size") else ""))
-            rec = arm_record(ar, since)
-            evs = [e for e in since if (ar.get(e) or {}).get("positions", 0) > 0]
-            live_same = sum(since[e]["pnl"] for e in evs)
-            rec_rows.append((name, "%d %s" % (rec["entered"], pct_of(rec["entered"], len(since))),
-                             pct_of(rec["won"], rec["entered"], 1) or "-",
-                             "%d/%d/%d" % (rec["won"], rec["tie"], rec["lost"])))
-            same = a.get("same") or {}
-            if fresh and same.get("races") == rec["entered"]:
-                n_scored += 1
-                money_rows.append((name, usd(same.get("own")), usd(same.get("at_live")), usd(live_same)))
-                if same.get("own_log") is not None and abs(_f(same["own_log"]) - _f(same.get("own"))) >= 0.005:
-                    said.append("%s %s" % (name, usd(same["own_log"])))
-                run = a.get("run") or {}
-                if run:
-                    run_det.append(esc("%s, whole run: %d races, %d won, %d tie, %d lost; own size %s, at the live "
-                                       "bot's size %s." % (name, run.get("races", 0), run.get("won", 0),
-                                                           run.get("tie", 0), run.get("lost", 0), usd(run.get("own")),
-                                                           usd(run.get("at_live")))))
-            else:
-                money_rows.append((name, usd(rec["net"]) + "*", "-", usd(live_same)))
-                if rec["entered"]:
-                    starred.append(name)
-                    if rec["ties_as_wins"]:
-                        star_ties.append(name)
-        # 2026-10-23 (operator: nothing out of date in front -- "the stopped September race arms"): when every arm
-        # is stopped, the page says so in one line and the whole arms section goes behind the tap
-        all_stopped = bool(n_arms) and n_stopped == n_arms
-        page = L
-        L = []
-        L.append("")
-        L.append("🧪 <b>PAPER ARMS</b> -- no real money%s" % (
-            (" · all %d STOPPED" % n_arms) if all_stopped else ""))
-        L += cards
-        L.append("")
-        L.append("On the <b>%d</b> races the live bot played since v-race30:" % len(since))
-        L.append(pre(table(rec_rows, "lrrr")))
-        L.append(pre(table(money_rows)))
-        legend = "Own size = the arm's own paper size%s. " % (
-            (", scored on Kalshi's results (a tie pays 50c)%s" % (
-                (" -- their own logs said %s (a log books a tie as a win and does its own fee sums)"
-                 % ", ".join(said)) if said else ""))
-            if n_scored else "")
-        if n_scored:
-            legend += ("At live = the same legs at the live bot's size for that race, capped by what the book "
-                       "showed. ")
-        legend += ("Live bot = what the real bot made on those races (Kalshi). Paper is optimistic (race-arms "
-                   "check, 10-18): on legs the live bot also sent, paper made 41% more than real fills, so At live "
-                   "reads ~40% high; the 250-a-leg arms' Own size prices fills at the touch, and walking the book "
-                   "cuts it 30-66%.")
-        if starred:
-            legend += " * = the arm's own log money (%s)%s." % (
-                "no Kalshi re-scoring on file" if not sc.get("arms") else "its log changed after it was re-scored",
-                ("; %s booked a tie as a win" % (
-                    " and ".join("%s's" % x for x in star_ties) + (" own logs" if len(star_ties) > 1 else " own log")))
-                if star_ties else "")
-        L.append(i_(legend))
-        if sc.get("made"):
-            L.append(i_("Scored once on %s from Kalshi's results (results/%s); stopped arms do not change."
-                        % (et_str(pindesk.parse_t(sc["made"]), "%b %d"), RACE_ARMS_SCORED)))
-        if z3res is not None:
-            z = z3_progress(z3res, races)
-            verdict = ""
-            if z["first50_losses"] >= Z3_KILL[0]:
-                verdict = " -- AT THE KILL LINE"
-            elif z["races"] >= Z3_PASS[0] and z["losses"] <= Z3_PASS[1]:
-                verdict = " -- PASSED the %d bar" % Z3_PASS[0]
-            elif z["races"] >= Z3_PASS_ALT[0] and z["losses"] <= Z3_PASS_ALT[1]:
-                verdict = " -- PASSED the %d bar" % Z3_PASS_ALT[0]
-            stopped = ""
-            if (z3_span or {}).get("last") and not verdict and "z3" not in fl["race_arms"] \
-                    and ((z3_span or {}).get("end") or now - z3_span["last"] > 6 * 3600):
-                stopped = (" Neither passed nor killed: it STOPPED %s at %d of %d races, so the bar does not move "
-                           "until it runs again." % (et_str(z3_span["last"], "%b %d"), z["races"], Z3_PASS_ALT[0]))
-            L.append("")
-            L.append("🎯 <b>z3 bar</b>: %d races so far, %d loss%s (first 50: %d). Pass = %d races with %d losses, "
-                     "or %d with at most %d. Kill = %d losses in the first %d%s.%s" % (
-                         z["races"], z["losses"], "" if z["losses"] == 1 else "es", z["first50_losses"],
-                         Z3_PASS[0], Z3_PASS[1], Z3_PASS_ALT[0], Z3_PASS_ALT[1], Z3_KILL[0], Z3_KILL[1],
-                         ("<b>%s</b>" % esc(verdict)) if verdict else "", esc(stopped)))
-        arms, L = L, page
-        if all_stopped:
-            L.append("")
-            L.append("🧪 <b>Paper arms</b>: none running -- all %d stopped, the last on %s. Their record on the live "
-                     "bot's races is under the tap below." % (n_arms, esc(et_str(last_ran, "%b %d") if last_ran else "?")))
-            extra = [esc(x) for a in arms for x in html_to_plain(a).split("\n") if x.strip()]
-        else:
-            L += arms
-            extra = []
-        L.append("")
-        L.append(details(det + run_det + extra, "🔎 Legs, prices and break-even by window; each arm's whole run"
-                         + (" and the stopped paper arms" if extra else "") + " (tap)"))
-        return Html("\n".join(L))
-
-    # ---- /funds /bank /accounts ----
-    def text_funds(self):
-        """Every Kalshi account's money (funds_read) with each bot's bet size (funds_sizes) and its last
-        FUNDS_DAYS ET days of gains and losses (funds_hist: botstats' settlement rows, this page's own pull only
-        for an account botstats could not give). A failure costs this command only."""
-        try:
-            getter = self.funds_getter or _bs().default_getter()
-            f = funds_read(getter)
-            now = self.now()
-            act = self.active()
-            return funds_text(f, funds_sizes(self.ledger.results, act), now,
-                              funds_hist(getter, f["subs"], now, bs_getter=self.bs_getter), active=act)
-        except Exception as e:                                  # noqa: BLE001
-            log(traceback.format_exc())
-            return ("Could not build /funds: %s\nEverything else still works -- /bots shows each bot pot's "
-                    "cash." % str(e)[:200])
-
-    # ---- /speed and /server (2026-10-27: the move to the AWS server) ----
-    def text_speed(self):
-        """/speed (operator 10-27: "Yes add speed"): did the move to the server win orders the laptop used to lose? The
-        pin bot's orders home against server, what speed added in $ (an estimate), and a line for each other bot whose
-        log allows it (speed_gather). No Kalshi read: the pin orders are the Ledger's, already in memory."""
-        try:
-            d = speed_gather(self.ledger.results, self.ledger.orders, self.now(), active=self.active())
-            return speed_html(d, (self.ledger.bank() or {}).get("bank"))
-        except Exception as e:                                  # noqa: BLE001
-            log(traceback.format_exc())
-            return ("Could not build /speed: %s\nEverything else still works -- /fills has today's pin orders."
-                    % str(e)[:200])
-
-    def text_server(self, arg=""):
-        """/server (operator 10-27: "add server command ... add server funds and cost and spending too"): the machine,
-        the time to Kalshi, every pot's money (botstats' cache, no Kalshi read) and the AWS bill. `/server help` gives
-        the console steps that connect the AWS cost. The self-test plants every reading (machine_fn, ping_fn, pots_fn,
-        aws_http)."""
-        if arg.strip().lower() in ("help", "?", "aws", "setup"):
-            return SERVER_HELP
-        try:
-            now = self.now()
-            m = (self.machine_fn or machine_read)()
-            ping = (self.ping_fn or kalshi_ping)()
-            try:
-                pots = (self.pots_fn or _bs().cached_pots)()
-            except Exception as e:                              # noqa: BLE001
-                log(traceback.format_exc())
-                pots = {"err": str(e)[:120]}
-            aws = aws_cost(now, http=self.aws_http)
-            pins = pin_speed_orders(self.ledger.orders)
-            return server_html(m, ping, pots, aws, aws_estimate(now), now,
-                               speed_stats(_speed_win(pins, SERVER_SINCE_EPOCH - SPEED_HOME_DAYS * 86400,
-                                                      SERVER_SINCE_EPOCH)),
-                               speed_stats(_speed_win(pins, SERVER_SINCE_EPOCH, now + 1)), active=self.active())
-        except Exception as e:                                  # noqa: BLE001
-            log(traceback.format_exc())
-            return ("Could not build /server: %s\nEverything else still works -- /funds has every account's money."
-                    % str(e)[:200])
-
-    # ---- /bars ----
-    def text_bars(self):
-        """Every running test against its pre-registered bar: research/bars.py's
-        text, unchanged. NOT rebuilt here (the /brief rule): one place decides
-        PASS / KILL / EXTEND / TOO EARLY, and the phone quotes it."""
-        if self.bars_fn is not None:
-            return bars_html(self.bars_fn())
-        self._bars_d = None
-        try:
-            import bars
-            # bars.text() is render(gather()); gathered here so /bars' picture uses these very numbers
-            d = bars.gather(self.ledger.results, self.now())
-            self._bars_d = d
-            return bars_html(bars.render(d))
-        except Exception as e:                                  # noqa: BLE001
-            log(traceback.format_exc())
-            return ("Could not build /bars: %s\nEverything else still works -- /stats and /racestats "
-                    "carry the raw numbers." % str(e)[:200])
-
-    # ---- controls ----
-    def control(self, which):
-        if self.busy:
-            return CONTROL_REPLY["busy"]
-        self.busy = True
-
-        def worker():
-            try:
-                if which == "start":
-                    pindesk.do_start(lambda m: self.say("start: " + m))
-                elif which == "pause":
-                    pindesk.do_pause(lambda m: self.say("pause: " + m), lambda s: self.say(s))
-                elif which == "stop":
-                    pindesk.do_stop(lambda m: self.say("stop: " + m))
-                time.sleep(3)
-                self.say(self.text_status())
-            except Exception as e:                        # noqa: BLE001
-                self.say("%s failed: %s" % (which, e))
-                log(traceback.format_exc())
-            finally:
-                self.busy = False
-        threading.Thread(target=worker, daemon=True).start()
-        return CONTROL_REPLY[which]
-
-    # ---- dispatch ----
+    # ---- dispatch: phone/router.py ----
     def handle(self, chat_id, text):
-        """Reply text for one incoming message, or None to ignore it."""
-        text = (text or "").strip()
-        cmd, _, arg = text.partition(" ")
-        cmd = cmd.lower().split("@")[0]
-        if cmd == "/pair":
-            if arg.strip() and arg.strip() == str(self.cfg.get("secret", "")).strip():
-                self.cfg["chat_id"] = chat_id
-                self.save_cfg()
-                log("paired with chat %s" % chat_id)
-                return Html("<b>Paired.</b> This chat now controls the bot.\n\n" + help_text(self.active()))
-            log("refused pairing from chat %s" % chat_id)
-            return None
-        if self.chat_id is None or chat_id != self.chat_id:
-            return None                                  # not ours: silence
-        self.ledger.refresh()
-        if cmd in ("/status", "/s", "/start@"):
-            return self.text_status()
-        if cmd == "/today":
-            return self.text_day(et_day(self.now()), "Today")
-        if cmd == "/yesterday":
-            return self.text_day(et_day(self.now() - 86400), "Yesterday")
-        if cmd == "/days":
-            return self.text_days()
-        if cmd == "/open":
-            return self.text_open()
-        # NOT `/today` -- that command already exists and gives the plain
-        # money for the day. Taking its name would have silently replaced
-        # something he uses with something longer.
-        if cmd in ("/fills", "/bets"):
-            return self.text_fills()
-        if cmd in ("/brief", "/summary"):
-            return self.text_brief()
-        if cmd == "/market":
-            return self.text_market()
-        if cmd == "/losses":
-            return self.text_losses()
-        if cmd == "/hedges":
-            return self.text_hedges()
-        if cmd == "/stats":
-            return self.text_stats()
-        cmd_bot = _bots.by_command(cmd)                 # v-tg-rebuild step 5: /race /racestats and BOT_CMDS
-        if cmd_bot is not None:
-            if cmd_bot.name not in self.active():        # v-tg-active: a paused or retired bot is not shown
-                return self.text_hidden(cmd_bot.name)
-        if cmd == "/race":
-            return self.text_race()
-        if cmd == "/racestats":
-            return self.text_racestats()
-        if cmd == "/bots":
-            return self.text_bots()
-        if cmd in BOT_CMDS:
-            return self.text_bot(BOT_CMDS[cmd])
-        if cmd == "/bars":
-            return self.text_bars()
-        if cmd in ("/funds", "/bank", "/accounts"):
-            return self.text_funds()
-        if cmd == "/speed":
-            return self.text_speed()
-        if cmd == "/server":
-            return self.text_server(arg)
-        if cmd == "/pause":
-            return self.control("pause")
-        if cmd == "/start":
-            return self.control("start")
-        if cmd == "/stop":
-            if arg.strip().lower() == "yes":
-                return self.control("stop")
-            return STOP_ASK
-        if cmd == "/mute":
-            self.muted = True
-            return Html("🔕 Alerts off. /unmute to turn them back on.")
-        if cmd == "/unmute":
-            self.muted = False
-            return Html("🔔 Alerts on.")
-        if cmd == "/features":
-            return self.text_features()
-        if cmd == "/update":
-            return self.text_update()
-        if cmd in ("/help", "/?"):
-            return help_text(self.active())
-        return Html("I did not understand that.\n\n" + help_text(self.active()))
+        """Reply text for one incoming message, or None to ignore it (router.dispatch)."""
+        return _router.dispatch(self, chat_id, text)
 
-    def text_features(self):
-        """/features (operator 10-22): every bot's job and its settings as boot_all.ps1 has them now, plus the
-        ladder's rails from ladder_live.py -- features_html reads both files on each call. No Kalshi read."""
-        try:
-            return features_html(active=self.active(), procs=self.bs_procs)
-        except Exception as e:                                  # noqa: BLE001
-            log(traceback.format_exc())
-            return "Could not build /features: %s" % str(e)[:200]
-
-    def text_update(self):
-        """/update (operator 10-22): load the newest phone code. This process runs elevated, so nothing else can
-        restart it: it self-tests the files on disk off the poll thread and, only if they pass, the poll loop
-        confirms the /update message to Telegram (so the new process does not answer it again) and exits;
-        boot_all.ps1 (every 10 min) starts the missing phone link on the new code."""
-        if getattr(self, "_updating", False):
-            return Html("🔄 An update check is already running.")
-        self._updating = True
-        chat = self.chat_id
-
-        def work():
-            try:
-                bad = []
-                for f in (os.path.join(HERE, "pinphone.py"), os.path.join(HERE, "botstats.py")):
-                    r = subprocess.run([sys.executable, "-u", f, "--selftest"], cwd=os.path.dirname(HERE),
-                                       capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=900)
-                    if r.returncode != 0:
-                        bad.append("%s (exit %s)" % (os.path.basename(f), r.returncode))
-                if bad:
-                    self.say(Html("⚠️ <b>Update NOT applied</b>: the new code failed its self-test: %s. The phone keeps "
-                                  "running the old code." % esc(", ".join(bad))), chat_id=chat)
-                    return
-                self.say(Html("✅ <b>New code passed its self-test.</b> Restarting the phone link now; it is back on "
-                              "the new code within ~10 minutes (boot_all) and says hello."), chat_id=chat)
-                self._exit_now = True                     # the poll loop confirms the offset, then exits
-            except Exception as e:                       # noqa: BLE001
-                log(traceback.format_exc())
-                self.say("Update check failed: %s" % str(e)[:200], chat_id=chat)
-            finally:
-                self._updating = False
-        threading.Thread(target=work, daemon=True).start()
-        return Html("🔄 <b>Checking the newest phone code</b> (self-test, a few minutes)…")
-
+    # ---- the ticks ----
     def update_flag_tick(self):
-        """results/pinphone.update (2026-10-26: the new /losses waited for the operator's /update while they slept;
-        this elevated process can be restarted by nothing else). The file's presence runs /update exactly as the
-        command does -- the two self-tests first, the old code kept on a failure, every step said in Telegram. The
-        file is removed before anything runs, so it fires once. The reply said, or None when there is no flag."""
-        if self.chat_id is None or not os.path.exists(UPDATE_FLAG):
-            return None
-        try:
-            _paths.check_write(UPDATE_FLAG)          # v-tg-rebuild step 2: never the live flag under KALS_TESTING=1
-            os.remove(UPDATE_FLAG)
-        except OSError:
-            return None
-        log("update flag %s found: running /update" % UPDATE_FLAG)
-        r = Html(str(self.text_update()) + "\n" + i_("asked for by the update flag file, not a message"))
-        self.say(r)
-        return r
+        """results/pinphone.update: its presence runs /update exactly as the command does (update.flag_tick). The reply
+        said, or None when there is no flag."""
+        return _update.flag_tick(self.ctx(), start=self.update_start)
 
-    # ---- alerts ----
     def alerts_tick(self):
-        """Called every poll cycle. Sends only on CHANGE."""
-        if self.chat_id is None:
-            return []
-        sent = []
-        self.ledger.refresh()
-        h = self.health_fn()
-        state, hl, det, _c = status_of(h)
-        now = self.now()
-        today = et_day(now)
-        if self.last_state is None:
-            # first tick after a (re)start: learn, do not announce. A daily
-            # summary already due today is marked done, or every restart of
-            # this program would re-send it.
-            if (now - et_day_start(today)) >= 8 * 3600:
-                self.last_daily = today
-        # Every alert is laid out by an alert_* function; if that ever fails, the plain words it always had
-        # go instead (fmt_or_plain) -- a layout bug must never swallow an alert.
-        if self.last_state is not None and state != self.last_state and not self.muted:
-            prev = self.last_state
-            msg = fmt_or_plain(lambda: alert_state_text(prev, state, hl, det),
-                               lambda: "STATE CHANGED: %s -> %s\n%s\n%s" % (prev, state, hl, det))
-            self.say(msg)
-            sent.append(msg)
-        self.last_state = state
-        # THE RECORDERS. 2026-09-21 the Kalshi recorder was alive and deaf for
-        # 4 h 47 min and nothing told the operator; the tape from those hours
-        # is gone for good. Same rule as the bot: send only on a CHANGE.
-        silent = [n for n, k in (("Kalshi recorder", "kalshi_ok"),
-                                 ("Exchange recorder", "feeds_ok"))
-                  if h.get(k) is False]
-        rec = ("SILENT: " + ", ".join(silent)) if silent else "writing"
-        if self.last_rec is not None and rec != self.last_rec and not self.muted:
-            was = self.last_rec
-            if silent:
-                msg = fmt_or_plain(lambda: alert_recorder_text(rec, pindesk.REC_FRESH_S // 60),
-                                   lambda: ("RECORDER %s -- nothing written for %d+ min. That tape "
-                                            "cannot be recreated later. If the bot is also BLIND, "
-                                            "the problem is the connection to Kalshi, not our "
-                                            "programs." % (rec, pindesk.REC_FRESH_S // 60)))
-            else:
-                msg = fmt_or_plain(lambda: alert_recorder_back_text(was),
-                                   lambda: "RECORDERS WRITING AGAIN (was %s)" % was)
-            self.say(msg)
-            sent.append(msg)
-        self.last_rec = rec
-        # THE DISK. Tracked even when muted, so an unmute does not replay it.
-        self.disk_level, dmsg = disk_alert(self.disk_level, h.get("disk_gb"))
-        if dmsg and not self.muted:
-            level = self.disk_level
-            msg = fmt_or_plain(lambda: disk_alert_html(dmsg, level), lambda: dmsg)
-            self.say(msg)
-            sent.append(msg)
-        losses = self.ledger.losing_closes()
-        keys = {k for k, _n, _l in losses}
-        if self.seen_losses is None:
-            self.seen_losses = keys
-        else:
-            new = [x for x in losses if x[0] not in self.seen_losses]
-            self.seen_losses = keys
-            for close, net, legs in new:
-                if not self.muted:
-                    msg = fmt_or_plain(lambda: alert_loss_text(self.ledger, close, net, legs),
-                                       lambda: "LOSS " + story_loss(self.ledger, close, net, legs))
-                    self.say(msg)
-                    sent.append(msg)
-        if (now - et_day_start(today)) >= 8 * 3600 and self.last_daily != today and not self.muted:
-            self.last_daily = today
-            yday = et_day(now - 86400)
-            msg = fmt_or_plain(lambda: self.daily_alert(yday, now),
-                               lambda: "YESTERDAY\n" + story_day(self.ledger, yday, now=now))
-            self.say(msg)
-            sent.append(msg)
-        return sent
+        """Called every poll cycle. Sends only on CHANGE (phone/alerts.py: tick)."""
+        return _alerts.tick(self.ctx())
 
     def daily_alert(self, d, now):
-        """The 8 AM summary (2026-10-26 screen pass): yesterday over EVERY pot -- /yesterday's headline (its % of
-        all pots), the bot-by-bot table (each bot's % of its bank) and the averages -- then the main account's
-        story (story_day, pindesk) behind a tap. The old main-account-only summary when botstats cannot be read."""
-        base = alert_daily_text(self.ledger, d, now)
-        top = self._all_bots_day(d, "Yesterday")
-        if not top or top[0].startswith("❔"):
-            return base
-        return Html("\n".join(["☀️ <b>YESTERDAY, %s</b> · every bot" % esc(_day_long(d))] + top + [
-            "", details(str(base).split("\n"), "🏦 %s (main account): the day's story -- tap"
-                        % (lambda w: w[:1].upper() + w[1:])(main_words(self.active())))]))
+        """The 8 AM summary of day `d` (phone/alerts.py: daily_alert)."""
+        return _alerts.daily_alert(self.ctx(), d, now)
 
-    # ---- charts (2026-10-18) ----
+    # ---- charts (2026-10-18): phone/chartq.py ----
     def chart_after(self, chat_id, text):
-        """Queue the picture for a command whose words were just sent. NEVER RAISES AND NEVER WAITS: the poll
-        loop puts one job on a short queue and goes on; one background thread (_chart_loop) draws it and sends
-        it. Only the paired chat, only a command research/tgcharts.py draws (never /pause /start /stop), and
-        nothing while charts are off. A full queue drops the picture (logged); the words already went.
+        """Queue the picture for a command whose words were just sent. NEVER RAISES AND NEVER WAITS (ChartQueue.after).
         Returns True when queued."""
         try:
-            if not self.charts_on or chat_id is None or chat_id != self.chat_id:
-                return False
-            cmd = (text or "").strip().partition(" ")[0].lower().split("@")[0]
-            tgc = _tgc()
-            kind = tgc.kind_of(cmd)
-            if kind is None:
-                return False
-            job = {"kind": kind, "cmd": cmd, "chat": chat_id, "queued": time.monotonic(),
-                   "ctx": self._chart_ctx(kind, tgc)}
-            try:
-                self._chart_queue().put_nowait(job)
-            except queue.Full:
-                log("chart for %s skipped: %d pictures already waiting" % (cmd, CHART_QUEUE))
-                return False
-            return True
+            return self.charts.after(self.ctx(text, chat_id=chat_id), chat_id, text)
         except Exception:                                       # noqa: BLE001
             log(traceback.format_exc())
             return False
 
     def _chart_ctx(self, kind, tgc):
-        """What the picture reads, fixed right after the words were built: the clock, a private copy of the
-        ledger's lists (this thread keeps appending to the live ones), botstats' getter and process table as
-        the words use them, and /bars' gathered numbers."""
-        act = self.active()
-        ctx = {"now": self.now(), "pp": sys.modules[__name__], "bs_getter": self.bs_getter,
-               "bs_procs": self.bs_procs, "funds_what": {n: funds_what(n, act) for n in FUNDS_WHAT}, "active": act}
-        if kind in tgc.LEDGER_KINDS:
-            ctx["ledger"] = self._ledger_snapshot()
-        if kind == "bars":
-            ctx["bars"] = self._bars_d
-        return ctx
+        """What the picture reads, fixed right after the words were built (chartq.chart_ctx: a ChartCtx)."""
+        return _chartq.chart_ctx(self.ctx(), kind, tgc)
 
-    def _ledger_snapshot(self):
-        import copy
-        s = copy.copy(self.ledger)
-        for k in ("settled", "orders", "hedges", "autosize", "external", "halts", "starts", "closes"):
-            v = getattr(self.ledger, k, None)
-            if isinstance(v, list):
-                setattr(s, k, list(v))
-        return s
-
-    def _chart_queue(self):
-        if self._chart_q is None:
-            self._chart_q = queue.Queue(maxsize=CHART_QUEUE)
-            threading.Thread(target=self._chart_loop, name="charts", daemon=True).start()
-        return self._chart_q
-
-    def _chart_loop(self):
-        while True:
-            job = self._chart_q.get()
-            try:
-                self._chart_one(job)
-            except Exception:                                   # noqa: BLE001
-                log(traceback.format_exc())
-            finally:
-                self._chart_q.task_done()
-
-    def _chart_one(self, job):
-        stale = self.chart_stale_s if self.chart_stale_s is not None else _tgc().STALE_S
-        waited = time.monotonic() - job["queued"]
-        if waited > stale:
-            log("chart for %s dropped: its turn came %.0f s after the words (limit %d s)" % (job["cmd"], waited, stale))
-            return
-        t0 = time.monotonic()
-        try:
-            got = (self.chart_fn or _tgc().build)(job["kind"], job["ctx"])
-        except ImportError as e:
-            if "matplotlib" in str(e):
-                self.charts_on = False
-                log("charts OFF until restart: %s -- the words still go. Fix: C:\\Python314\\python.exe -m pip "
-                    "install matplotlib, then restart pinphone." % e)
-                return
-            raise
-        if not got:
-            log("chart for %s: nothing live to draw (%.1f s)" % (job["cmd"], time.monotonic() - t0))
-            return
-        data, caption = got
-        if len(data) > CHART_MAX_BYTES:
-            log("chart for %s not sent: %d bytes is over %d" % (job["cmd"], len(data), CHART_MAX_BYTES))
-            return
-        for k, wait in enumerate((0,) + PHOTO_TRIES):      # 2026-10-23: the connection dropped charts that night
-            if wait:
-                time.sleep(wait)
-            try:
-                self.tg.send_photo(job["chat"], data, caption)
-                break
-            except Exception as e:                          # noqa: BLE001
-                if k == len(PHOTO_TRIES) or not net_error(e):
-                    raise
-                log("chart for %s: send failed (%s) -- trying again in %d s" % (job["cmd"], e, PHOTO_TRIES[k]))
-        log("SENT PHOTO for %s: %d KB, drawn in %.1f s -- %s" % (job["cmd"], len(data) // 1024,
-                                                                 time.monotonic() - t0, (caption or "")[:120]))
+    @property
+    def _chart_q(self):
+        return self.charts.q
 
     # ---- main loop ----
     def poll_once(self, timeout=25):
@@ -3383,6 +1579,7 @@ class Phone:
             log("getUpdates failed: %s" % e)
             time.sleep(10)
             return
+        self.polled_ok = True
         for u in updates:
             self.offset = max(self.offset or 0, int(u.get("update_id", 0)) + 1)
             m = u.get("message") or {}
@@ -3399,32 +1596,46 @@ class Phone:
                 if handled:
                     self.chart_after(chat, m.get("text"))     # queued, never drawn here (see chart_after)
 
-    def run(self):
+    def heartbeat(self):
+        """results/pinphone.heartbeat: the time now (boot_all and the operator read it)."""
+        try:
+            _paths.check_write(HEARTBEAT)        # v-tg-rebuild step 2: never the live heartbeat under KALS_TESTING=1
+            with open(HEARTBEAT, "w", encoding="utf-8") as fh:
+                fh.write(time.strftime("%Y-%m-%dT%H:%M:%S"))
+        except OSError:
+            pass
+
+    def start(self):
+        """Everything before the loop: the command modules, the process-table refresher, the hello."""
         log("pinphone starting; paired chat: %s; charts %s" % (self.chat_id, "on" if self.charts_on else "off"))
-        # the process table for /stats and /race, read off the poll thread
-        threading.Thread(target=proc_refresher, daemon=True).start()
+        failed = _router.discover()
+        if failed:
+            log("command modules that did not load (their commands say so): %s" % ", ".join(sorted(failed)))
+        # the process table for /stats and /race, read off the poll thread (botdata.procs)
+        _bdprocs.start_refresher()
         if self.chat_id:
             self.say(UP_TEXT)
+
+    def loop_once(self):
+        """One pass: the heartbeat, one long poll (every message answered), then the update flag, the alerts and the
+        sends the connection dropped. Each tick's failure is logged and the loop goes on."""
+        self.heartbeat()
+        self.poll_once()
+        for tick in (self.update_flag_tick, self.alerts_tick, self.resend_tick):
+            try:
+                tick()
+            except Exception:                            # noqa: BLE001
+                log(traceback.format_exc())
+
+    def run(self):
+        self.start()
         while True:
-            try:
-                _paths.check_write(HEARTBEAT)        # v-tg-rebuild step 2: never the live heartbeat under KALS_TESTING=1
-                with open(HEARTBEAT, "w") as fh:
-                    fh.write(time.strftime("%Y-%m-%dT%H:%M:%S"))
-            except OSError:
-                pass
-            self.poll_once()
-            try:
-                self.update_flag_tick()
-            except Exception:                            # noqa: BLE001
-                log(traceback.format_exc())
-            try:
-                self.alerts_tick()
-            except Exception:                            # noqa: BLE001
-                log(traceback.format_exc())
-            try:
-                self.resend_tick()
-            except Exception:                            # noqa: BLE001
-                log(traceback.format_exc())
+            self.loop_once()
+
+
+# Every command module, imported now, each inside its own try (router.discover: a broken one costs only its commands, and
+# its names answer 'this command failed to load'); /help is rebuilt from the declarations.
+_router.discover()
 
 
 # ===========================================================================
@@ -3444,6 +1655,13 @@ def selftest():
     def P(x):
         """What the phone shows: an Html reply without its tags; a plain reply as it is."""
         return html_to_plain(x) if getattr(x, "is_html", False) else ("" if x is None else str(x))
+
+    def _cmdrun(ph, text):
+        """One command module's reply to `text` on phone `ph`, as the old Phone.text_* method gave it (no ledger refresh,
+        no paused-bot check: the router's steps are left out) -- v-tg-rebuild step 10."""
+        from phone import command as _pcm0
+        c = ph.ctx(text)
+        return _pcm0.by_name(c.cmd).run(c)
 
     def fits(x):
         """Every message the transport would send for this reply is under Telegram's limit, and each
@@ -3909,13 +2127,10 @@ def selftest():
            "could not build one")
         # the briefing reads the live clock and live files, so two calls a
         # second apart can differ; assert the ROUTING, not the wording
-        _sv_tb = ph.text_brief
-        try:
-            ph.text_brief = lambda: "BRIEF-STUB"
-            ck(ph.handle(111, "/summary") == "BRIEF-STUB" == ph.handle(111, "/brief"),
-               "/summary is the same command under its other name")
-        finally:
-            ph.text_brief = _sv_tb
+        from phone import command as _pcm           # v-tg-rebuild step 10: one Command answers both names
+        ck(_pcm.by_name("/summary") is _pcm.by_name("/brief") is not None
+           and _pcm.by_name("/brief").module == "phone.commands.brief_cmd",
+           "/summary is the same command under its other name")
         ck("THE DAY --" not in P(ph.handle(111, "/today") or ""),
            "and /today is UNTOUCHED -- it already existed and gives the plain "
            "money for the day; taking its name would have quietly replaced "
@@ -4102,7 +2317,7 @@ def selftest():
             ck(live_version(ph.versions_path)[0] == "v-pinfix",
                "the LIVE version skips the coin race's header sitting on top -- v-race-tie1 "
                "is the penny bot's, and dating the up/down bot's window from it would be wrong")
-            _fl = fleet(_procs)
+            _fl = fleet_roles(_procs)
             ck(_fl["live"][0] == 2554960 and _fl["penny"][0] == 15,
                "the process table: pinrun --live is the money bot, pinracearm --live (not "
                "--paper-live) is the penny bot")
@@ -4131,15 +2346,15 @@ def selftest():
                and abs(_mkf[F_]["pnl"] + 36.50) < 1e-9,
                "...and the bot's own side breaks it: entry NO, the 79 YES hedge got back "
                "79.00 - 40.00 = +39.00 of a -36.50 market")
-            ck(ph._sides().get(F_) == "no",
+            ck(sides_of(ph.ledger).get(F_) == "no",
                "the phone takes that side from the bot's hedge record (it bought YES, so "
                "the entry was NO)")
-            _mkg = markets_from(raw_ledger(_pl.LEDGER), ph._sides())
+            _mkg = markets_from(raw_ledger(_pl.LEDGER), sides_of(ph.ledger))
             ck(_mkg[G_]["side"] == "no" and _mkg[G_]["won"] and abs(_mkg[G_]["hedge_pnl"] - 55.30) < 1e-9,
                "a hedge BIGGER than its entry (79 YES over 26 NO): the bot's record, not the "
                "count, names the entry, so the hedge's take is 79.00 - 23.70 = +55.30 on a "
                "market that won +29.80 by its net -- the count rule had booked -25.20")
-            _fu = fleet(None)
+            _fu = fleet_roles(None)
             ck(_fu["unknown"] and _fu["live"] is None and _fu["arms"] == [],
                "NULL: a process table that could not be read is UNKNOWN, not empty")
             ck(first_entries(L.orders)[c1] == 12,
@@ -4224,7 +2439,7 @@ def selftest():
             _days0 = ph.ledger.days
             try:
                 ph.ledger.days = lambda: []
-                _dy = ph.text_days()
+                _dy = _cmdrun(ph, "/days")
             finally:
                 ph.ledger.days = _days0
             ck("Pin bot since v-pinfix (" in P(_dy) and ": +$1.66, 1 markets, 0 lost (0.0%)" in P(_dy)
@@ -4337,23 +2552,25 @@ def selftest():
                "pricing of the 250-a-leg arms, 30-66%), not the milder 25%")
             # /racestats on the REAL table reader never reads Windows on the poll thread: with a cold cache it
             # shows the arms from their logs alone and list_python_procs is not called; a fresh cache is used
-            _lpp_calls, _lpp0, _procs0 = [], list_python_procs, dict(_PROCS)
+            # (v-tg-rebuild step 10: the table is botdata.procs'; its synchronous read is read_all)
+            _lpp_calls, _lpp0, _procs0 = [], _bdprocs.read_all, dict(_bdprocs._TABLE)
 
             def _lpp_spy(*a, **k):
                 _lpp_calls.append(1)
                 return []
-            globals()["list_python_procs"] = _lpp_spy
+            _bdprocs.read_all = _lpp_spy
             try:
-                _PROCS.update(t=0.0, rows=None)
+                _bdprocs._store(None, 0.0)
                 ph.procs_fn = python_procs
                 q4 = P(ph.handle(111, "/racestats"))
                 _fresh_ok = (cached_python_procs() is None
-                             and (_PROCS.update(t=time.time(), rows=[(7, "x")]) or cached_python_procs()) == [(7, "x")]
-                             and (_PROCS.update(t=time.time() - 3 * PROC_REFRESH_S) or cached_python_procs()) is None)
+                             and (_bdprocs._store([[7, "", "x"]]) or cached_python_procs()) == [(7, "x")]
+                             and (_bdprocs._store([[7, "", "x"]], time.time() - 3 * PROC_REFRESH_S)
+                                  or cached_python_procs()) is None)
             finally:
-                globals()["list_python_procs"] = _lpp0
-                _PROCS.clear()
-                _PROCS.update(_procs0)
+                _bdprocs.read_all = _lpp0
+                _bdprocs._TABLE.clear()
+                _bdprocs._TABLE.update(_procs0)
             ck(not _lpp_calls and _fresh_ok and "z3 · PAPER, STOPPED · ran Sep 14 to Sep 16" in q4
                and "PAPER ARMS -- no real money" in q4,
                "/racestats with the real reader and a cold cache: no synchronous WMI read (alerts never wait behind "
@@ -4388,14 +2605,18 @@ def selftest():
         # cancel, transfer or process-control word. The words are assembled
         # from pieces so this check does not find itself.
         import inspect as _insp
+        from phone.commands import race as _cmd_race, bots_page as _cmd_bots, bot_page as _cmd_bot, day as _cmd_day
         _newfns = (_bs, _nof, _cash, _ago, bs_window_line, _short, bs_running_lines, bs_setup_lines, bs_money_lines,
                    bs_open_lines, bs_cash_line, bs_last_lines, bs_activity_lines, bs_bot_text, bs_errors_line,
-                   bs_all_text, Phone._race_money_lines, Phone._bs_get, Phone.text_bots, Phone.text_bot,
-                   Phone.text_race,
+                   bs_all_text, _cmd_race.money_load, _cmd_race.money_lines, Ctx.bs_get, _cmd_bots.load,
+                   _cmd_bots.render, _cmd_bot.page, _cmd_race.load, _cmd_race.render,
                    # 2026-10-18, the phone layout: every new reader and formatter
-                   log_span, race_arms_scored, race_size_words, race_rule_words, race_rows, Phone._staked,
-                   Phone.day_html, pct1, ret, tg_html_problems, split_html, bs_bot_html, bs_all_html, bs_money_html,
-                   _funds_days_html, _funds_page, fmt_or_plain, alert_loss_text, alert_daily_text, cprint)
+                   log_span, race_arms_scored, race_size_words, race_rule_words, race_rows, _cmd_day.staked,
+                   _cmd_day.day_data, _cmd_day.day_lines, pct1, ret, tg_html_problems, split_html, bs_bot_html,
+                   bs_all_html, bs_money_html, _funds_days_html, _funds_page, fmt_or_plain, _alerts.alert_loss_text,
+                   alert_daily_text, cprint,
+                   # v-tg-rebuild step 10: the router and the runtime's own code
+                   _router, Phone)
         _nsrc = "\n".join(_insp.getsource(f) for f in _newfns)
         _bad = [w for w in (r"\b" + "PO" + r"ST\b", r"\b" + "DEL" + r"ETE\b", r"\b" + "PA" + r"TCH\b", r"\b" + "PU" + r"T\b",
                             "portfolio/" + "orders", "subaccounts/" + "transfer", "order" + "cli", "pin" + "take",
@@ -4584,7 +2805,7 @@ def selftest():
            and "Today:" not in lh_ and lh_.endswith("The bots running now: /pin /race /fc"),
            "/ladder while its stop file is set: one short answer -- not running, why, that it comes back by itself -- "
            "and the bots that do run: %r" % lh_)
-        l_ = P(ph.text_bot("ladder"))
+        l_ = P(_cmdrun(ph, "/ladder"))
         ck("⏸ Running: NO -- stopped by its stop file (set " in l_ and ': "stood down by the operator".' in l_
            and "stopped on its own" not in l_ and l_.split("\n")[0].startswith("🟢 Ladder today +$0.04")
            and l_.split("\n")[1].startswith("⏸ LADDER -- "),
@@ -4828,7 +3049,7 @@ def selftest():
         ck(_pot_words(_fxb) == "subaccount 5 + subaccount 4" and _pot_words({"subaccount": 1, "subaccounts": [1]}) == "subaccount 1"
            and _fxc == "Cash: $184.27 (subaccount 5 $123.30, subaccount 4 $60.97) -- its own pots (subaccount 5 + subaccount 4)."
            and "/fx" in BOT_CMDS and BOT_CMD_OF["fx"] == "/fx"
-           and "One bot in full: /pin /race /fc /ladder /weather /fx" in "\n".join(bs_all_html(ph._bs_get("all")))
+           and "One bot in full: /pin /race /fc /ladder /weather /fx" in "\n".join(bs_all_html(ph.ctx().bs_get("all")))
            and any(r[0] == "fxtake_live.py" and "subaccounts 5 + 4" in r[3] for r in FEATURES)
            and FUNDS_SIZE_BOTS.get(4) == ("fx",) and FUNDS_SIZE_BOTS.get(5) == ("fx",),
            "the FX taker: both pots named (5 + 4), each pot's cash on its card, /fx on /bots' pointer line, a /features "
@@ -4920,10 +3141,10 @@ def selftest():
            "/stop without yes only explains; nothing is stopped")
         ck(P(ph.handle(111, "/mute")) == "🔕 Alerts off. /unmute to turn them back on." and ph.muted, "/mute")
         ck(P(ph.handle(111, "/unmute")) == "🔔 Alerts on." and not ph.muted, "/unmute")
-        _sv_flag, _sv_upd, _ups = UPDATE_FLAG, ph.text_update, []
+        _sv_flag, _sv_upd, _ups = UPDATE_FLAG, ph.update_start, []
         try:
             globals()["UPDATE_FLAG"] = os.path.join(td, "pinphone.update")
-            ph.text_update = lambda: (_ups.append(1), Html("🔄 <b>Checking the newest phone code</b>"))[1]
+            ph.update_start = lambda ctx: (_ups.append(1), Html("🔄 <b>Checking the newest phone code</b>"))[1]
             _n0 = len(tg.sent)
             _r0 = ph.update_flag_tick()
             open(UPDATE_FLAG, "w").close()
@@ -4935,7 +3156,7 @@ def selftest():
                "update flag (10-26): no file -> nothing; the file -> /update runs ONCE (the file removed first) and the "
                "operator is told it came from the file")
         finally:
-            globals()["UPDATE_FLAG"], ph.text_update = _sv_flag, _sv_upd
+            globals()["UPDATE_FLAG"], ph.update_start = _sv_flag, _sv_upd
         ck("Commands" in P(ph.handle(111, "/help")) and "I did not understand that." in P(ph.handle(111, "what"))
            and "Commands" in P(ph.handle(111, "what")), "/help, and an unknown message gets the help")
         ck("Commands" in P(ph.handle(111, "/help@PinBotBot")), "a command with the @botname suffix still works")
@@ -4973,13 +3194,13 @@ def selftest():
         state["h"] = dict(state["h"], kalshi_ok=True)
         ck("WRITING AGAIN" in P(ph.alerts_tick()[0]), "and writing again sends one")
         # A LAYOUT BUG MUST NEVER SWALLOW AN ALERT: the state-change layout planted to fail -> the plain words go
-        _sv_ast = globals()["alert_state_text"]
+        _sv_ast = _alerts.alert_state_text            # (v-tg-rebuild step 10: the layouts live in phone/alerts.py)
         try:
-            globals()["alert_state_text"] = lambda *a: 1 / 0
+            _alerts.alert_state_text = lambda *a: 1 / 0
             state["h"] = dict(state["h"], alive=False)
             sent = ph.alerts_tick()
         finally:
-            globals()["alert_state_text"] = _sv_ast
+            _alerts.alert_state_text = _sv_ast
         ck(len(sent) == 1 and not getattr(sent[0], "is_html", False)
            and sent[0].startswith("STATE CHANGED: TRADING -> DOWN\n"),
            "a state-change alert whose layout fails still goes, in the plain words it always had")
@@ -5048,9 +3269,10 @@ def selftest():
            and not tg_html_problems(sent[0]),
            "a new losing close is sent with its story: the loss as the headline naming the bot and its account (10-26), "
            "one line a leg")
-        _mix = P(alert_loss_text(L, calendar.timegm((2026, 9, 16, 14, 15, 0)), -37.0, [
+        _mix = P(_alerts.alert_loss_text(L, calendar.timegm((2026, 9, 16, 14, 15, 0)), -37.0, [
             {"tk": c2, "want": "no", "cost": 0.97, "result": "yes", "pnl": -38.80},
-            {"tk": "KXCRYPTOLEAD15M-26SEP161015-SOL", "want": "yes", "cost": 0.9, "result": "yes", "pnl": 1.80, "n": 20.0}]))
+            {"tk": "KXCRYPTOLEAD15M-26SEP161015-SOL", "want": "yes", "cost": 0.9, "result": "yes", "pnl": 1.80, "n": 20.0}],
+            sys.modules[__name__]))
         ck(" · pin bot + coin race (main account) · " in _mix.split("\n")[0]
            and "\n• pin bot · BTC NO at 97.0c, 40 contracts" in _mix and "\n• coin race · SOL YES at 90.0c, 20 contracts" in _mix,
            "a losing close holding both main-account bots' legs names both, and each leg its bot (the race leg's "
@@ -5156,9 +3378,11 @@ def selftest():
         ck([(c_, k_) for c_, _p, k_ in tg.photos] == [(111, "caption today"), (111, "caption days"), (111, "caption losses")]
            and tg.photos[0][1] == b"\x89PNG fake", "charts: each picture goes to the paired chat after its words, in order")
         _cx = _seen[0][1]
-        ck(_seen[0][0] == "today" and _cx["ledger"] is not ph.ledger and _cx["ledger"].settled == ph.ledger.settled
-           and _cx["ledger"].settled is not ph.ledger.settled and _cx["now"] == now["t"] and _cx["pp"].Phone is Phone,
-           "charts: the picture reads a private copy of the ledger taken with the words, on the phone's clock")
+        ck(_seen[0][0] == "today" and _cx.ledger is not ph.ledger and _cx.ledger.settled == ph.ledger.settled
+           and _cx.ledger.settled is not ph.ledger.settled and _cx.now == now["t"] and _cx.markets is chart_markets
+           and _cx.window_stats is window_stats and _cx.first_live_day == FIRST_LIVE_DAY,
+           "charts: the picture reads a private copy of the ledger taken with the words, on the phone's clock (a "
+           "ChartCtx since v-tg-rebuild step 10: the main account's markets, window_stats and FIRST_LIVE_DAY named)")
         _n1 = len(tg.photos)
         for _fn, _why in ((lambda kind, ctx: 1 / 0, "ZeroDivisionError"), (lambda kind, ctx: None, "nothing live to draw")):
             ph.chart_fn = _fn
@@ -6014,23 +4238,22 @@ def main():
             return str(x) if raw or not getattr(x, "is_html", False) else html_to_plain(x)
         ph = Phone({"chat_id": 0}, FakeTelegram())
         ph.ledger.refresh()
-        cprint(show(ph.text_status()))
-        cprint("\n--- /market ---\n" + show(ph.text_market()))
-        cprint("\n--- /hedges ---\n" + show(ph.text_hedges()))
         t0 = time.time()
         n = python_procs()
-        cprint("\n(process table: %s in %.1f s -- the daemon reads it on a background thread)"
+        cprint("(process table: %s in %.1f s -- the daemon reads it on a background thread)"
                % ("%d python processes" % len(n) if n is not None else "COULD NOT BE READ", time.time() - t0))
-        for name, fn in (("/stats", ph.text_stats), ("/race", ph.text_race), ("/racestats", ph.text_racestats),
-                         ("/bots", ph.text_bots), ("/pin", lambda: ph.text_bot("pin")),
-                         ("/forecaster", lambda: ph.text_bot("forecaster")), ("/ladder", lambda: ph.text_bot("ladder")),
-                         ("/weather", lambda: ph.text_bot("weather")), ("/fx", lambda: ph.text_bot("fx")),
-                         ("/funds", ph.text_funds), ("/speed", ph.text_speed), ("/server", ph.text_server)):
+        # v-tg-rebuild step 10: every declared command, through the router as the phone answers it -- except the ones that
+        # change something (the controls and /update start workers; /pair and /mute write state)
+        for c in _router.commands():
+            if c.runs_in_worker or c.name in ("/pair", "/mute"):
+                continue
             t0 = time.time()
-            out = fn()
+            out = ph.handle(0, c.name)
+            if out is None:
+                continue
             parts = split_html(out) if getattr(out, "is_html", False) else split_text(out)
             cprint("\n--- %s (%d chars, %d message(s), %.1f s) ---\n%s" % (
-                name, len(out), len(parts), time.time() - t0, show(out)))
+                c.name, len(out), len(parts), time.time() - t0, show(out)))
         return 0
     try:
         with open(CONFIG, encoding="utf-8") as fh:

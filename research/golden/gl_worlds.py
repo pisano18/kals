@@ -1,4 +1,4 @@
-"""The golden worlds: one fixture, eight situations. Each world has a file step (prepare: run by replay.py on the
+"""The golden worlds: one fixture, thirteen situations (eight + five with the coin race active). Each world has a file step (prepare: run by replay.py on the
 world's scratch copy of the fixture, before the child starts) and a runtime step (the clock, the process table and
 Kalshi's answers, applied by gl_child.py). Never imported by production code."""
 import calendar
@@ -143,6 +143,36 @@ WORLDS = {
     "empty-logs": dict(desc="every *.jsonl / *.log / *.out in results/ emptied (sizes 0, mtimes kept)",
                        procs=_base, files=_empty_logs),
 }
+
+
+# ---- the coin race ACTIVE (folded in from shadow_race_world.py at rebuild step 10): each is a golden world with the
+# race's stop file removed and its live copy in the process table (the fixture has the race paused, so in the eight
+# worlds above /race and /racestats are only the router's 'hidden' answer)
+RACE_BASES = {"race-active": "base", "race-active-procs-unreadable": "procs-unreadable",
+              "race-active-kalshi-down": "kalshi-down", "race-active-dst": "dst-2026-11-01",
+              "race-active-empty-logs": "empty-logs"}
+
+
+def _no_race_stop(files):
+    def f(res, T):
+        if files:
+            files(res, T)
+        _rm(os.path.join(res, RACE_STOP))
+    return f
+
+
+def _race_live(procs):
+    def p(rows, T):
+        return _race_stop_procs(procs(rows, T), T)        # a live race row unless one is there (None stays None)
+    return p
+
+
+for _name, _base_name in RACE_BASES.items():
+    _w = dict(WORLDS[_base_name])
+    _w["desc"] = "%s; the coin race ACTIVE (its live copy running, pinracepenny.stop removed)" % _w["desc"]
+    _w["files"] = _no_race_stop(_w.get("files"))
+    _w["procs"] = _race_live(_w["procs"])
+    WORLDS[_name] = _w
 ORDER = list(WORLDS)
 
 

@@ -31,7 +31,7 @@ def load(ctx):
     if not ms:
         return {"empty": True}
     taus = P.first_entries(ctx.ledger.orders)
-    fl = P.fleet(ctx.procs())
+    fl = P.fleet_roles(ctx.procs())
     ver = P.live_version(ctx.versions_path)
     _md, day_minus = P._md, P.day_minus
     wins = [("LIFETIME (since %s)" % _md(P.FIRST_LIVE_DAY), ms, P.days_between(P.FIRST_LIVE_DAY, today), "Life"),

@@ -147,6 +147,37 @@ def _canon(k, v):
     return C.canon(v)
 
 
+def _png(out, res):
+    """The chart case's PNG bytes (run_chart wrote them to <out>/charts/<name>), or None."""
+    name = (res or {}).get("png")
+    if not name:
+        return None
+    try:
+        with open(os.path.join(out, "charts", name), "rb") as fh:
+            return fh.read()
+    except OSError:
+        return None
+
+
+def _noise(a, b):
+    """True when two PNGs are the same picture up to compare.py's render noise (NOISE_MAX levels on NOISE_PIXELS)."""
+    if not a or not b:
+        return False
+    try:
+        import io
+        import compare
+        from PIL import Image, ImageChops
+        x, y = Image.open(io.BytesIO(a)).convert("RGBA"), Image.open(io.BytesIO(b)).convert("RGBA")
+        if x.size != y.size:
+            return False
+        d = ImageChops.difference(x, y)
+        if max(hi for _lo, hi in d.getextrema()) > compare.NOISE_MAX:
+            return False
+        return d.convert("RGB").convert("L").point(lambda v: 255 if v else 0).histogram()[255] <= compare.NOISE_PIXELS
+    except Exception:                                           # noqa: BLE001
+        return False
+
+
 def child(a):
     import json
     with open(a.pairs, encoding="utf-8") as fh:              # read before the fence goes up
@@ -171,11 +202,18 @@ def child(a):
         if rx and not rx.search(cid):
             continue
         old, s_old, _tr_old = gl_cases.run_case(rt, (cid, kind, arg))
+        png_old = _png(w.out, old) if kind == "chart" else None
         new, s_new, tr_new = gl_cases.run_case(rt, (cid, "new-" + kind, arg))
         keys = sorted(set(old) | set(new))
         diffs = {k: [old.get(k), new.get(k)] for k in keys if _canon(k, old.get(k)) != _canon(k, new.get(k))}
-        r = {"status": "identical" if not diffs else "differs", "diffs": diffs, "text": arg if kind == "cmd" else cid,
+        status = "identical" if not diffs else "differs"
+        if diffs and kind == "chart" and set(diffs) <= {"sha256", "bytes"} and _noise(png_old, _png(w.out, new)):
+            status = "identical"             # compare.py's render-noise rule (the same picture, sub-pixel edges)
+            diffs = {"noise": "PNG bytes differ by render noise only (compare.render_noise's limits)"}
+        r = {"status": status, "diffs": diffs if status == "differs" else {}, "text": arg if kind == "cmd" else cid,
              "module": kind, "seconds": [round(s_old, 2), round(s_new, 2)]}
+        if status == "identical" and diffs:
+            r["noise"] = True
         if tr_new:
             r["new_trace"] = tr_new
         results[cid] = r

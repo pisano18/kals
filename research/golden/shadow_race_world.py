@@ -21,41 +21,17 @@ sys.path.insert(0, GOLDEN)
 import gl_worlds               # noqa: E402
 import shadow                  # noqa: E402
 
-# race-active world -> the golden world it starts from
-BASES = {"race-active": "base", "race-active-procs-unreadable": "procs-unreadable",
-         "race-active-kalshi-down": "kalshi-down", "race-active-dst": "dst-2026-11-01",
-         "race-active-empty-logs": "empty-logs"}
+# the race-active worlds live in gl_worlds.WORLDS since rebuild step 10 (RACE_BASES); this file only narrows shadow.py
+# to them
+BASES = gl_worlds.RACE_BASES
 RACE_WORLDS = list(BASES)
 
 
-def _no_race_stop(files):
-    def f(res, T):
-        if files:
-            files(res, T)
-        gl_worlds._rm(os.path.join(res, gl_worlds.RACE_STOP))
-    return f
-
-
-def _race_live(procs):
-    def p(rows, T):
-        rows = procs(rows, T)
-        return gl_worlds._race_stop_procs(rows, T)          # a live race row unless one is there (None stays None)
-    return p
-
-
 def register():
-    for name, base in BASES.items():
-        if name in gl_worlds.WORLDS:
-            continue
-        w = dict(gl_worlds.WORLDS[base])
-        w["desc"] = "%s; the coin race ACTIVE (its live copy running, pinracepenny.stop removed)" % w["desc"]
-        w["files"] = _no_race_stop(w.get("files"))
-        w["procs"] = _race_live(w["procs"])
-        gl_worlds.WORLDS[name] = w
+    """Kept for callers: the worlds are already in gl_worlds."""
 
 
 def main():
-    register()
     shadow.__file__ = os.path.abspath(__file__)             # shadow.run_world starts this file as the child
     if "--child" not in sys.argv and "--world" not in sys.argv:
         for w in RACE_WORLDS:

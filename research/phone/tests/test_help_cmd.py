@@ -16,7 +16,7 @@ if RESEARCH not in sys.path:
 os.environ["KALS_TESTING"] = "1"
 
 import bots                                                          # noqa: E402
-import pinphone as pp                                                # noqa: E402
+from _legacy import pp, NEW                                         # noqa: E402  (pp: pinphone_legacy + NEW)
 from phone import command as CM                                     # noqa: E402
 from phone.commands import help_cmd as H                            # noqa: E402
 from phone.context import Ctx, FakeCtx                               # noqa: E402

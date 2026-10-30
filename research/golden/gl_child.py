@@ -85,6 +85,12 @@ def open_world(fixture, code, world, work, out):
         except Exception as e:                                  # noqa: BLE001
             import traceback
             import_err[name] = traceback.format_exc()
+    if "pinphone" in mods:
+        try:        # v-tg-rebuild step 11: pinphone.py is a launcher whose names load on first use -- load them all now,
+            getattr(mods["pinphone"], "Phone")      # before the seams and the cache snapshot (an older tree: a no-op)
+        except Exception:                                       # noqa: BLE001
+            import traceback
+            import_err["pinphone.Phone"] = traceback.format_exc()
     if "pinphone" not in mods:
         C.dump_json(os.path.join(out, "meta.json"), {"world": world, "import_error": import_err}, codec=False)
         print(import_err)

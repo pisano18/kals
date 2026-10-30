@@ -18,7 +18,7 @@ if RESEARCH not in sys.path:
     sys.path.insert(0, RESEARCH)
 os.environ["KALS_TESTING"] = "1"
 
-import pinphone as pp                                                # noqa: E402
+from _legacy import pp, NEW, OLD as pp_old                          # noqa: E402  (pp: pinphone_legacy + NEW)
 from phone import command as CM                                     # noqa: E402
 from phone import context as CX                                     # noqa: E402
 from phone.html import Html                                          # noqa: E402
@@ -64,7 +64,7 @@ def test_from_phone_is_the_phones_seams():
                chart_fn=object(), chart_stale_s=5)
     c = CX.Ctx.from_phone(ph, "/Server@kalsbot help")
     assert (c.cmd, c.arg, c.text, c.chat_id) == ("/server", "help", "/Server@kalsbot help", 7)
-    assert c.pp is pp and c.ledger is ph.ledger and c.results == TMP and c.state is ph
+    assert c.pp is NEW and c.ledger is ph.ledger and c.results == TMP and c.state is ph
     for k in CX._SEAMS:
         assert getattr(c, k) is getattr(ph, k), k
     assert c.now() == T and c.health() == {"alive": True} and c.procs() == [(1, "python x.py")]
@@ -79,17 +79,19 @@ def test_providers_resolve_defaults_at_call_time():
     after the Ctx was built is seen, exactly as the old method saw it)."""
     ph = phone()
     c = CX.Ctx.from_phone(ph, "/server")
-    saved = pp.machine_read, pp.kalshi_ping, pp.python_procs, pp.cached_python_procs
+    names = ("machine_read", "kalshi_ping", "python_procs", "cached_python_procs")
+    saved = [(m, n, getattr(m, n)) for m in (pp_old, NEW) for n in names]      # each module put back to its own
     try:
         pp.machine_read = lambda: {"patched": "machine"}
         pp.kalshi_ping = lambda: {"patched": "ping"}
         assert c.machine() == {"patched": "machine"} and c.ping() == {"patched": "ping"}
         pp.cached_python_procs = lambda: [(9, "cached")]
         assert c.procs_cached() == [(1, "python x.py")], "a planted procs_fn is asked itself"
-        c.procs_fn = pp.python_procs
+        c.procs_fn = NEW.python_procs                  # the reader of the helpers module the Ctx reads (ctx.pp)
         assert c.procs_cached() == [(9, "cached")], "the default reader -> the cached table (Phone.text_racestats)"
     finally:
-        pp.machine_read, pp.kalshi_ping, pp.python_procs, pp.cached_python_procs = saved
+        for m, n, v in saved:
+            setattr(m, n, v)
 
 
 def test_sides_markets_active_bs_get_match_phone():

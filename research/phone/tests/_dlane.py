@@ -24,7 +24,7 @@ os.environ["KALS_TESTING"] = "1"
 
 import botstats                                                      # noqa: E402
 import pindesk                                                       # noqa: E402
-import pinphone as pp                                                # noqa: E402
+from _legacy import pp, NEW, patch_pairs, new_ctx                   # noqa: E402  (OLD = pinphone_legacy, after the flip)
 import tgcharts                                                      # noqa: E402
 from phone import command as CM                                     # noqa: E402
 from phone import context as CX                                     # noqa: E402
@@ -90,6 +90,10 @@ def phone(led=None, health=None):
 @contextlib.contextmanager
 def patched(*triples):
     """patched((module, name, value), ...): set, then put every one back."""
+    flat = []
+    for t in triples:                       # a group of patches that go together (a tuple of triples) counts as one
+        flat.extend(t) if t and isinstance(t[0], tuple) else flat.append(t)
+    triples = patch_pairs(flat)
     saved = [(m, n, getattr(m, n)) for m, n, _v in triples]
     try:
         for m, n, v in triples:
@@ -115,7 +119,7 @@ def new_reply(module, ph, text):
     """The NEW path for `text` on phone `ph`: the module's Command for that name, run on Ctx.from_phone."""
     _t, cmd, _a = CX.split_command(text)
     com = next(c for c in CM.of_module(module) if cmd in c.names)
-    return com.run(CX.Ctx.from_phone(ph, text))
+    return com.run(new_ctx(ph, text))
 
 
 def same(old, new, what=""):

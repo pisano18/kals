@@ -42,7 +42,7 @@ def plant(fail=None):
 
 
 plant()
-import pinphone as pp                                                # noqa: E402
+from _legacy import pp, NEW                                         # noqa: E402  (pp: pinphone_legacy + NEW)
 from phone import command as CM                                     # noqa: E402
 from phone.commands import controls as K                            # noqa: E402
 from phone.context import Ctx, FakeCtx                               # noqa: E402
@@ -67,10 +67,21 @@ def wait_free(st, timeout=10.0):
 
 
 def _phone():
-    led = types.SimpleNamespace(results=RESEARCH, refresh=lambda: None)
-    ph = pp.Phone({"chat_id": 7}, pp.FakeTelegram(), ledger=led, now_fn=lambda: T)
-    ph.text_status = lambda: Html("<b>STATUS</b> page")
-    return ph
+    """A legacy Phone on a planted ledger and health reading: the worker's closing /status page is the REAL one on both
+    sides (legacy Phone.text_status vs phone/commands/status.py) -- v-tg-rebuild step 10 (the old stand-in planted
+    text_status, which the new side no longer reaches)."""
+    from _dlane import HEALTH, fake_ledger
+    return pp.Phone({"chat_id": 7}, pp.FakeTelegram(), ledger=fake_ledger(), now_fn=lambda: T,
+                    health_fn=lambda: dict(HEALTH))
+
+
+def _status_world():
+    """botstats failing (both of /status's every-pot lines are left out, logged) and hours up planted, on both sides."""
+    import botstats
+    from _dlane import boom, patched
+    from phone.commands import day as D
+    return patched((botstats, "all_bots", boom), (botstats, "active_bots", lambda procs=None: ["pin"]),
+                   (pp, "hours_up_et_day", lambda day, until: 2.0), (D, "hours_up_et_day", lambda day, until: 2.0))
 
 
 def test_replies_are_pinphones():
@@ -84,6 +95,8 @@ def test_pause_start_stop_vs_phone():
     controls run, the same messages said by the worker (its 'x: ...' lines, then the /status page), busy freed."""
     saved = time.sleep
     time.sleep = fake_sleep
+    world = _status_world()
+    world.__enter__()
     try:
         for text in ("/pause", "/start", "/start@kalsbot", "/stop yes", "/stop YES ", "/stop", "/stop no", "/pause now"):
             out = []
@@ -103,7 +116,9 @@ def test_pause_start_stop_vs_phone():
                 out.append((type(r).__name__, str(r), list(CALLS), list(SLEPT),
                             [(cid, type(m).__name__, str(m)) for cid, m in ph.tg.sent], ph.busy))
             assert out[0] == out[1], (text, out)
+            assert not out[0][4] or "WATCHDOG" in out[0][4][-1][2].upper() or "Watchdog" in out[0][4][-1][2], out[0]
     finally:
+        world.__exit__(None, None, None)
         time.sleep = saved
 
 

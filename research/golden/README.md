@@ -15,7 +15,7 @@ Nothing here is imported by production code. Design: DESIGN.md section 4, "Step 
 | `gl_child.py` | one world of a replay (started by replay.py) |
 | `gl_cases.py` | the cases and their runners, the Kalshi store / recorder, the seams |
 | `gl_fence.py` | file-system virtualisation and write guard, network / process guards, frozen clock, thread registry |
-| `gl_worlds.py` | the eight worlds |
+| `gl_worlds.py` | the thirteen worlds (eight + five with the coin race active) |
 | `gl_common.py` | JSON codec, normalisation, file names |
 | `CHANGES.md` | accepted differences (world, case, digests, why) |
 
@@ -70,7 +70,7 @@ An intended change: `compare.py EXPECTED ACTUAL --accept "base/cmd//bots" --why 
 appends one line per matching changed case to `CHANGES.md` (pattern: `world/case`, fnmatch, `*` crosses `/`; no world
 = every world). A later compare treats exactly that pair of digests as accepted; a further change shows again.
 
-A whole run: about 3.5 minutes on the laptop (`--jobs 2`), 8 worlds x 90 cases. Useful options: `--world base`
+A whole run: about 3.5 minutes on the laptop (`--jobs 3`), 13 worlds x 90 cases. Useful options: `--world base`
 (repeatable), `--only REGEX` (case ids), `--repeat N` (each case N times in one process: flakiness check),
 `--keep-work`, `--jobs`. `GOLDEN_MPL_TRACE=1` writes every matplotlib drawing call's data to `mpl_trace.txt` (for
 a chart diff).
@@ -112,6 +112,7 @@ process start (bars' watcher scripts) is listed in `fence` but is not a failure.
 | `kalshi-down` | every Kalshi GET answers 500; botstats' cache read stamps 2 h old |
 | `dst-2026-11-01` | the clock at 2026-11-01 13:30Z (8:30 AM EST, after the clocks went back); cache fresh at that clock |
 | `empty-logs` | every `*.jsonl` / `*.log` / `*.out` in results emptied (mtimes kept) |
+| `race-active`, `race-active-procs-unreadable`, `race-active-kalshi-down`, `race-active-dst`, `race-active-empty-logs` | base / procs-unreadable / kalshi-down / dst-2026-11-01 / empty-logs with the coin race ACTIVE (`pinracepenny.stop` removed, its live copy in the process table): /race and /racestats render their pages instead of the paused answer (folded in from shadow_race_world.py at rebuild step 10; expected output recorded from b4199af, the last tree before the flip, in `C:\kals-golden\expected\b4199af`) |
 
 ## How a replay is held still
 
@@ -125,7 +126,8 @@ process start (bars' watcher scripts) is listed in `fence` but is not a failure.
   the world's frozen clock; `time.sleep` returns at once. `monotonic` / `perf_counter` stay real (deadlines only).
 - Seams: `pinphone.list_python_procs`, `botstats._procs_native / read_procs`, `botdata.procs.native_rows / wmi_rows /
   read_all` (so `procs.table() / cached() / refresh_once()` too; when the tree has botdata) (the recorded process table),
-  `pinphone.machine_read`, `pinphone.kalshi_ping`, `pinphone._aws_http` (refused: the not-connected path),
+  `pinphone.machine_read`, `pinphone.kalshi_ping`, `pinphone._aws_http` (refused: the not-connected path; since rebuild
+  step 11 these go on `phone.shared`, where the helpers live, and `_aws_http` also on `phone.commands.server.aws`),
   `pindesk.health` (recorded), `shutil.disk_usage` (recorded), `pindesk.do_start/do_pause/do_stop` (stubs), the Phone
   attributes of the same names; `kauth` is a fake module serving `kalshi.json`. A seam the tree no longer has is
   listed in `meta.json` (`missing_seams`) and `replay.py` prints it.

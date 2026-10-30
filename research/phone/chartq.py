@@ -13,9 +13,10 @@ dropped; a photo the CONNECTION dropped is sent again after 5 s and 20 s (PHOTO_
 STATE. ChartQueue(state): `state` is the runtime the old methods read on `self` (the Phone until step 11): charts_on
 (after() checks it; a missing matplotlib turns it off), chart_fn (None = tgcharts.build), chart_stale_s, tg (send_photo),
 and -- through the Ctx given to after() -- the clock, the ledger, active(), botstats' getter / process table, /bars'
-numbers (ctx.state._bars_d) and the old pinphone module (ctx.pp: funds_what, FUNDS_WHAT, and 'pp' in the chart context,
-which tgcharts still reads). monotonic / sleep are injectable (tests); None = time.monotonic / time.sleep, looked up at
-each call exactly as the old code did.
+numbers (ctx.state._bars_d) and the helpers module (ctx.pp: funds_what, FUNDS_WHAT, chart_markets, window_stats,
+FIRST_LIVE_DAY, main_words, _bs -- the named parts of the explicit ChartCtx since step 10). monotonic / sleep are
+injectable (tests); None = time.monotonic / time.sleep, looked up at each call exactly as the old code did. kind_of: the
+picture kind of a command (the runtime passes the router's: the declaring Command's chart).
 """
 import copy
 import queue
@@ -56,24 +57,29 @@ def ledger_snapshot(ledger):
 def chart_ctx(ctx, kind, tgc):
     """What the picture reads, fixed right after the words were built: the clock, a private copy of the
     ledger's lists (this thread keeps appending to the live ones), botstats' getter and process table as
-    the words use them, and /bars' gathered numbers. (Phone._chart_ctx)"""
+    the words use them, and /bars' gathered numbers. (Phone._chart_ctx)
+
+    v-tg-rebuild step 10 (2026-10-30): an explicit phone.charts.ChartCtx (lane B's follow-up 1), no more the dict with
+    the pinphone module as "pp": the pictures get the main account's markets, window_stats, FIRST_LIVE_DAY and
+    main_words as the named functions of ctx.pp (the helpers module), botstats through ctx.pp._bs."""
+    from phone.charts.ctx import ChartCtx
     act = ctx.active()
     pp = ctx.pp
-    c = {"now": ctx.now(), "pp": pp, "bs_getter": ctx.bs_getter,
-         "bs_procs": ctx.bs_procs, "funds_what": {n: pp.funds_what(n, act) for n in pp.FUNDS_WHAT}, "active": act}
-    if kind in tgc.LEDGER_KINDS:
-        c["ledger"] = ledger_snapshot(ctx.ledger)
-    if kind == "bars":
-        c["bars"] = ctx.state._bars_d
-    return c
+    return ChartCtx(now=ctx.now(), bs_getter=ctx.bs_getter, bs_procs=ctx.bs_procs,
+                    funds_what={n: pp.funds_what(n, act) for n in pp.FUNDS_WHAT}, active=act,
+                    ledger=ledger_snapshot(ctx.ledger) if kind in tgc.LEDGER_KINDS else None,
+                    bars=ctx.state._bars_d if kind == "bars" else None,
+                    botstats=pp._bs, markets=pp.chart_markets, window_stats=pp.window_stats,
+                    first_live_day=pp.FIRST_LIVE_DAY, main_words=pp.main_words)
 
 
 class ChartQueue:
     """The chart queue and its drawing thread (the thread starts with the first job)."""
 
     def __init__(self, state, maxsize=CHART_QUEUE, tries=PHOTO_TRIES, max_bytes=CHART_MAX_BYTES, monotonic=None,
-                 sleep=None, tgc=None):
+                 sleep=None, tgc=None, kind_of=None):
         self.state = state
+        self._kind_of = kind_of             # (cmd) -> picture kind; None = tgcharts.kind_of (the router passes its own)
         self.maxsize = maxsize
         self.tries = tuple(tries)
         self.max_bytes = max_bytes
@@ -99,7 +105,7 @@ class ChartQueue:
                 return False
             cmd = command_of(text)
             tgc = self._tgc()
-            kind = tgc.kind_of(cmd)
+            kind = (self._kind_of or tgc.kind_of)(cmd)
             if kind is None:
                 return False
             job = {"kind": kind, "cmd": cmd, "chat": chat_id, "queued": self.monotonic(),

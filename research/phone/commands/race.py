@@ -31,7 +31,7 @@ def load(ctx):
     now = ctx.now()
     res = ctx.ledger.results
     races = P.races_from(ctx.markets())
-    fl = P.fleet(ctx.procs())
+    fl = P.fleet_roles(ctx.procs())
     recs = P.log_records(os.path.join(res, RACE_LOG), RACE_KINDS)
     pv = P.penny_view(recs, now, ledger_events=set(races))
     stop = os.path.exists(os.path.join(res, RACE_STOP))

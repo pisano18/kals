@@ -10,6 +10,7 @@ another control answer 'Still working on the last command.'. /stop alone only ex
 HAZARD KEPT (DESIGN 1.1): /start means 'trade again', and Telegram clients send /start when a chat is first opened; only
 the paired chat is answered, so this is mitigated -- do not change it silently.
 """
+import importlib
 import threading
 import time
 import traceback
@@ -30,18 +31,13 @@ STATUS_MODULE = "phone.commands.status"        # lane D1's /status module
 
 
 def status_reply(ctx):
-    """The /status page the worker sends when the work is done (Phone.control: self.text_status()). D1's /status Command
-    once its module exists (step 10 merges it; Command.run is text_status, its error wall included); until then the
-    Phone's own text_status."""
-    try:
-        __import__(STATUS_MODULE)
-    except ModuleNotFoundError as e:
-        if e.name != STATUS_MODULE:
-            raise
-        return ctx.state.text_status()
+    """The /status page the worker sends when the work is done (Phone.control: self.text_status()): D1's /status Command
+    (Command.run is text_status, its error wall included). v-tg-rebuild step 10: Phone.text_status is gone, so there is
+    no fallback; a /status module that cannot be imported raises here and the worker says '<which> failed: ...'."""
+    importlib.import_module(STATUS_MODULE)
     com = by_name("/status")
     if com is None:
-        return ctx.state.text_status()
+        raise RuntimeError("no /status command is declared")
     return com.run(ctx.with_message("/status"))
 
 

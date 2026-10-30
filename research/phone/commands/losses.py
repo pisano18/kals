@@ -8,6 +8,7 @@ every pot), asked exactly as the old method asked it (the dict context with the 
 """
 import traceback
 
+import bots as _bots
 from botdata.fmt import cnt as _cnt                    # == pinphone._cnt
 from botdata.fmt import usd                            # == pinphone.usd
 from phone.command import Command, declare
@@ -21,15 +22,14 @@ def load(ctx):
     """('all', (botstats, rows, per, missing, BOT_SHORT)) from tgcharts.all_losses, or ('main', ...) -- the main
     account's losing closes -- when that fails (logged) or knows no bot."""
     try:
-        tgc = ctx.pp._tgc()
-        bs, rows, per, missing = tgc.all_losses({"now": ctx.now(), "pp": ctx.pp, "bs_getter": ctx.bs_getter,
-                                                 "bs_procs": ctx.bs_procs})
+        from botdata import series          # v-tg-rebuild step 10: the numbers straight from botdata (was via tgcharts)
+        bs, rows, per, missing = series.all_losses(ctx.bs(), ctx.now(), ctx.bs_getter, ctx.bs_procs)
     except Exception:                                       # noqa: BLE001
         log(traceback.format_exc())
         return "main", load_main(ctx)
     if not per:
         return "main", load_main(ctx)
-    return "all", (bs, rows, per, missing, ctx.pp._tgc().BOT_SHORT)
+    return "all", (bs, rows, per, missing, _bots.BOT_SHORT)
 
 
 def load_main(ctx):

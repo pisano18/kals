@@ -17,7 +17,7 @@ if RESEARCH not in sys.path:
     sys.path.insert(0, RESEARCH)
 os.environ["KALS_TESTING"] = "1"
 
-import pinphone as pp                                                # noqa: E402
+from _legacy import pp, NEW                                         # noqa: E402  (pp: pinphone_legacy + NEW)
 import botstats                                                      # noqa: E402
 from phone import command as CM                                     # noqa: E402
 from phone import context as CX                                     # noqa: E402

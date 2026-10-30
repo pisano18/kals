@@ -11,8 +11,9 @@ tests: plant what the command reads; anything not planted raises CtxMissing (a t
 THE FIELDS (the Phone attribute each one is, in from_phone)
   the message      cmd ('/today': lower-case, '@bot' cut), arg (the rest, as typed), text (the whole, stripped),
                    chat_id
-  pp               the OLD pinphone module (type(phone).__module__ -- '__main__' under `pinphone.py --selftest`, never a
-                   second import): the helpers and constants not moved out yet (ctx.pp.usd, ctx.pp.nice_coin, ...)
+  pp               the helpers module: the runtime's `pp` attribute (phone.app.Phone.pp = phone.shared since step 11), else
+                   the Phone's own module (a legacy Phone: pinphone_legacy): the helpers and constants not moved out yet
+                   (ctx.pp.usd, ctx.pp.nice_coin, ...)
   ledger           pindesk.Ledger (Phone.ledger; the router refreshes it before the command runs)
   results          the results folder the ledger reads (ledger.results)
   now_fn           Phone.now                  -> ctx.now()
@@ -97,8 +98,11 @@ class Ctx:
         """The Ctx for one message to `phone` (a pinphone.Phone): every seam is the value the Phone holds right now."""
         text, cmd, arg = split_command(text)
         kw = {k: getattr(phone, k) for k in _SEAMS}
+        # pp: the module of helpers the commands reach as ctx.pp -- the runtime names it (phone.app.Phone.pp =
+        # phone.shared, rebuild step 11); an older Phone (pinphone_legacy's) is its own module
+        pp = getattr(phone, "pp", None) or sys.modules[type(phone).__module__]
         return cls(cmd=cmd, arg=arg, text=text, chat_id=phone.chat_id if chat_id is None else chat_id,
-                   pp=sys.modules[type(phone).__module__], ledger=phone.ledger, results=phone.ledger.results,
+                   pp=pp, ledger=phone.ledger, results=phone.ledger.results,
                    now_fn=phone.now, say=phone.say, state=phone, **kw)
 
     def with_message(self, text, chat_id=None):

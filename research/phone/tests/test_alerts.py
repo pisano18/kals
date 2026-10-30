@@ -19,8 +19,9 @@ if RESEARCH not in sys.path:
     sys.path.insert(0, RESEARCH)
 os.environ["KALS_TESTING"] = "1"
 
-import pinphone as pp                                                # noqa: E402
+from _legacy import pp, NEW                                         # noqa: E402  (pp: pinphone_legacy + NEW)
 from phone import alerts as A                                       # noqa: E402
+from phone.commands import day as D                                 # noqa: E402
 from phone.context import Ctx                                        # noqa: E402
 from phone.html import Html                                          # noqa: E402
 
@@ -240,7 +241,12 @@ def test_daily_alert_vs_phone():
                 c = Ctx.from_phone(ph)
                 c.active = ph.active
                 old = ph.daily_alert("2026-09-16", 1.0)
-                new = A.daily_alert(c, "2026-09-16", 1.0)
+                saved_day = D.all_bots_day         # the new side's every-bot block: commands/day.py (step 10)
+                D.all_bots_day = lambda ctx, d, title, t=top: list(t)
+                try:
+                    new = A.daily_alert(c, "2026-09-16", 1.0)
+                finally:
+                    D.all_bots_day = saved_day
                 assert type(old) is type(new) and str(old) == str(new), (top, act)
                 new2 = A.daily_alert(c, "2026-09-16", 1.0, all_bots_day=lambda d, title, t=top: list(t))
                 assert str(new2) == str(old)

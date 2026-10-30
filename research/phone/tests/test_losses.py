@@ -7,6 +7,7 @@ bot -- with and without losing closes in the Ledger.
 """
 from _dlane import (CM, SETTLED, T, Html, botstats, boom, chart_and_help, fake_ledger, new_reply, patched, phone, pp,
                     quiet, run, same, settled_row, tgcharts)
+from botdata import series          # the module's source since v-tg-rebuild step 10 (the legacy Phone asks tgcharts)
 
 
 def _rows(n):
@@ -27,7 +28,20 @@ PER = {"pin": {"lost": 20, "settled": 400, "lost_7d": 3, "money_lost": 55.5, "wo
 
 
 def _patch(rows, per, missing=()):
-    return (tgcharts, "all_losses", lambda ctx, week_days=7: (botstats, list(rows), dict(per), list(missing)))
+    """One planted all_losses for both sides: the legacy Phone asks tgcharts.all_losses, the module botdata.series."""
+    return _Two((tgcharts, "all_losses", lambda ctx, week_days=7: (botstats, list(rows), dict(per), list(missing))),
+                (series, "all_losses", lambda bs, now, getter=None, procs=None, week_days=7:
+                 (botstats, list(rows), dict(per), list(missing))))
+
+
+class _Two(tuple):
+    """Two patches that go together (patched() takes them as one)."""
+
+    def __new__(cls, *triples):
+        return tuple.__new__(cls, triples)
+
+
+_BOOM = _Two((tgcharts, "all_losses", boom), (series, "all_losses", boom))
 
 
 def _both(ph):
@@ -64,7 +78,7 @@ def test_no_losing_market():
 def test_main_account_fallback():
     led = fake_ledger(settled=SETTLED + [settled_row(T - 7200, -0.5, tk="KXCRYPTOLEAD15M-26OCT300845-SOL",
                                                      close=T - 3600 * 2)], bank_at=1200.0)
-    for patch in ((tgcharts, "all_losses", boom), _patch(_rows(5), {})):
+    for patch in (_BOOM, _patch(_rows(5), {})):
         for ledger in (led, fake_ledger()):
             ph = phone(ledger)
             with patched(patch), quiet():

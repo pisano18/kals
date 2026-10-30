@@ -26,7 +26,7 @@ def load(ctx):
     if not races:
         return {"races": races}
     r30 = ctx.race30_epoch
-    fl = P.fleet(ctx.procs_cached())
+    fl = P.fleet_roles(ctx.procs_cached())
     sc = P.race_arms_scored(res) or {}
     arms = []
     for name in P.RACE_ARMS:

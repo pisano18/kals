@@ -10,6 +10,7 @@ from _dlane import (CM, DAY, SETTLED, ORDERS, T, Html, botstats, boom, chart_and
                     phone, pindesk, pp, quiet, run, same, tgcharts)
 
 import phone.commands.day as M
+from botdata import series
 
 
 def market(day, pnl, close):
@@ -41,11 +42,14 @@ def _patches(a=None, up=lambda day, until: 3.5, pace=True, procs_active=("pin", 
           (botstats, "shown_parts", lambda a_: [(b, {"ok": True, "today": window(1.0), "yesterday": window(0.5)})
                                                 for b in a_["active"]]),
           (botstats, "all_bots", (lambda now, getter, procs: a) if a is not None else boom)]
+    # the legacy Phone asks tgcharts; the module botdata.series (v-tg-rebuild step 10): the same planted numbers to both
+    by_now = (lambda rows, b_, day, now, n=7: (1.0, 2.5 if n == 7 else 3.1, 7 if n == 7 else 30))
     if pace:
-        ps += [(tgcharts, "all_day_markets", lambda ctx: (botstats, None, ["rows"], [])),
-               (tgcharts, "by_now", lambda rows, b_, day, now, n=7: (1.0, 2.5 if n == 7 else 3.1, 7 if n == 7 else 30))]
+        ps += [(tgcharts, "all_day_markets", lambda ctx: (botstats, None, ["rows"], [])), (tgcharts, "by_now", by_now),
+               (series, "all_day_markets", lambda bs, now, getter=None, procs=None: (botstats, None, ["rows"], [])),
+               (series, "by_now", by_now)]
     else:
-        ps += [(tgcharts, "all_day_markets", boom)]
+        ps += [(tgcharts, "all_day_markets", boom), (series, "all_day_markets", boom)]
     return ps
 
 

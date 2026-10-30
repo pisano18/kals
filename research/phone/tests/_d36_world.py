@@ -20,7 +20,7 @@ if RESEARCH not in sys.path:
 os.environ["KALS_TESTING"] = "1"
 
 import pindesk                                                       # noqa: E402
-import pinphone as pp                                                # noqa: E402
+from _legacy import pp, NEW, patch_pairs, new_ctx                   # noqa: E402  (OLD = pinphone_legacy, after the flip)
 from phone import command as CM                                     # noqa: E402
 from phone import context as CX                                     # noqa: E402
 
@@ -174,7 +174,7 @@ def patched(active=("pin", "race"), bot=None, all_bots=None, fills_since=None, m
     put(botstats, "bot", bot or _raise)
     put(botstats, "all_bots", all_bots or _raise)
     put(botstats, "fills_since", fills_since or _raise)
-    for (m, name), v in (mod or {}).items():
+    for m, name, v in patch_pairs([(m, name, v) for (m, name), v in (mod or {}).items()]):
         put(m, name, v)
     try:
         with contextlib.redirect_stdout(io.StringIO()):
@@ -190,7 +190,7 @@ def old_new(ph, text, method):
     cmd = CX.split_command(text)[1]
     com = CM.by_name(cmd)
     assert com is not None, "no command declared for %s" % cmd
-    new = com.run(CX.Ctx.from_phone(ph, text))
+    new = com.run(new_ctx(ph, text))
     return old, new
 
 
