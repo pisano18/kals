@@ -420,19 +420,29 @@ def test_settings_hooks():
 
 
 def test_start_and_halt_rules_match_running():
-    """botstats.running's per-bot lists == the registry's Logs.start_rule / Records.halt_lifts_next_day."""
+    """botstats.running's per-bot lists == the registry's Logs.start_rule / Records.halt_lifts_next_day.
+    v-tg-rebuild step 3 (2026-10-30, lane A): once running() reads those rules FROM the registry its source holds no
+    per-bot list to compare; then the registry is checked against the lists running() held at 8a9c5e1 (frozen here) and
+    running() must read the registry's rules."""
     src = inspect.getsource(bs.running)
     m = re.search(r'name in \(([^)]*)\):\s*\n\s*start = last_record\(log, \("start",\), lambda r: r.get\("pid"\) == pid\)',
                   src)
-    assert m, "running() lost its pid start-record rule"
-    pid_bots = tuple(ast.literal_eval("(" + m.group(1) + ",)"))
+    legacy = m is not None
+    if legacy:
+        pid_bots = tuple(ast.literal_eval("(" + m.group(1) + ",)"))
+    else:
+        pid_bots = ("forecaster", "ladder", "weather", "fx", "jumpband")       # running() at 8a9c5e1
+        for needle in ("logs.start_rule", "records.halt_lifts_next_day", "records.halt_lifts", "HALT_KINDS[name]"):
+            assert needle in src, "running() reads neither the legacy rule nor the registry's %s" % needle
     eq(tuple(b.name for b in bots.all_bots() if b.logs.start_rule == "pid_then_live"), pid_bots, "pid start rule")
     eq(tuple(b.name for b in bots.all_bots() if b.logs.start_rule == "first_line"), ("pin",), "first-line start rule")
     eq(tuple(b.name for b in bots.all_bots() if b.logs.glob), ("pin",), "glob logs")
-    assert 'h and name == "jumpband" and h.get("kind") == "day_stop"' in src
+    if legacy:
+        assert 'h and name == "jumpband" and h.get("kind") == "day_stop"' in src
     eq({b.name: b.records.halt_lifts_next_day for b in bots.all_bots() if b.records.halt_lifts_next_day},
        {"jumpband": ("day_stop",)}, "halt lifts next day")
-    assert 'HALT_KINDS[name] + ("resume",)' in src
+    if legacy:
+        assert 'HALT_KINDS[name] + ("resume",)' in src
     eq(set(b.records.halt_lifts for b in bots.all_bots()), {("resume",)}, "halt lifts")
 
 
