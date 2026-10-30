@@ -20,6 +20,10 @@ self-tests and the golden harness turn it on only where they test it):
              its books do not have, the rest unexplained), and one when they agree again. A read taken within FLUX_S of
              the bot's own fill or settle is skipped (in flight). botstats' cache is refreshed through its own read at
              most every BAL_REFRESH_S (never on the first tick); a pot with no trading bot, or two, is not checked.
+  QUIET      quiet hours (phone/quiet.py, applied by alerts.sender): only urgent alerts overnight; the rest are held and
+             sent as one summary (held_summary) when they end.
+  ALIVE      the outside 'is it alive' ping (phone/alive.py): a GET of telegram.json's "alive_url" every 5 min while no
+             bot is DOWN, so an outside service notices when the server, the phone or a bot stops.
   REPORTS    the weekly report (Sunday 8 PM ET, this Mon..Sun week) and the monthly one (the 1st, 8 AM ET, the month just
              ended), next to the 8 AM daily: phone/reports.py, the same page as /week and /month last.
 
@@ -65,6 +69,7 @@ class MonitorState:
     monthly: str = None                             # the 'YYYY-MM' whose monthly report went (or was due at start)
     reports_learnt: bool = False
     held: list = field(default_factory=list)        # [(epoch, msg)] what quiet hours held (alerts.flush_held)
+    alive: object = None                            # phone/alive.py's AliveState (the outside 'is it alive' ping)
 
 
 def state_of(st):
@@ -405,7 +410,14 @@ def fmt(build, plain):
         return plain()
 
 
-CHECKS = (("down", check_down), ("stops", check_gauges), ("balance", check_balance), ("reports", check_reports))
+def check_alive(ctx, m, send, now):
+    """The outside 'is it alive' ping (phone/alive.py), after the DOWN check has had its say."""
+    from phone import alive as _alive
+    _alive.check(ctx, m, send, now)
+
+
+CHECKS = (("down", check_down), ("stops", check_gauges), ("balance", check_balance), ("reports", check_reports),
+          ("alive", check_alive))
 
 
 def tick(ctx, st, send, now=None):

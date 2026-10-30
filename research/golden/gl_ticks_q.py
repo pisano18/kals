@@ -13,7 +13,7 @@ import os
 import sys
 import time
 
-TICKS = ["alerts-down", "alerts-stops", "alerts-balance", "alerts-reports", "alerts-quiet"]
+TICKS = ["alerts-down", "alerts-stops", "alerts-balance", "alerts-reports", "alerts-quiet", "alerts-alive"]
 
 
 def _iso(t):
@@ -177,5 +177,37 @@ def run(rt, ph, which, tick):
             at(t - T0, label)
             m = getattr(ph, "monitor", None)
             ticks[-1]["held"] = None if m is None else len(m.held)
+        return {"ticks": ticks}
+    if which == "alerts-alive":
+        al = sys.modules.get("phone.alive") or __import__("phone.alive", fromlist=["x"])
+        asked = []
+
+        def fake_get(url, timeout=10):                # never a real URL: the GET is recorded and answered 200
+            asked.append(url)
+            return 200
+        saved = (al.GET, al.RUN_IN_THREAD)
+        al.GET, al.RUN_IN_THREAD = fake_get, False
+        ph.cfg["alive_url"] = "https://alive.example.invalid/ping/golden-0123456789"
+        rows0 = copy.deepcopy(rt.procs)
+        try:
+            for dt, label, step in ((0, "first: a ping", None), (60, "1 min: nothing (every 5 min)", None),
+                                    (300, "5 min: a ping", None), (330, "the ladder gone", "gone"),
+                                    (360, "check 2", None), (420, "check 3", None), (520, "DOWN alert", None),
+                                    (600, "10 min: NO ping while a bot is DOWN", None),
+                                    (630, "the ladder back: back up, and the ping that was due goes", "back"),
+                                    (660, "nothing (the next one 5 min after that)", None)):
+                if rows0 is not None and step == "gone":
+                    _set_procs(rt, ph, [r for r in rows0 if "ladder_live.py" not in str(r[2])])
+                elif rows0 is not None and step == "back":
+                    _set_procs(rt, ph, copy.deepcopy(rows0))
+                put(T0 + dt - 5)
+                n0 = len(asked)
+                at(dt, label)
+                a = getattr(getattr(ph, "monitor", None), "alive", None)
+                ticks[-1]["pinged"] = asked[n0:]
+                ticks[-1]["alive"] = None if a is None else {"ok": a.ok, "failed": a.failed,
+                                                             "skipped_why": a.skipped_why}
+        finally:
+            al.GET, al.RUN_IN_THREAD = saved
         return {"ticks": ticks}
     return {"skipped": "unknown script %s" % which}
