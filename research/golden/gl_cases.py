@@ -179,6 +179,14 @@ def apply_seams(rt):
     put(pp, "list_python_procs", lambda timeout=30: rt.pp_rows())
     put(bs, "_procs_native", lambda: rt.bs_native())
     put(bs, "read_procs", lambda timeout=40: rt.bs_native())
+    # botdata.procs (v-tg-rebuild step 4): the ONE process table. Every reader of every python.exe -> the recorded table
+    # ([pid, started, command line], None when unreadable), so procs.table() / cached() / refresh_once() and the
+    # refresher never read this machine's real processes. Only when the tree has the module (the B0 tree has not).
+    bp = sys.modules.get("botdata.procs")
+    if bp is not None:
+        for name, fn in (("native_rows", lambda: rt.bs_rows_all()), ("wmi_rows", lambda timeout=40: rt.bs_rows_all()),
+                         ("read_all", lambda timeout=40: rt.bs_rows_all())):
+            put(bp, name, fn)
     put(pp, "machine_read", lambda sample_s=0.5: copy.deepcopy(rt.env.get("machine")))
     put(pp, "kalshi_ping", lambda max_age_s=60: copy.deepcopy(rt.env.get("ping")))
     put(pp, "_aws_http", _refuse_aws)
@@ -305,6 +313,9 @@ def case_list(rt):
 
 
 # ======================================================================================================== runners
+EXTRA_RUNNERS = {}      # kind -> runner(rt, arg): shadow.py adds its 'shadow' kind; replay's case list never uses one
+
+
 def run_case(rt, case):
     cid, kind, arg = case
     restore_caches(rt)
@@ -317,8 +328,8 @@ def run_case(rt, case):
     T0 = rt.clock.T
     t0 = time.perf_counter()
     try:
-        res = {"cmd": run_cmd, "pair": run_pair, "auth": run_auth, "chart": run_chart, "tick": run_tick,
-               "data": run_data}[kind](rt, arg)
+        res = ({"cmd": run_cmd, "pair": run_pair, "auth": run_auth, "chart": run_chart, "tick": run_tick,
+                "data": run_data}.get(kind) or EXTRA_RUNNERS[kind])(rt, arg)
     except Exception as e:                                      # noqa: BLE001
         res = {"harness_error": _err(e), "trace": traceback.format_exc()[-1500:]}
     left = gl_fence.join_threads(rt.fence, 120)

@@ -11,6 +11,7 @@ import os
 import re
 import sys
 import time
+import types
 
 sys.dont_write_bytecode = True
 GOLDEN = os.path.dirname(os.path.abspath(__file__))
@@ -20,22 +21,16 @@ import gl_fence                # noqa: E402
 import gl_worlds               # noqa: E402
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--fixture", required=True)
-    ap.add_argument("--code", required=True)
-    ap.add_argument("--world", required=True)
-    ap.add_argument("--work", required=True)
-    ap.add_argument("--out", required=True)
-    ap.add_argument("--only", default=None, help="regex over case ids")
-    ap.add_argument("--repeat", type=int, default=1, help="run each case N times in this process (flakiness check)")
-    a = ap.parse_args()
+def open_world(fixture, code, world, work, out):
+    """Build one world in this process: the recorded machine, the fence (installed BEFORE --code is imported), the fake
+    kauth, the code under test, the seams, the cache snapshot and the shared Ledger. None when pinphone cannot be
+    imported (meta.json says why). shadow.py builds its worlds with this too."""
     t_start = time.perf_counter()
-    fx = os.path.abspath(a.fixture)
-    code = os.path.abspath(a.code)
+    fx = os.path.abspath(fixture)
+    code = os.path.abspath(code)
     repo = os.path.dirname(code)
-    work = os.path.abspath(a.work)
-    out = os.path.abspath(a.out)
+    work = os.path.abspath(work)
+    out = os.path.abspath(out)
     os.makedirs(os.path.join(out, "cases"), exist_ok=True)
 
     # ---- the recorded machine (read before the fence) ----
@@ -45,8 +40,8 @@ def main():
     kcalls_raw = C.load_json(os.path.join(fx, "kalshi.json"))
     kcalls = {k: (v["status"], v["body"]) for k, v in kcalls_raw.items()}
     env["_code"] = code
-    T = gl_worlds.world_T(a.world, env)
-    procs = gl_worlds.procs_for(a.world, procs, env)
+    T = gl_worlds.world_T(world, env)
+    procs = gl_worlds.procs_for(world, procs, env)
 
     # ---- the fence: every real data path -> this world's copy ----
     W_res = os.path.join(work, "repo", "results")
@@ -77,7 +72,7 @@ def main():
     gl_fence.install_clock(clock)
 
     import gl_cases                                             # noqa: E402
-    store = gl_cases.KalshiStore(kcalls, gl_worlds.kalshi_mode(a.world))
+    store = gl_cases.KalshiStore(kcalls, gl_worlds.kalshi_mode(world))
     sys.modules["kauth"] = gl_cases.fake_kauth(store)
 
     # ---- the code under test ----
@@ -91,9 +86,9 @@ def main():
             import traceback
             import_err[name] = traceback.format_exc()
     if "pinphone" not in mods:
-        C.dump_json(os.path.join(out, "meta.json"), {"world": a.world, "import_error": import_err}, codec=False)
+        C.dump_json(os.path.join(out, "meta.json"), {"world": world, "import_error": import_err}, codec=False)
         print(import_err)
-        return 3
+        return None
     norm = C.Normaliser([(code, "<CODE>"), (repo, "<REPO>"), (r"C:\kals-repo", "<REPO>"), (work, "<WORK>"),
                          (out, "<OUT>"), (fx, "<FIXTURE>")])
     rt = gl_cases.Runtime(fence, clock, env, health, procs, store, "replay", out, norm,
@@ -106,11 +101,31 @@ def main():
     led.refresh()
     rt.ledger = led
     led_s = time.perf_counter() - t_led                       # (the cache snapshot is from right after import)
-
-    if os.environ.get("GOLDEN_MPL_TRACE"):          # debugging a chart diff: every drawing call's data, to a file
-        _mpl_trace(os.path.join(out, "mpl_trace.txt"))
     fence.track_root = os.path.normcase(work)      # from here on, a case's writes in the scratch copy are undone after it
     fence.saved = {}
+    return types.SimpleNamespace(rt=rt, store=store, fence=fence, T=T, procs=procs, import_err=import_err, led_s=led_s,
+                                 t_start=t_start, out=out, W_res=W_res, norm=norm, fx=fx, code=code, mods=mods)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--fixture", required=True)
+    ap.add_argument("--code", required=True)
+    ap.add_argument("--world", required=True)
+    ap.add_argument("--work", required=True)
+    ap.add_argument("--out", required=True)
+    ap.add_argument("--only", default=None, help="regex over case ids")
+    ap.add_argument("--repeat", type=int, default=1, help="run each case N times in this process (flakiness check)")
+    a = ap.parse_args()
+    w = open_world(a.fixture, a.code, a.world, a.work, a.out)
+    if w is None:
+        return 3
+    rt, store, fence, T, procs, import_err, led_s, t_start = (w.rt, w.store, w.fence, w.T, w.procs, w.import_err,
+                                                               w.led_s, w.t_start)
+    out, W_res, norm, fx, code = w.out, w.W_res, w.norm, w.fx, w.code
+    import gl_cases                                             # noqa: E402  (imported by open_world, after the fence)
+    if os.environ.get("GOLDEN_MPL_TRACE"):          # debugging a chart diff: every drawing call's data, to a file
+        _mpl_trace(os.path.join(out, "mpl_trace.txt"))
     cases = gl_cases.case_list(rt)
     if a.only:
         rx = re.compile(a.only)

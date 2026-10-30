@@ -11,6 +11,7 @@ Nothing here is imported by production code. Design: DESIGN.md section 4, "Step 
 | `capture.py` | runs on the server: renders every case once against the real `results\` (read-only, fenced), learns which files they touch, copies those into a fixture folder outside the repo |
 | `replay.py` | renders every case of every world from a fixture with one code tree, one process per world |
 | `compare.py` | expected vs actual, case by case; `--accept CASE --why "..."` writes `CHANGES.md` |
+| `shadow.py` | step 9: the OLD Phone path vs a NEW `phone/commands` module, byte for byte, in every world (below) |
 | `gl_child.py` | one world of a replay (started by replay.py) |
 | `gl_cases.py` | the cases and their runners, the Kalshi store / recorder, the seams |
 | `gl_fence.py` | file-system virtualisation and write guard, network / process guards, frozen clock, thread registry |
@@ -122,7 +123,8 @@ process start (bars' watcher scripts) is listed in `fence` but is not a failure.
   is refused and fails the case. Writes go only to the scratch copy and the output folder.
 - Clock: `time.time`, `localtime()`, `gmtime()`, `strftime(fmt)`, `datetime.now/utcnow/today`, `date.today` read
   the world's frozen clock; `time.sleep` returns at once. `monotonic` / `perf_counter` stay real (deadlines only).
-- Seams: `pinphone.list_python_procs`, `botstats._procs_native / read_procs` (the recorded process table),
+- Seams: `pinphone.list_python_procs`, `botstats._procs_native / read_procs`, `botdata.procs.native_rows / wmi_rows /
+  read_all` (so `procs.table() / cached() / refresh_once()` too; when the tree has botdata) (the recorded process table),
   `pinphone.machine_read`, `pinphone.kalshi_ping`, `pinphone._aws_http` (refused: the not-connected path),
   `pindesk.health` (recorded), `shutil.disk_usage` (recorded), `pindesk.do_start/do_pause/do_stop` (stubs), the Phone
   attributes of the same names; `kauth` is a fake module serving `kalshi.json`. A seam the tree no longer has is
@@ -131,6 +133,31 @@ process start (bars' watcher scripts) is listed in `fence` but is not a failure.
   each case, so no case depends on the one before it. The Ledger is shared (built and refreshed once per world).
 - Strings are normalised: the code folder -> `<CODE>`, its repo and `C:\kals-repo` -> `<REPO>`, the scratch folder
   -> `<WORK>`, `0x...` addresses -> `0xADDR`.
+
+## Shadow: a new command module against the old Phone path (step 9)
+
+```powershell
+C:\Python314\python.exe research\golden\shadow.py --module phone.commands.hedges [--module ...] [--case "/server help=phone.commands.server"] [--only REGEX] [--world W] [--jobs 2] [--code <research dir>] [--fixture DIR] [--out DIR]
+```
+
+For every message text of each module (each name its Command(s) declare plus their `examples`; `--case` adds a text
+or a `cmd/...` case id with its module; no `--module`/`--case` = every module in `<code>\phone\commands`), in each world
+(default all 8), one world process builds the world exactly as a replay does (`replay.copy_fixture`,
+`gl_worlds.prepare`, `gl_child.open_world`: same fixture, frozen clock, fence, seams, guards) and runs, through
+`gl_cases.run_case` (caches, health, clock and scratch files put back before each side):
+
+- OLD: `Phone.handle(chat, text)` (the replay's cmd case);
+- NEW: the router's steps (split as handle does, `ledger.refresh()` when `needs_ledger`, the paused-bot check -> the
+  pair is `hidden`, not compared), then `Command.run(Ctx.from_phone(phone, text))`.
+
+Compared: reply text, type, `split_html`/`split_text` chunks, `say()` messages, mute state, exception, chart kind
+(`tgcharts.kind_of(cmd)` vs `Command.kind_of(cmd)`), Kalshi requests (set), fence events, case status. Output:
+`<out>\<world>\shadow.json`, `<out>\shadow.md` (unified diffs, new-path tracebacks); default `--out` is
+`C:\kals-golden\shadow\<stamp>-<pid>` (parallel agents never collide). The harness runs from its own folder and
+`--code` names the tree under test, so a lane in its own worktree runs `<worktree>\research\golden\shadow.py --code
+<worktree>\research`. Exit 0 only when every compared pair is identical in every world run (last line `shadow:
+IDENTICAL in all 8 world(s) ...`). `--only` filters pair ids (`hedges /hedges`). One world: ~7 s + the fixture copy.
+The authors' contract: `research\phone\commands\CONTRACT.md`.
 
 ## Known limits
 
