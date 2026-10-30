@@ -21,7 +21,19 @@
    "log": "fx_restart.out",
    "added_by": "Claude (assistant), for the operator",
    "date": "2026-10-30",
-   "sha256": "b02365ece371c08d6c427ccb6a7884b1e8be6fef5c2f8b2d3100d0ff81698f96"
+   "sha256": "b02365ece371c08d6c427ccb6a7884b1e8be6fef5c2f8b2d3100d0ff81698f96",
+   "superseded_by": "fxonepot"
+  },
+  {
+   "id": "fxonepot",
+   "title": "FX taker: one bank -- size every bet from both pots together",
+   "description": "Restarts the FX taker on the one-bank code (it also carries the 30-second window, so it replaces fx30). From then on its bet size comes from ALL of FX's money together -- the currency pot (subaccount 4) plus the commodity pot (subaccount 5) plus its open bets -- at $20 of that bank per contract: today's ~$207 is 10 contracts, exactly what it bets now, so nothing changes today. It re-works the size only when it holds no bets: up at most +20% a step, down at once (after two cash reads agree). Its money caps move with the size (at 10 contracts: $70 in play per pool, -$25 day stop, -$10 stop line). NO MONEY MOVE IS NEEDED -- just approve. Why there are still two pots: Kalshi keeps cash per pool, the currency markets are paid from pool 0 and the commodities from pool 2, and a Kalshi subaccount lives in one pool (10-25: funding subaccount 5 in pool 0 was refused), so the phone cannot put the currency money into subaccount 5 today (/move 72 main sub5pool0 answers 'Kalshi does not list subaccount 5, weather pool'). If a pool-0 subaccount 5 is made later, the order is: 1) /move <sub 4's cash> sub4 main, then /move yes <code>; 2) /move <same amount> main sub5pool0, then /move yes <code>; FX then trades both pools from subaccount 5 by itself at its next restart. The script refuses unless the server has pulled this code and its self-test passes, waits for minutes 1-11 of a quarter hour, writes FX's stop file so it stands down with nothing open, waits for it to exit, removes the stop file and runs the keep-alive (KalsBoot), which starts FX again within a minute; FX misses at most one 15-minute round.",
+   "stop_rule": "Back to the fixed 10 contracts (git revert of the one-bank commit, then a restart) if a resize ever lowers the size while the bank grew, or if FX loses more than $25 in a day at a size above 10 before 11-06.",
+   "script": "fx_onepot_restart.ps1",
+   "log": "fx_onepot_restart.out",
+   "added_by": "Claude (assistant), for the operator",
+   "date": "2026-10-30",
+   "sha256": "cff10f4d9145892c4a55e66235dff34acbab618650b8fce0cd5bb8919cdc0369"
   }
  ]
 }

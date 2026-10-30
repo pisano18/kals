@@ -23,9 +23,41 @@ WHY A SUBACCOUNT
   series are not its, but a subaccount keeps the pots separate for botstats and the money reads. exchange_index 2:
   these series are in pool 2 like the crypto 15M markets (GET /series/KXGOLD15M -> exchange_index 2).
 
+ONE POT, ONE BANK (v-fx-onepot, 2026-10-30; operator: "I still don't get why fx is split between two separate pots of
+different sizes in the same subaccount, just base each bot's bet off of the size of the full subaccount")
+  THE SIZE comes from the bot's WHOLE bank: every pool it trades (pool 0 + pool 2 cash) + its open bets at cost:
+      size = max(1, floor(bank / BANK_PER_CONTRACT)), at most SIZE_MAX; BANK_PER_CONTRACT $20 -> today's ~$207 = 10,
+      exactly the old fixed size. Re-derived only while FLAT (nothing held or in flight) on a cash read at least
+      RESIZE_QUIET_S after its last settle (a payout Kalshi has not credited yet must not read as a loss). A rise is
+      damped like the pin bot's step-up: at most max(size + 1, int(size x SIZE_STEP_UP 1.2)) per resize; a fall is taken
+      whole, once two cash reads in a row (a minute apart) both ask for less. --size N fixes the size (no bank sizing).
+  THE CAPS scale with the size, k = size / BASE_SIZE (10): MAX_HELD $70k per pool, DAY_STOP -$25k, STOP_LINE -$10k
+      -- exactly today's numbers at 10 contracts.
+  THE LAYOUT. Kalshi keeps cash per pool, and an order is paid from its market's pool: the 5 FX pairs (pool 0) need
+      pool-0 cash, the 8 commodities (pool 2) pool-2 cash. A Kalshi subaccount exists in the pool it was created in
+      (10-25: '--sub-fund --sub 5 --sub-pool 0' answered 404; '--sub-create --sub-pool 0' made pool-0 subaccount 4 while
+      pool 2 already had a 4 -- the numbers are per pool). So:
+        two-sub (today, boot_all's '--subaccount 5 --fx-subaccount 4'): pool 0 from subaccount 4, pool 2 from 5 -- ONE
+            bank all the same: the size is worked out from both pots' cash together;
+        one-sub: both pools from --subaccount (5). Chosen by --one-pot, by --fx-subaccount equal to (or missing beside)
+            --subaccount, or BY ITSELF at start when the --fx-subaccount pot holds under one 10-contract order ($9.90)
+            in pool 0 and --subaccount holds at least that in pool 0 -- so boot_all needs no edit. The start record
+            says which and why (layout, layout_why).
+  A POOL SHORT OF CASH. Before each order its market's pool must hold size x CAP. If it does not, the market is refused
+      'unfunded_pool' as before -- NOTHING is moved between pools automatically -- and the refusal names the other
+      pool's cash and spare (beyond a full quarter-hour of its own orders) so the phone / a read can say a move would
+      have funded it. AUTO-REBALANCE (not built) would need: (1) the cross-pool move itself -- pool cash only crosses
+      in the MAIN account (POST /portfolio/intra_exchange_instance_transfer, "up to three non-atomic phases", total
+      re-read after; ordercli.check_transfer and phone/actions/money.post allow subaccount 0 only), so a subaccount's
+      pool move is THREE transfers: sub -> main (pool A), main pool A -> pool B, main -> sub (pool B); (2) this bot
+      sending signed transfer POSTs -- a new class of write for it, with money.py's rails (amount <= spare, a daily
+      cap, idempotent client_transfer_id, read back both sides, never while an order is in flight); (3) a per-quarter
+      budget so it cannot churn. The phone counts such moves as money moved between FX's own pots (its sum unchanged).
+
 HARD RAILS (code, not flags unless said)
-  SIZE contracts per order (--size, default 10, max 50); ONE order per market; <= MAX_PER_CLOSE orders a quarter-hour;
-  held + in flight <= MAX_HELD dollars; stop for the ET day after DAY_STOP realized; limit price exactly CAP, inside
+  size contracts per order (bank-sized as above, or --size N; max SIZE_MAX 50); ONE order per market; <= MAX_PER_CLOSE
+  orders a quarter-hour per pool; held + in flight <= the scaled MAX_HELD per pool; stop for the ET day after the
+  scaled DAY_STOP realized; limit price exactly CAP, inside
   0.98..0.99; immediate_or_cancel, post_only False, self_trade_prevention taker_at_cross; subaccount >= 1 and
   exchange_index 2 on every body; no order inside LATE_S of the close; no order on a book without a snapshot or
   older than STALE_S since its last message when a trade printed; <= WRITES_PER_S order writes a second (the key is
@@ -35,6 +67,7 @@ HARD RAILS (code, not flags unless said)
     python research/cleanroom/fxtake_live.py --selftest
     python research/cleanroom/fxtake_live.py --subaccount N --dry-run --minutes 120
     python research/cleanroom/fxtake_live.py --subaccount N --live --minutes 10080
+    python research/cleanroom/fxtake_live.py --subaccount 5 --fx-subaccount 4 --live --minutes 10080   (boot_all)
 """
 import argparse
 import asyncio
@@ -107,6 +140,13 @@ STOP_LINE_SINCE = "2026-10-26T06:20:27Z"   # do whatever is best"): the bot's OW
                              # rate (1 in ~190) it expects ~+$4/day, but the record cannot yet tell that from breakeven
                              # (1 in 107); -$10 is ~2 losses' worth of slide from +$8.19 (197 markets, 1 lost, at 10-27
                              # 22:4x ET), and a bot that really earns +$4/day reaches it by bad luck ~7% of the time.
+# v-fx-onepot (2026-10-30): the size from the whole bank; MAX_HELD / DAY_STOP / STOP_LINE above are the values AT
+# BASE_SIZE and scale by size / BASE_SIZE (see ONE POT, ONE BANK in the docstring)
+BASE_SIZE = 10
+BANK_PER_CONTRACT = 20.0     # $ of bank per contract: ~$207 on 10-30 (sub 5 pool 2 $135.07 + sub 4 pool 0 $71.63) = 10
+SIZE_STEP_UP = 1.2           # a rise is at most max(size + 1, int(size x 1.2)) per resize (the pin bot's damped step-up)
+RESIZE_QUIET_S = 120.0       # a resize needs a cash read this long after the bot's last settle (payouts land late)
+ONE_SUB_MIN = BASE_SIZE * CAP  # the --fx-subaccount pot is 'empty' under one 10-contract order ($9.90) in pool 0
 
 
 def line_pnl_from_log(path, since=None):
@@ -126,6 +166,61 @@ def line_pnl_from_log(path, since=None):
     except FileNotFoundError:
         return 0.0
     return round(sum(last.values()), 4)
+
+
+# ---------------------------------------------------------------------------------------------------- size (v-fx-onepot)
+def bank_size(bank, cur=None):
+    """Contracts an order for a bank of `bank` dollars: max(1, floor(bank / BANK_PER_CONTRACT)), at most SIZE_MAX. From
+    a current size `cur`, a rise is damped to max(cur + 1, int(cur x SIZE_STEP_UP)); a fall is taken whole."""
+    want = max(1, min(SIZE_MAX, int(math.floor(float(bank) / BANK_PER_CONTRACT + 1e-9))))
+    if cur is not None and want > cur:
+        want = min(want, max(int(cur) + 1, int(cur * SIZE_STEP_UP)))
+    return want
+
+
+def scaled(size):
+    """The money caps at `size` contracts: today's (at BASE_SIZE) x size / BASE_SIZE."""
+    k = float(size) / BASE_SIZE
+    return {"max_held": round(MAX_HELD * k, 2), "day_stop": round(DAY_STOP * k, 2),
+            "stop_line": None if STOP_LINE is None else round(STOP_LINE * k, 2)}
+
+
+def last_size_from_log(path):
+    """The size the bot last ran at (its newest start or resize record), or None: a restart keeps the step-up damped."""
+    size = None
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                if '"start"' not in line and '"resize"' not in line:
+                    continue
+                try:
+                    r = json.loads(line)
+                    if r.get("kind") in ("start", "resize") and r.get("size") is not None:
+                        size = int(r["size"])
+                except Exception:
+                    continue
+    except FileNotFoundError:
+        return None
+    return size
+
+
+def choose_layout(sub, fx_sub, one_pot, read):
+    """({pool: subaccount}, 'one-sub' | 'two-sub', why). read(sub, pool) -> that pot's cash or None (unreadable).
+    One-sub when asked (--one-pot), when there is no separate FX pot, or when the FX pot is empty in pool 0 (under one
+    10-contract order) while --subaccount holds at least one order there; else the two pots as before."""
+    one = {0: int(sub), 2: int(sub)}
+    if one_pot:
+        return one, "one-sub", "--one-pot"
+    if fx_sub is None or int(fx_sub) == int(sub):
+        return one, "one-sub", "no separate --fx-subaccount"
+    fx0, main0 = read(int(fx_sub), 0), read(int(sub), 0)
+    if fx0 is not None and fx0 < ONE_SUB_MIN - 1e-9 and main0 is not None and main0 >= ONE_SUB_MIN - 1e-9:
+        return one, "one-sub", ("subaccount %d holds $%.2f in pool 0 (under one order, $%.2f) and subaccount %d $%.2f: "
+                                "both pools trade from subaccount %d" % (int(fx_sub), fx0, ONE_SUB_MIN, int(sub), main0, int(sub)))
+    return ({2: int(sub), 0: int(fx_sub)}, "two-sub",
+            "pool 0 from subaccount %d (%s there), pool 2 from subaccount %d (subaccount %d pool 0: %s)" % (
+                int(fx_sub), "unreadable" if fx0 is None else "$%.2f" % fx0, int(sub), int(sub),
+                "none" if main0 is None else "$%.2f" % main0))
 
 
 # ---------------------------------------------------------------------------------------------------- time
@@ -274,8 +369,10 @@ def order_body(ticker, side, px, n, sub, cid, pool=POOL):
             "post_only": False, "client_order_id": cid, "subaccount": int(sub), "exchange_index": int(pool)}
 
 
-def body_ok(b, sub, pool=POOL):
-    """Every order body must carry these, or it is not sent. The body's pool must be the MARKET's pool, one of POOLS."""
+def body_ok(b, sub, pool=POOL, size=None):
+    """Every order body must carry these, or it is not sent. The body's pool must be the MARKET's pool, one of POOLS;
+    its count at most `size` (the Trader's size now; default SIZE), never over SIZE_MAX."""
+    size = SIZE if size is None else size
     try:
         n = float(b["count"]); p = float(b["price"])
     except Exception:
@@ -286,7 +383,7 @@ def body_ok(b, sub, pool=POOL):
             and b.get("self_trade_prevention_type") == "taker_at_cross"
             and b.get("subaccount") == int(sub) and int(sub) >= 1
             and int(pool) in POOLS and b.get("exchange_index") == int(pool)
-            and 0 < n <= SIZE <= SIZE_MAX and abs(yes_px - CAP) < 1e-9 and 0.98 - 1e-9 <= yes_px <= 0.99 + 1e-9
+            and 0 < n <= size <= SIZE_MAX and abs(yes_px - CAP) < 1e-9 and 0.98 - 1e-9 <= yes_px <= 0.99 + 1e-9
             and str(b.get("client_order_id", "")).startswith(CID_PREFIX))
 
 
@@ -313,6 +410,46 @@ class Trader:
         self.stopped = False
         self.lock = threading.Lock()
         self._w = []
+        # v-fx-onepot: the size and the caps that scale with it (today's values at SIZE 10); bank_sizing is set by main()
+        self.size, self.max_held, self.day_stop, self.stop_line = SIZE, MAX_HELD, DAY_STOP, STOP_LINE
+        self.bank_sizing = False
+        self.last_settle_t = None  # when the bot last booked a settle (a resize waits RESIZE_QUIET_S after it)
+        self.down_ask = None       # a lower size the previous cash read asked for (a fall needs two reads in a row)
+        self.unfunded = 0          # markets refused 'unfunded_pool' this run (the health record says it)
+
+    # --- size (v-fx-onepot) ---
+    def set_size(self, n):
+        """The size and every cap that scales with it (scaled())."""
+        self.size = int(n)
+        c = scaled(self.size)
+        self.max_held, self.day_stop, self.stop_line = c["max_held"], c["day_stop"], c["stop_line"]
+
+    def bank(self, cash):
+        """The whole bank: cash in every pool it trades + its open bets at cost (held, unsettled, and in flight)."""
+        return round(sum(v for v in cash.values() if v is not None) + self.committed(), 4)
+
+    def maybe_resize(self, cash, now):
+        """On a cash read: re-derive the size from the bank, only while flat, RESIZE_QUIET_S after the last settle,
+        with every pool read. A rise is damped (bank_size); a fall is taken once two reads in a row ask for less."""
+        if not self.bank_sizing or not cash or any(v is None for v in cash.values()):
+            return None
+        with self.lock:
+            if not self.flat() or (self.last_settle_t is not None and now - self.last_settle_t < RESIZE_QUIET_S):
+                return None
+            total = self.bank(cash)
+            want = bank_size(total, self.size)
+            if want == self.size:
+                self.down_ask = None
+                return None
+            if want < self.size and self.down_ask is None:
+                self.down_ask = want                          # the next read must agree
+                return None
+            old = self.size
+            self.down_ask = None
+            self.set_size(want)
+        self.log.write("resize", size=self.size, was=old, bank=total, pool_cash=cash, bank_per_contract=BANK_PER_CONTRACT,
+                       max_held=self.max_held, day_stop=self.day_stop, stop_line=self.stop_line)
+        return self.size
 
     # --- state ---
     def pool_of(self, tk):
@@ -344,6 +481,15 @@ class Trader:
             return "day_stop"
         return None
 
+    def unfunded_note(self, pool):
+        """What the OTHER pool could have given (nothing is moved: auto-rebalance is not built): its cash, and its spare
+        beyond a full quarter-hour of its own orders."""
+        other = next((p for p in POOLS if p != int(pool)), None)
+        oc = (self.pool_cash or {}).get(other)
+        spare = None if oc is None else round(oc - MAX_PER_CLOSE * self.size * CAP, 2)
+        return {"other_pool": other, "other_cash": oc, "other_spare": spare,
+                "move_would_fund": spare is not None and spare >= self.size * CAP - 1e-9}
+
     # --- the rule ---
     def decide(self, now):
         """Orders to send now: [(ticker, side, n, pick)]. One per market; every cap applied here."""
@@ -368,22 +514,26 @@ class Trader:
                 if p is None:
                     continue
                 why = self.stop_reason(now)
+                n = self.size
+                extra = {}
                 if not why and self.pool_cash is not None:
                     cash = self.pool_cash.get(m.get("pool", POOL))
-                    if cash is None or cash < SIZE * CAP - 1e-9:
+                    if cash is None or cash < n * CAP - 1e-9:
                         why = "unfunded_pool"                         # no cash in this market's pool: an order would be refused
+                        extra = self.unfunded_note(m.get("pool", POOL))   # never moved automatically (v-fx-onepot)
+                        self.unfunded += 1
                 pk = (m["close_s"], int(m.get("pool", POOL)))
                 if not why and self.per_close.get(pk, 0) >= MAX_PER_CLOSE:
                     why = "per_close"
-                if not why and self.committed(pk[1]) + SIZE * CAP > MAX_HELD + 1e-9:
+                if not why and self.committed(pk[1]) + n * CAP > self.max_held + 1e-9:
                     why = "held"
                 self.ordered.add(tk)                                  # one decision per market, refused or not
                 if why:
-                    self.log.write("refused", ticker=tk, why=why, tau=round(tau, 2), pool=m.get("pool", POOL), **p)
+                    self.log.write("refused", ticker=tk, why=why, tau=round(tau, 2), pool=m.get("pool", POOL), **dict(p, **extra))
                     continue
                 self.per_close[pk] = self.per_close.get(pk, 0) + 1
-                self.inflight[tk] = SIZE * CAP
-                out.append((tk, p["side"], SIZE, dict(p, tau=round(tau, 2), pool=m.get("pool", POOL))))
+                self.inflight[tk] = n * CAP
+                out.append((tk, p["side"], n, dict(p, tau=round(tau, 2), pool=m.get("pool", POOL))))
         return out
 
     # --- sending ---
@@ -401,7 +551,7 @@ class Trader:
         sub = self.sub_for(pool)                                      # the pot that lives in this market's pool
         b = order_body(tk, side, CAP, n, sub, cid, pool)
         close_s = self.markets.get(tk, {}).get("close_s", 0)
-        if not body_ok(b, sub, pool):
+        if not body_ok(b, sub, pool, size=self.size):
             with self.lock:
                 self.inflight.pop(tk, None)
             self.log.write("body_refused", body=b)
@@ -436,7 +586,7 @@ class Trader:
                 self.halted = "unknown answer for %s (status %s)" % (cid, st)
                 self.log.write("halt", why=self.halted)
                 self.held[tk] = {"side": side, "n": 0.0, "cost": 0.0, "fee": 0.0, "close_s": close_s, "settled": False,
-                                 "cid": cid, "unknown": True, "sub": sub}
+                                 "cid": cid, "unknown": True, "sub": sub, "n_sent": n}
                 return
             if pintake._is_live(out) and out.get("order_id"):
                 self.halted = "IOC came back resting: %s" % out["order_id"]
@@ -468,7 +618,8 @@ class Trader:
             x = rows.get(v["cid"])
             if x is None:
                 continue
-            out = pintake.normalise(200, x, order_body(tk, v["side"], CAP, SIZE, v.get("sub", self.sub), v["cid"], self.pool_of(tk)))
+            out = pintake.normalise(200, x, order_body(tk, v["side"], CAP, v.get("n_sent", self.size), v.get("sub", self.sub),
+                                                       v["cid"], self.pool_of(tk)))
             if out["status"] == "resting":
                 continue
             with self.lock:
@@ -487,6 +638,7 @@ class Trader:
             v["settled"] = True
             if v["n"] <= 0:
                 return
+            self.last_settle_t = self.now()
             pnl = (v["n"] - v["cost"] if v["side"] == result else -v["cost"]) - v["fee"]
             d = et_day(self.now())
             if d != self.day:
@@ -495,21 +647,21 @@ class Trader:
             self.run_pnl += pnl
             self.log.write("settle", ticker=tk, result=result, side=v["side"], n=v["n"], cost=round(v["cost"], 4),
                            fee=round(v["fee"], 4), pnl=round(pnl, 4), day_pnl=round(self.day_pnl, 4), run_pnl=round(self.run_pnl, 4))
-            if self.day_pnl <= DAY_STOP + 1e-9 and self.halt_day != d:
+            if self.day_pnl <= self.day_stop + 1e-9 and self.halt_day != d:
                 self.halt_day = d
-                self.log.write("day_stop", day=d, day_pnl=round(self.day_pnl, 4))
+                self.log.write("day_stop", day=d, day_pnl=round(self.day_pnl, 4), day_stop=self.day_stop)
             if self.line_pnl is None:
                 return
             self.line_pnl += pnl
-            if STOP_LINE is not None and self.line_pnl <= STOP_LINE + 1e-9 and not self.stopped:
+            if self.stop_line is not None and self.line_pnl <= self.stop_line + 1e-9 and not self.stopped:
                 self.stand_down("stop line: $%.2f settled since %s is at or under $%.2f"
-                                % (self.line_pnl, STOP_LINE_SINCE, STOP_LINE))
+                                % (self.line_pnl, STOP_LINE_SINCE, self.stop_line))
 
     def stand_down(self, why):
         """v-fx-stopline: refuse every new order from now (the run exits once flat) and write the stop file, so neither
         boot_all nor a restart brings the bot back until a person deletes it."""
         self.stopped = True
-        self.log.write("stop_line", line_pnl=round(self.line_pnl, 4), stop_line=STOP_LINE, since=STOP_LINE_SINCE)
+        self.log.write("stop_line", line_pnl=round(self.line_pnl, 4), stop_line=self.stop_line, since=STOP_LINE_SINCE)
         try:
             with open(STOP_FILE, "w", encoding="utf-8") as f:
                 f.write("%s -- written by fxtake_live %s. Delete this file to resume.\n"
@@ -534,23 +686,26 @@ def read_pool_cash(sender, subs):
     unreadable pool is None (its markets are then refused as unfunded_pool, never guessed). None only when EVERY pool is."""
     if not isinstance(subs, dict):
         subs = {p: subs for p in POOLS}
-    out = {}
-    for pool in POOLS:
-        out[pool] = None
-        for _try in range(4):                       # the key is shared with the live bots: a 429 is retried, never read as $0
-            try:
-                st, bal = sender("GET", "/portfolio/balance", None, {"subaccount": int(subs.get(pool)), "exchange_index": pool})
-            except Exception:
-                st, bal = -1, None
-            if st == 429:
-                time.sleep(1.5)
-                continue
-            try:
-                out[pool] = float(bal["balance_dollars"]) if st == 200 else None
-            except Exception:
-                out[pool] = None
-            break
+    out = {pool: read_balance(sender, subs.get(pool), pool) for pool in POOLS}
     return out if any(v is not None for v in out.values()) else None
+
+
+def read_balance(sender, sub, pool):
+    """One pot's cash: GET /portfolio/balance {subaccount, exchange_index} -> balance_dollars, or None (unreadable, or
+    no such subaccount in that pool: Kalshi answers 404)."""
+    for _try in range(4):                           # the key is shared with the live bots: a 429 is retried, never read as $0
+        try:
+            st, bal = sender("GET", "/portfolio/balance", None, {"subaccount": int(sub), "exchange_index": int(pool)})
+        except Exception:
+            st, bal = -1, None
+        if st == 429:
+            time.sleep(1.5)
+            continue
+        try:
+            return float(bal["balance_dollars"]) if st == 200 else None
+        except Exception:
+            return None
+    return None
 
 
 def rest_get(path, params=None):
@@ -674,6 +829,7 @@ async def run_live(tr, minutes, log):
                 cash = await loop.run_in_executor(None, read_pool_cash, tr.send, tr.subs)
                 if cash is not None:
                     tr.pool_cash = cash
+                    tr.maybe_resize(cash, time.time())        # v-fx-onepot: only while flat, quiet, every pool read
             for tk, v in list(tr.held.items()):
                 if v["settled"] or v.get("unknown") or now < v["close_s"] + 45:
                     continue
@@ -697,7 +853,7 @@ async def run_live(tr, minutes, log):
             n_books = sum(1 for b in tr.books.values() if b.synced)
             log.write("health", markets=len(tr.markets), books_synced=n_books, held=len([v for v in tr.held.values() if not v["settled"]]),
                       day_pnl=round(tr.day_pnl, 4), run_pnl=round(tr.run_pnl, 4), halted=tr.halted, stopped=tr.stopped,
-                      ws_up=ws_state["ws"] is not None)
+                      ws_up=ws_state["ws"] is not None, size=tr.size, pool_cash=tr.pool_cash, unfunded=tr.unfunded)
 
     tasks = [asyncio.create_task(c()) for c in (discover, feed, decide, settle, health)]
     done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
@@ -797,6 +953,109 @@ def selftest():
     ck(subs_sent == {("C", 5, 2), ("F", 4, 0)} and all(v.get("sub") == (4 if tk.startswith("F") else 5) for tk, v in trs.held.items()),
        "commodity orders carry subaccount 5 / pool 2, FX orders subaccount 4 / pool 0: %s" % sorted(subs_sent))
     ck(not body_ok(order_body("F0-1", "yes", 0.99, 10, 0, "fxt-9-f", pool=0), 0, 0), "an FX order for the primary account is refused")
+    # ---- v-fx-onepot: one bank, one size; the one-sub layout; the unfunded pool is refused, never moved
+    ck(BANK_PER_CONTRACT == 20.0 and bank_size(207.0) == 10 and bank_size(206.70) == 10 and bank_size(200.0) == 10
+       and bank_size(199.99) == 9, "one bank: $207 (and 10-30's $206.70 = $135.07 + $71.63) -> 10 contracts, exactly "
+       "today's size; $200 is 10, $199.99 is 9")
+    ck(bank_size(5.0) == 1 and bank_size(100000.0) == SIZE_MAX == 50 and bank_size(0.0) == 1,
+       "a tiny bank still bets 1; a huge one stops at SIZE_MAX 50")
+    ck(bank_size(400.0, 10) == 12 and bank_size(400.0, 12) == 14 and bank_size(400.0, 18) == 20 and bank_size(60.0, 1) == 2
+       and bank_size(500.0, 3) == 4, "damped up: 10 -> 12 -> 14 (at most +20%% a resize, at least +1), 18 -> 20 (= the "
+       "bank's 20), 1 -> 2, 3 -> 4")
+    ck(bank_size(150.0, 10) == 7 and bank_size(150.0, 30) == 7, "down is taken whole: $150 -> 7 from 10 or from 30")
+    ck(scaled(10) == {"max_held": 70.0, "day_stop": -25.0, "stop_line": -10.0}
+       and scaled(20) == {"max_held": 140.0, "day_stop": -50.0, "stop_line": -20.0} and scaled(7)["max_held"] == 49.0,
+       "the caps scale with the size: today's $70 / -$25 / -$10 at 10 contracts, doubled at 20, $49 held at 7")
+    got1 = []
+
+    def one_rec(m, p, b, q):
+        got1.append((m, p, b, q))
+        if m == "GET":
+            return 200, {"balance_dollars": "71.63" if q["exchange_index"] == 0 else "135.07"}
+        return 201, {"order": {"order_id": "k3", "status": "executed", "fill_count": "%.2f" % float(b["count"]),
+                               "remaining_count": "0.00", "average_fill_price": "0.9900" if b["side"] == "bid" else "0.0100"}}
+    sub1, lay1, why1 = choose_layout(5, 5, False, lambda s, p: None)
+    tro = Trader(log, 5, False, one_rec, now=lambda: T[0], subs=sub1)
+    tro.bank_sizing = True
+    cash1 = read_pool_cash(one_rec, tro.subs)
+    ck(lay1 == "one-sub" and sub1 == {0: 5, 2: 5} and cash1 == {0: 71.63, 2: 135.07}
+       and [(q["subaccount"], q["exchange_index"]) for _, _, _, q in got1] == [(5, 0), (5, 2)],
+       "one-sub: both pools' cash is read from subaccount 5 (pool 0 $71.63 + pool 2 $135.07): %s" % cash1)
+    tro.pool_cash = cash1; got1.clear()
+    ck(tro.maybe_resize(cash1, now) is None and tro.size == 10 and tro.max_held == 70.0 and tro.day_stop == -25.0,
+       "one-sub at a $206.70 bank stays at 10 contracts with today's caps (nothing changes today)")
+    for tk, pool in (("KXEURUSD15M-1", 0), ("KXGOLD15M-1", 2)):
+        tro.markets[tk] = {"close_s": close, "series": tk.split("-")[0], "pool": pool}
+        tro.books[tk] = tr.books["KXS015M-26OCT261015-15"]
+    do = tro.decide(now)
+    for tk, side, n, p in do:
+        tro.place(tk, side, n, p)
+    posted = sorted((b["ticker"], b["subaccount"], b["exchange_index"], b["count"]) for m, _, b, _ in got1 if m == "POST")
+    ck(posted == [("KXEURUSD15M-1", 5, 0, "10.00"), ("KXGOLD15M-1", 5, 2, "10.00")],
+       "one-sub: an FX pair and a commodity are both bought from subaccount 5, each in its own pool, 10 contracts: %s" % posted)
+    ck(tro.maybe_resize({0: 300.0, 2: 300.0}, now) is None and tro.size == 10,
+       "no resize while bets are open (not flat), however big the bank")
+    for tk in ("KXEURUSD15M-1", "KXGOLD15M-1"):
+        tro.settle(tk, "yes")
+    ck(tro.flat() and tro.maybe_resize({0: 300.0, 2: 300.0}, T[0] + 30) is None and tro.size == 10,
+       "flat, but 30 s after a settle: no resize yet (a payout may not be credited)")
+    ck(tro.maybe_resize({0: 100.0, 2: 300.0}, T[0] + RESIZE_QUIET_S + 1) == 12 and tro.size == 12
+       and (tro.max_held, tro.day_stop, tro.stop_line) == (84.0, -30.0, -12.0)
+       and any(r["kind"] == "resize" and r["size"] == 12 and r["was"] == 10 and r["bank"] == 400.0 for r in sent),
+       "flat and quiet, a $400 bank: 10 -> 12 (damped, not 20), caps $84 / -$30 / -$12, a resize record")
+    ck(tro.maybe_resize({0: 50.0, 2: 100.0}, T[0] + 200) is None and tro.size == 12
+       and tro.maybe_resize({0: 50.0, 2: 100.0}, T[0] + 260) == 7 and tro.size == 7 and tro.max_held == 49.0,
+       "a $150 bank: the first read only marks it, the second read in a row drops 12 -> 7 whole (caps $49 held)")
+    ck(tro.maybe_resize({0: None, 2: 900.0}, T[0] + 400) is None and tro.size == 7,
+       "a cash read missing a pool never resizes")
+    trf = Trader(log, 5, False, one_rec, now=lambda: T[0], subs=sub1)
+    trf.markets["KXUSDJPY15M-1"] = {"close_s": close, "series": "KXUSDJPY15M", "pool": 0}
+    trf.books["KXUSDJPY15M-1"] = tr.books["KXS015M-26OCT261015-15"]
+    trf.pool_cash = {0: 3.0, 2: 200.0}
+    n_calls = len(got1)
+    ref = [r for r in sent if r["kind"] == "refused" and r["ticker"] == "KXUSDJPY15M-1"]
+    df = trf.decide(now)
+    ref = [r for r in sent if r["kind"] == "refused" and r["ticker"] == "KXUSDJPY15M-1"][len(ref):]
+    ck(df == [] and len(got1) == n_calls and ref and ref[0]["why"] == "unfunded_pool" and ref[0]["other_pool"] == 2
+       and ref[0]["other_cash"] == 200.0 and ref[0]["other_spare"] == round(200.0 - 6 * 9.9, 2)
+       and ref[0]["move_would_fund"] is True and trf.unfunded == 1,
+       "pool 0 holds $3 (under one order) while pool 2 has $140.60 spare: refused 'unfunded_pool', the spare is named, "
+       "and NOTHING is sent or moved: %s" % (ref[:1],))
+    # the layout: boot_all's flags keep the two pots until subaccount 4 is empty in pool 0 and 5 holds pool-0 cash
+    def rd(table):
+        return lambda s, p: table.get((s, p))
+    s2, l2, _ = choose_layout(5, 4, False, rd({(4, 0): 71.63, (5, 0): None}))
+    ck(l2 == "two-sub" and s2 == {0: 4, 2: 5}, "boot_all's --subaccount 5 --fx-subaccount 4 today: two-sub, pool 0 = 4, pool 2 = 5")
+    s3, l3, w3 = choose_layout(5, 4, False, rd({(4, 0): 0.0, (5, 0): 71.63}))
+    ck(l3 == "one-sub" and s3 == {0: 5, 2: 5} and "subaccount 4 holds $0.00" in w3,
+       "subaccount 4 empty in pool 0 and 5 holding $71.63 there: one-sub, both pools from 5, and says why: %s" % w3)
+    ck(choose_layout(5, 4, False, rd({(4, 0): 0.0, (5, 0): None}))[1] == "two-sub"
+       and choose_layout(5, 4, False, rd({(4, 0): None, (5, 0): 80.0}))[1] == "two-sub"
+       and choose_layout(5, 4, False, rd({(4, 0): 20.0, (5, 0): 80.0}))[1] == "two-sub",
+       "two-sub stays when 5 has no pool-0 cash, when 4 cannot be read, or when 4 can still fund an order")
+    ck(choose_layout(5, 4, True, rd({}))[0] == {0: 5, 2: 5} and choose_layout(5, None, False, rd({}))[1] == "one-sub",
+       "--one-pot, or no --fx-subaccount: one-sub")
+    # two-sub is unchanged: pool 0 from 4, pool 2 from 5, the same caps -- and the size from both pots together
+    trt = Trader(log, 5, False, rec, now=lambda: T[0], subs=s2)
+    trt.bank_sizing = True
+    ck(trt.maybe_resize({0: 71.63, 2: 135.07}, now) is None and trt.size == 10 and trt.sub_for(0) == 4 and trt.sub_for(2) == 5
+       and trt.max_held == MAX_HELD and trt.day_stop == DAY_STOP,
+       "two-sub: one bank of both pots ($206.70) -> still 10 contracts; routing (pool 0 -> 4, pool 2 -> 5) and caps unchanged")
+    ck(not body_ok(dict(order_body("X-1", "yes", 0.99, 12, 5, "fxt-1-x"), count="12.00"), 5, 2, size=10)
+       and body_ok(order_body("X-1", "yes", 0.99, 12, 5, "fxt-1-x"), 5, 2, size=12),
+       "a body over the Trader's size is refused; at the size it passes")
+    tmps = os.path.join(tempfile.gettempdir(), "fxtake-live-selftest-size-%d.jsonl" % os.getpid())
+    with open(tmps, "w", encoding="utf-8") as f:
+        for r_ in ({"kind": "start", "size": 10}, {"kind": "resize", "size": 12}, {"kind": "settle", "size": 99},
+                   {"kind": "fill", "n": 12}):
+            f.write(json.dumps(r_) + "\n")
+        f.write("not json \"resize\"\n")
+    try:
+        ck(last_size_from_log(tmps) == 12 and last_size_from_log(tmps + ".missing") is None
+           and bank_size(1000.0, last_size_from_log(tmps)) == 14,
+           "a restart starts from the last size it ran (12, from its resize record), so the step-up stays damped (-> 14)")
+    finally:
+        os.remove(tmps)
     # the entry window's far edge, written against ENTRY_FROM so --from keeps the suite true (v-fx-from45: 45 s default,
     # so 55 and 50 s are outside, 40 s is inside, and 20 s was inside under every window)
     tr2 = Trader(log, 4, False, lambda *a: (201, {}), now=lambda: T[0])
@@ -949,27 +1208,29 @@ def main():
     global SIZE, ENTRY_FROM, ENTRY_TO
     ap = argparse.ArgumentParser()
     ap.add_argument("--selftest", action="store_true")
-    ap.add_argument("--subaccount", type=int, help="the pot for the commodity markets (pool 2)")
-    ap.add_argument("--fx-subaccount", type=int, help="the pot for the FX pairs (pool 0); default: --subaccount (10-25: 4)")
+    ap.add_argument("--subaccount", type=int, help="the pot for the commodity markets (pool 2); in one-sub mode for both pools")
+    ap.add_argument("--fx-subaccount", type=int, help="the pot for the FX pairs (pool 0); default: --subaccount (10-25: 4). "
+                    "Not used when it is empty in pool 0 and --subaccount holds pool-0 cash (v-fx-onepot)")
+    ap.add_argument("--one-pot", action="store_true", help="trade both pools from --subaccount (v-fx-onepot)")
     ap.add_argument("--live", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--minutes", type=float, default=10080)
-    ap.add_argument("--size", type=int, default=SIZE, help="contracts per order (default %d, max %d)" % (SIZE, SIZE_MAX))
+    ap.add_argument("--size", type=int, default=None, help="a FIXED number of contracts per order (1..%d); default: sized "
+                    "from the whole bank, $%g a contract (v-fx-onepot)" % (SIZE_MAX, BANK_PER_CONTRACT))
     ap.add_argument("--from", dest="entry_from", type=float, default=ENTRY_FROM, help="earliest entry, seconds before the close (5..60)")
     ap.add_argument("--to", dest="entry_to", type=float, default=ENTRY_TO, help="latest entry, seconds before the close (5..60)")
     a = ap.parse_args()
     if a.selftest:
         raise SystemExit(0 if selftest() else 1)
-    if not (1 <= a.size <= SIZE_MAX) or not (5 <= a.entry_to < a.entry_from <= 60):
+    if (a.size is not None and not (1 <= a.size <= SIZE_MAX)) or not (5 <= a.entry_to < a.entry_from <= 60):
         raise SystemExit("--size 1..%d and 5 <= --to < --from <= 60" % SIZE_MAX)
-    SIZE, ENTRY_FROM, ENTRY_TO = a.size, a.entry_from, a.entry_to
+    ENTRY_FROM, ENTRY_TO = a.entry_from, a.entry_to
     if not selftest():
         raise SystemExit("selftest failed; refusing to run")
     if not a.subaccount or a.subaccount < 1:
         raise SystemExit("--subaccount N (1..63) is required; the primary account is refused")
     if a.fx_subaccount is not None and not (1 <= a.fx_subaccount <= 63):
         raise SystemExit("--fx-subaccount N must be 1..63; the primary account is refused")
-    subs = {2: a.subaccount, 0: a.fx_subaccount if a.fx_subaccount is not None else a.subaccount}
     if a.live == a.dry_run:
         raise SystemExit("choose exactly one of --live / --dry-run")
     if os.path.exists(STOP_FILE):
@@ -979,32 +1240,50 @@ def main():
 
     def sender(method, path, body, query):
         return ordercli.send(ordercli.PROD, pk, KEY_ID, method, path, body=body, query=query)
+    subs, layout, layout_why = choose_layout(a.subaccount, a.fx_subaccount, a.one_pot,
+                                             lambda s, p: read_balance(sender, s, p))
     cash = read_pool_cash(sender, subs)
     if cash is None:
         raise SystemExit("subaccount balance unreadable in every pool; refusing")
     sub_bal = sum(v for v in cash.values() if v is not None)
+    # v-fx-onepot: the size from the whole bank (both pools; flat at start, so cash only), damped from the last size run
+    prev = last_size_from_log(LOG)
+    if a.size is not None:
+        SIZE = a.size
+    elif any(v is None for v in cash.values()):                    # half a bank is no bank: keep the last size until
+        SIZE = min(SIZE_MAX, prev if prev is not None else BASE_SIZE)   # a full read (maybe_resize) works it out
+    else:
+        SIZE = bank_size(sub_bal, prev if prev is not None else BASE_SIZE)
+    caps = scaled(SIZE)
     if a.live and max(v for v in cash.values() if v is not None) < SIZE * CAP:
         raise SystemExit("subaccount holds %s, under one order ($%.2f) in every pool; fund it first (ordercli --sub-fund [--sub-pool 0])" % (cash, SIZE * CAP))
     line = line_pnl_from_log(LOG)
-    if a.live and STOP_LINE is not None and line <= STOP_LINE + 1e-9:
+    if a.live and caps["stop_line"] is not None and line <= caps["stop_line"] + 1e-9:
         with open(STOP_FILE, "w", encoding="utf-8") as f:
             f.write("stop line: $%.2f settled since %s is at or under $%.2f -- written at start. Delete to resume.\n"
-                    % (line, STOP_LINE_SINCE, STOP_LINE))
+                    % (line, STOP_LINE_SINCE, caps["stop_line"]))
         raise SystemExit("stop line: $%.2f settled since %s; stop file written" % (line, STOP_LINE_SINCE))
     log = Logger(LOG)
     tr = Trader(log, a.subaccount, a.dry_run, sender, subs=subs)
+    tr.set_size(SIZE)
+    tr.bank_sizing = a.size is None
     tr.line_pnl = line
     if a.live:
         tr.pool_cash = cash
     log.write("start", pid=os.getpid(), subaccount=a.subaccount, subs={str(p): s for p, s in sorted(subs.items())}, live=a.live, dry=a.dry_run,
               sub_balance=sub_bal, pool_cash=cash, size=SIZE, fav=FAV, cap=CAP, hold_s=HOLD_S, fast_s95=FAST_S95,
-              entry_from=ENTRY_FROM, entry_to=ENTRY_TO, max_per_close=MAX_PER_CLOSE, max_held=MAX_HELD, day_stop=DAY_STOP,
-              stop_line=STOP_LINE, stop_line_since=STOP_LINE_SINCE, line_pnl=line,
+              entry_from=ENTRY_FROM, entry_to=ENTRY_TO, max_per_close=MAX_PER_CLOSE, max_held=tr.max_held, day_stop=tr.day_stop,
+              stop_line=tr.stop_line, stop_line_since=STOP_LINE_SINCE, line_pnl=line,
+              layout=layout, layout_why=layout_why, one_pot=layout == "one-sub",
+              bank_sizing=tr.bank_sizing, bank=round(sub_bal, 4), bank_per_contract=BANK_PER_CONTRACT, base_size=BASE_SIZE,
+              size_step_up=SIZE_STEP_UP, size_max=SIZE_MAX, prev_size=prev,
               minutes=a.minutes, series=list(SERIES), argv=sys.argv)
-    print("fxtake %s: subaccount %d (%s), size %d, window T-%g..T-%g s, %g minutes; log %s" % (
-        "LIVE" if a.live else "dry run", a.subaccount,
+    print("fxtake %s: %s (%s), size %d%s, window T-%g..T-%g s, %g minutes; log %s" % (
+        "LIVE" if a.live else "dry run", layout,
         ", ".join("pool %d = subaccount %d %s" % (k, subs[k], "unreadable" if v is None else "$%.2f" % v) for k, v in sorted(cash.items())),
-        SIZE, ENTRY_FROM, ENTRY_TO, a.minutes, LOG), flush=True)
+        SIZE, (" (fixed)" if not tr.bank_sizing else " (the last size: a pool is unreadable)"
+               if any(v is None for v in cash.values()) else " from a $%.2f bank" % sub_bal),
+        ENTRY_FROM, ENTRY_TO, a.minutes, LOG), flush=True)
     try:
         asyncio.run(run_live(tr, a.minutes, log))
     finally:

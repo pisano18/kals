@@ -10,6 +10,7 @@ added_by, date, sha256}, ...]}
   script    a .ps1 file named relative to results\\ (launch.resolve_script: inside the results folder, no '..', exists)
   log       the file it writes, relative to results\\ (its new lines are read back when it ends)
   sha256    of the script's text (CRLF -> LF, BOM dropped): a script edited after it was listed is NOT run
+  superseded_by   (optional) the id of a later item that does this change too: this one is listed apart and never runs
 Nothing typed in the chat reaches the command line: the script runs with NO arguments, exactly as listed.
 
 THE STATE (results\\approvals\\state.json, not in git): {id: {status, t, ...}}. Each item runs ONCE: 'running' is written
@@ -78,6 +79,8 @@ def load():
             it["bad"] = "its id is not a short lower-case name"
         elif it["id"] in seen:
             it["bad"] = "its id is listed twice"
+        elif it.get("superseded_by"):                            # v-fx-onepot: a later item carries this change too
+            it["bad"] = "superseded by %s: run that one instead" % it["superseded_by"]
         seen.add(it.get("id"))
         out.append(it)
     return out, None

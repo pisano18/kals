@@ -196,6 +196,53 @@ def test_paused_bots_and_broken_hooks():
     assert len(got) == 1 and got[0][0].startswith("⚠️ <b>Pin bot"), got
 
 
+def test_fx_onepot_resize_books_and_size():
+    """v-fx-onepot: a resize carries the scaled stop line and day stop; a one-sub start is ONE book (subaccount 5, every
+    pool); /funds says one size from the whole bank and nothing under subaccount 4; a two-sub start keeps two books."""
+    from bots import fx as FX
+    from bots.spec import SizeIn
+    from botdata import clock, logs
+    fresh_logs()
+    start = {"t": iso(T0 - 3600), "kind": "start", "subaccount": 5, "subs": {"0": 5, "2": 5}, "layout": "one-sub",
+             "pool_cash": {"0": 71.63, "2": 135.07}, "bank": 206.7, "bank_sizing": True, "bank_per_contract": 20.0,
+             "size": 10, "stop_line": -10.0, "stop_line_since": "2026-10-26T06:20:27Z", "line_pnl": 4.0, "day_stop": -25.0}
+    recs = [start,
+            {"t": iso(T0 - 3000), "kind": "fill", "ticker": "KXEURUSD15M-26OCT301000-00", "n": 10},
+            {"t": iso(T0 - 2900), "kind": "settle", "ticker": "KXEURUSD15M-26OCT301000-00", "pnl": 0.09, "run_pnl": 0.09,
+             "day_pnl": 0.09},
+            {"t": iso(T0 - 2000), "kind": "fill", "ticker": "KXGOLD15M-26OCT301015-15", "n": 10},
+            {"t": iso(T0 - 1900), "kind": "settle", "ticker": "KXGOLD15M-26OCT301015-15", "pnl": -9.91, "run_pnl": -9.82,
+             "day_pnl": -9.82},
+            {"t": iso(T0 - 1200), "kind": "resize", "size": 12, "was": 10, "bank": 400.0, "pool_cash": {"0": 150.0, "2": 250.0},
+             "max_held": 84.0, "day_stop": -30.0, "stop_line": -12.0}]
+    write("fxtake-live-orders.jsonl", recs)
+    g = {x.key: x for x in watch.gauges("fx", T0)}
+    assert (g["line"].line, g["day"].line) == (-12.0, -30.0), g
+    assert g["line"].money == round(4.0 - 9.82, 2) and g["day"].money == -9.82, g
+    bk = watch.books("fx", T0)
+    assert len(bk) == 1 and bk[0].sub == "5" and bk[0].value0 == 206.7 and bk[0].markets == 2 and bk[0].part == "", bk
+    assert abs(bk[0].settled - (0.09 - 9.91)) < 1e-9 and bk[0].tickers == frozenset(
+        ["KXEURUSD15M-26OCT301000-00", "KXGOLD15M-26OCT301015-15"]), bk
+    assert M.pot_words("fx", bk[0]) == "FX taker's pot (subaccount 5)"
+
+    def si(n):
+        return SizeIn(TMP, n, lambda r: "10:00 AM", logs.last_record, clock.utc_epoch, lambda x: None if x is None else float(x),
+                      lambda x: "$%.2f" % x, lambda p: None)
+    w5 = FX.size_words(si(5))
+    assert w5 == ("FX taker 12 contracts a market (set at its last resize 10:00 AM from its whole $400.00 bank: "
+                  "currencies $150.00 + commodities $250.00, both in subaccount 5)"), w5
+    assert FX.size_words(si(4)) is None, "subaccount 4 is no longer one of its pots"
+    _s, words = FX.settings_fx(start)
+    assert "sized from its whole bank (both pools), $20.00 a contract" in words and "both pools from subaccount 5" in words
+    # two-sub (boot_all's flags today): two books, as before; /funds names both subaccounts under each
+    write("fxtake-live-orders.jsonl", [dict(start, subs={"0": 4, "2": 5}, layout="two-sub")] + recs[1:5])
+    bk2 = watch.books("fx", T0)
+    assert [(b.sub, b.value0, b.part, b.markets) for b in bk2] == [("4", 71.63, "currencies", 1), ("5", 135.07, "commodities", 1)]
+    w4 = FX.size_words(si(4))
+    assert w4 == ("FX taker 10 contracts a market (set at its start 10:00 AM from its whole $206.70 bank: "
+                  "currencies $71.63 + commodities $135.07, subaccounts 4 + 5)") and FX.size_words(si(5)) == w4, w4
+
+
 def main():
     tests = [(k, v) for k, v in globals().items() if k.startswith("test_") and callable(v)]
     passed, failed = 0, []

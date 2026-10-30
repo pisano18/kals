@@ -53,7 +53,8 @@ def listing(items, why):
     if why:
         return Html("📝 <b>No waiting changes</b>: %s." % esc(why))
     state = _ap.read_state()
-    wait = [it for it in items if (state.get(it.get("id")) or {}).get("status") not in _ap.RAN]
+    gone = [it for it in items if it.get("superseded_by")]       # another item carries the change: never runs
+    wait = [it for it in items if (state.get(it.get("id")) or {}).get("status") not in _ap.RAN and it not in gone]
     ran = [it for it in items if (state.get(it.get("id")) or {}).get("status") in _ap.RAN]
     L = ["📝 <b>Waiting changes (%d)</b>" % len(wait) if wait else "📝 <b>No change is waiting</b> for your yes."]
     for it in wait:
@@ -66,6 +67,13 @@ def listing(items, why):
         for it in ran[-5:]:
             L.append("• %s — %s: %s" % (esc(it.get("id")), esc(it.get("title") or "?"),
                                         esc(_ran_words(state.get(it["id"]) or {}))))
+    gone = [it for it in gone if (state.get(it.get("id")) or {}).get("status") not in _ap.RAN]
+    if gone:
+        L.append("")
+        L.append("<b>Replaced</b> (not run)")
+        for it in gone:
+            L.append("• %s — %s: %s" % (esc(it.get("id")), esc(it.get("title") or "?"),
+                                        esc("superseded by %s" % it["superseded_by"])))
     L.append(i_("Each change runs once, only after /approve <id> shows it and you send its code back."))
     return Html("\n".join(L))
 

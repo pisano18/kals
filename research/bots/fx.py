@@ -1,6 +1,12 @@
 """The FX taker (research/cleanroom/fxtake_live.py, 2026-10-25): the 8 commodities from subaccount 5 (pool 2) and the
 5 currency pairs from subaccount 4 (pool 0). Every fact copied verbatim from botstats.py / pinphone.py / tgcharts.py at
-8a9c5e1 (v-tg-rebuild step 1, 2026-10-30)."""
+8a9c5e1 (v-tg-rebuild step 1, 2026-10-30).
+
+v-fx-onepot (2026-10-30): its size comes from both pots as ONE bank. Its start record says how it is laid out:
+two-sub (pool 0 from subaccount 4, pool 2 from 5) or one-sub (both pools from 5: subs {"0": 5, "2": 5}, once
+subaccount 4 is empty in pool 0 and 5 holds pool-0 cash). In one-sub its /funds size line and its balance-check book
+are ONE pot (subaccount 5, every pool); the registry keeps subaccount 4's pot so its past FX-pair trades (claimed by
+ticker) stay in FX's money."""
 from bots.spec import Book, Bot, Feature, Gauge, Logs, Pot, Records, Speed, VersionRule, live_flag
 from botdata.fmt import cents as _c, num as _num, usd
 
@@ -33,7 +39,18 @@ def settings_fx(start):
         bits.append("up to %s markets a quarter-hour, %s in play" % (s["max_per_close"], usd(float(s.get("max_held") or 0)).lstrip("+")))
     if s.get("day_stop") is not None:
         bits.append("stops the day at %s" % usd(float(s["day_stop"])))
+    if s.get("bank_sizing") and s.get("bank_per_contract"):      # v-fx-onepot (2026-10-30)
+        bits.append("sized from its whole bank (both pools), %s a contract" % usd(float(s["bank_per_contract"])).lstrip("+"))
+    if s.get("layout") == "one-sub":
+        bits.append("both pools from subaccount %s" % (s.get("subaccount")))
     return s, "; ".join(bits)
+
+
+def one_sub(r):
+    """The subaccount a start record trades BOTH pools from (v-fx-onepot's one-sub layout: {"0": 5, "2": 5}), else None."""
+    subs = (r or {}).get("subs") or {}
+    vals = set(str(v) for v in subs.values())
+    return vals.pop() if len(subs) > 1 and len(vals) == 1 else None
 
 
 def settings(si):
@@ -69,6 +86,21 @@ def size_words(si):
         return None
     # since v-fx-twopots its start names a pot per cash pool ({"0": 4, "2": 5}) and each pool's cash: account n's
     # own pot is the pool it holds; an older start had one pot (sub_balance)
+    if r.get("bank_sizing"):                                     # v-fx-onepot: ONE size from the whole bank
+        one = one_sub(r)
+        if one is not None and n is not None and str(n) != one:
+            return None                                          # this account is no longer one of its pots
+        src, at = r, "its start"
+        rz = si.last_record(os.path.join(si.results, "fxtake-live-orders.jsonl"), ("resize",))
+        if rz and (si.epoch(rz.get("t")) or 0) >= (si.epoch(r.get("t")) or 0) and si.num(rz.get("size")) is not None:
+            src, at, size = rz, "its last resize", si.num(rz["size"])    # resized since it started
+        cash = src.get("pool_cash") or {}
+        parts = " + ".join("%s %s" % ("currencies" if str(p) == "0" else "commodities", si.usd2(si.num(v)))
+                           for p, v in sorted(cash.items()) if si.num(v) is not None)
+        return "FX taker %g contracts a market (set at %s %s from its whole %s bank: %s%s)" % (
+            size, at, si.when(src), si.usd2(si.num(src.get("bank")) or 0.0), parts,
+            (", both in subaccount %s" % one) if one is not None else
+            ", subaccounts %s" % " + ".join(str(s_) for _p, s_ in sorted((r.get("subs") or {}).items())))
     pot, what = r.get("sub_balance"), ""
     for pool, sb in (r.get("subs") or {}).items():
         if n is not None and si.num(sb) == n:
@@ -95,6 +127,10 @@ def stop_gauges(wi):
         r, rt = {"run_pnl": 0.0, "day_pnl": 0.0}, t0
     run = _num(r.get("run_pnl")) or 0.0
     out = []
+    # v-fx-onepot: the stop line and the day stop scale with the size; a resize since the start carries the new ones
+    rz = wi.last_record(path, ("resize",), lambda x: (wi.epoch(x.get("t")) or 0.0) >= t0) or {}
+    if rz:
+        st = dict(st, stop_line=rz.get("stop_line", st.get("stop_line")), day_stop=rz.get("day_stop", st.get("day_stop")))
     line, base = _num(st.get("stop_line")), _num(st.get("line_pnl"))
     if line is not None and base is not None:
         since = str(st.get("stop_line_since") or "")
@@ -146,6 +182,15 @@ def books(wi, upto):
             a[2].add(tk)
             a[3] = t
     out = []
+    one = one_sub(st)
+    if one is not None:                     # v-fx-onepot one-sub: ONE pot, both pools (Kalshi's side sums every pool)
+        v0s = [_num((st.get("pool_cash") or {}).get(str(pool))) for pool in st["subs"]]
+        if any(v is None for v in v0s):
+            return []                       # half a pot is no book
+        lasts = [a[3] for a in acc.values() if a[3] is not None]
+        return [Book(sub=one, t0=t0, value0=round(sum(v0s), 4), settled=round(sum(a[0] for a in acc.values()), 4),
+                     markets=sum(a[1] for a in acc.values()), tickers=frozenset(set().union(*[a[2] for a in acc.values()])),
+                     since="its start", part="", last_t=max(lasts) if lasts else None)]
     for pool, sub in sorted(st["subs"].items()):
         v0 = _num((st.get("pool_cash") or {}).get(str(pool)))
         if v0 is None:
@@ -159,8 +204,8 @@ def books(wi, upto):
 BOT = Bot(
     name="fx", label="FX taker", short="FX taker", word="FX taker",
     what="buys the side already bid 98c+ at 99c or less 30 to 15 s before the close of the 15-minute markets (45 to 15 s on 10-30 only; 30 to 15 s "
-         "until 10-30, v-fx-from45): the 5 currency pairs (subaccount 4) and the 8 commodities (subaccount 5), 10 "
-         "contracts a market",
+         "until 10-30, v-fx-from45): the 5 currency pairs (subaccount 4) and the 8 commodities (subaccount 5) as ONE "
+         "bank: $20 of it a contract (10 contracts a market at ~$207; v-fx-onepot)",
     help=("/fx — the FX taker: the 5 currency pairs (subaccount 4) and the 8 commodities (subaccount 5), the same detail "
           "as /pin",),
     command="/fx", commands=("/fx",),
@@ -175,7 +220,7 @@ BOT = Bot(
     records=Records(fills=("fill",), fill_qty="n", halts=("halt", "day_stop"),
                     # the FX taker's (fxtake_live.decide)
                     refusal_words=((r"^unfunded_pool$", "no cash in that market's pool"),
-                                   (r"^per_close$", "6 already this quarter-hour"), (r"^held$", "$70 already in play"))),
+                                   (r"^per_close$", "6 already this quarter-hour"), (r"^held$", "its money cap already in play"))),
     settings=settings,
     # its own name wins over words about the pots it shares
     version=VersionRule(part=lambda n: "fxtake" in n or n.startswith("v-fx"),
@@ -192,7 +237,8 @@ BOT = Bot(
     features=(
         Feature("fxtake_live.py", "--live", None, "FX taker (LIVE, subaccounts 5 + 4)",
                 "In the last 30 to 15 seconds of each 15-minute currency and commodity market (45 to 15 for one day, 10-30), "
-                "buys the side already bid 98c or more at 99c or less, 10 contracts: the 5 currency pairs from "
-                "subaccount 4, the 8 commodities from subaccount 5.", pos=5, hides=True),
+                "buys the side already bid 98c or more at 99c or less: the 5 currency pairs from subaccount 4, the 8 "
+                "commodities from subaccount 5, sized from both pots as one bank ($20 a contract: 10 at ~$207).",
+                pos=5, hides=True),
     ),
 )

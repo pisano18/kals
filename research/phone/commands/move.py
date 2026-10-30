@@ -15,7 +15,7 @@ automatically"):
 
 The work and every rail are phone/actions/money.py's (the only phone code that posts to Kalshi). What adapts after a
 move, by itself: the pin bot re-reads its cash and resizes (only while flat); the ladder rescales from its pot; the FX
-taker and the jump band are fixed size. The phone's money pages read Kalshi's transfer books, so a move shows as money
+taker resizes from both its pots as one bank (v-fx-onepot, only while flat); the jump band is fixed size. The phone's money pages read Kalshi's transfer books, so a move shows as money
 moved between pots, never as money made (phone/tests/test_move.py proves it on botdata.pots).
 """
 import traceback
@@ -34,7 +34,8 @@ ASK_TTL_S = 120                 # a plan's code stands 2 minutes
 SIZE_AFTER = {                  # what each bot does with more (or less) cash, in words
     "pin": "the pin bot resizes from its cash by itself (it re-reads it every 5 minutes, only while flat; rises damped)",
     "ladder": "the ladder rescales its rungs from its pot by itself",
-    "fx": "the FX taker is fixed size (10 contracts a market): the cash only has to cover its bets",
+    "fx": ("the FX taker sizes from both its pots as one bank ($20 a contract; it re-reads the cash every minute and "
+           "resizes only while flat, rises damped); each pool's cash still has to cover that pool's bets"),
     "jumpband": "the jump band is fixed size (5 contracts a buy): the cash only has to cover its bets",
 }
 
@@ -86,11 +87,11 @@ def listing(ctx):
 
 def _word(sub, pool):
     """What to type for (sub, pool): 'main' / 'pool0' for the main account, a bot's word or 'subN' for its trading pool,
-    '-' for a pool no command reaches."""
+    'subNpoolP' for one of its other pools (v-fx-onepot; was '-')."""
     if int(sub) == 0:
         return "main" if pool == _money.trades_in(0) else "pool%d" % pool
     if _money.trades_in(sub) not in (None, pool):
-        return "-"
+        return "sub%dpool%d" % (int(sub), int(pool))
     return _money.word_of(sub, pool)
 
 

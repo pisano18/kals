@@ -200,17 +200,38 @@ def test_still_running_after_the_wait():
     assert A.read_state()["x1"]["status"] == "running", "never run again"
 
 
+def test_superseded_never_runs():
+    """v-fx-onepot: an item a later one replaces ('superseded_by') is listed apart and refused, its code never asked."""
+    setup([{"id": "old1", "superseded_by": "new1"}, {"id": "new1"}])
+    r, _c = run("/approve")
+    assert "Waiting changes (1)" in r and "<b>new1</b>" in r and "Replaced</b> (not run)" in r, r
+    assert "old1 — Pin: a change: superseded by new1" in r, r
+    r, _c = run("/approve old1")
+    assert "It cannot run" in r and "superseded by new1" in r and "yes" not in r.split("It cannot run")[1], r
+    _r, _c = run("/approve old1 yes 4821", now=T + 1)
+    assert SPAWNED == []
+    path, why = A.check(A.find(A.load()[0], "new1"))
+    assert path is not None and why is None, why
+
+
 def test_the_real_manifest():
-    """The repo's results\\approvals\\approvals.json: one entry, pin_size15_nohedgejump.ps1, its sha matching the file."""
+    """The repo's results\\approvals\\approvals.json: pin15, fx30 (superseded by fxonepot) and fxonepot, each script's
+    sha matching its file."""
     old = P.set_results(os.path.join(P.REPO, "results"))
     try:
         items, why = A.load()
-        assert why is None and [it["id"] for it in items] == ["pin15"], (why, items)
+        assert why is None and [it["id"] for it in items] == ["pin15", "fx30", "fxonepot"], (why, items)
         it = items[0]
         assert it["script"] == "pin_size15_nohedgejump.ps1" and it["log"] == "pin_size15.out"
         assert it["title"] == "Pin: drop the jump hedge and move to a 1.33x bet (trial)"
         assert "-$100" in it["stop_rule"] and "4.00" in it["stop_rule"]
         path, why = A.check(it)
+        assert path is not None and why is None, why
+        fx30, one = items[1], items[2]
+        assert fx30["superseded_by"] == "fxonepot" and A.check(fx30) == (None, "superseded by fxonepot: run that one instead")
+        assert one["script"] == "fx_onepot_restart.ps1" and one["log"] == "fx_onepot_restart.out"
+        assert "NO MONEY MOVE IS NEEDED" in one["description"] and "sub5pool0" in one["description"]
+        path, why = A.check(one)
         assert path is not None and why is None, why
     finally:
         P.set_results(old)

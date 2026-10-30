@@ -326,6 +326,27 @@ def test_a_move_is_a_transfer_not_money_made():
     assert pots.flows(after["led"], "3", T - 1, T + 1) == 50.0 and pots.flows(after["led"], None, T - 1, T + 1) == 0.0
 
 
+def test_a_subaccounts_other_pool_by_name():
+    """v-fx-onepot: 'sub5pool0' names subaccount 5's pool-0 pot. Kalshi keeps a subaccount per pool (10-25: funding
+    subaccount 5 in pool 0 answered 404), so until a pool-0 subaccount 5 exists the move is refused, never guessed."""
+    fresh()
+    assert M.parse_pot("sub5pool0") == (5, 0) and M.parse_pot("SUB4POOL2") == (4, 2)
+    r = run("/move 10 main sub5pool0")
+    assert "Not moved" in r and "Kalshi does not list subaccount 5, weather pool" in r, r
+    assert "<b>sub4pool2</b> · subaccount 4, crypto pool" in run("/move"), "a sub's other pool has a word (was '-')"
+    # once Kalshi lists a pool-0 subaccount 5: subaccount 4 -> main, then main -> subaccount 5's pool 0
+    K.cash[(5, 0)] = 0.0
+    assert "<b>sub5pool0</b> · subaccount 5, weather pool: $0.00" in run("/move")
+    run("/move 60 sub4 main")
+    assert "Moved $60.00" in run("/move yes 4821", now=T + 1)
+    r = run("/move 60 main sub5pool0", now=T + 2)
+    assert "from pool0 (Main account, weather pool) to sub5pool0 (subaccount 5, weather pool)" in r, r
+    assert "Moved $60.00" in run("/move yes 4821", now=T + 3)
+    b = K.posts[-1][1]
+    assert (b["from_subaccount"], b["to_subaccount"], b["exchange_index"]) == (0, 5, 0)
+    assert K.cash[(4, 0)] == 0.0 and K.cash[(5, 0)] == 60.0 and K.cash[(5, 2)] == 120.0
+
+
 def test_declaration():
     c = CM.of_module("phone.commands.move")
     assert len(c) == 1 and c[0].names == ("/move",) and c[0].section == "controls" and c[0].chart is None

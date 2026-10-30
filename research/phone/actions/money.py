@@ -99,12 +99,17 @@ def word_of(sub, pool):
 
 def parse_pot(word):
     """A typed pot -> (sub, pool or None). 'main' / 'pin' / '0' -> (0, None); a bot's word -> its first pot;
-    'sub3' / '3' -> (3, None); 'pool0' / 'pool2' -> (0, pool). Raises Refused."""
+    'sub3' / '3' -> (3, None); 'pool0' / 'pool2' -> (0, pool); 'sub5pool0' -> (5, 0): a subaccount's pot in a pool
+    other than the one its bots trade in (v-fx-onepot: a pool-0 subaccount 5, once one exists). Raises Refused."""
     w = str(word or "").strip().lower().lstrip("/")
     if w in ("main", "0", "sub0", "pin"):
         return 0, None
     if w.startswith("pool") and w[4:].isdigit():
         return 0, int(w[4:])
+    if w.startswith("sub") and "pool" in w:
+        n, _, p = w[3:].partition("pool")
+        if n.isdigit() and p.isdigit():
+            return int(n), int(p)
     if w.startswith("sub") and w[3:].isdigit():
         return int(w[3:]), None
     if w.isdigit():
@@ -113,7 +118,7 @@ def parse_pot(word):
         if w in [b.name] + [c.lstrip("/") for c in tuple(b.commands) + tuple(b.extra_commands)]:
             p = b.pots[0]
             return int(p.sub), p.pool
-    raise Refused("no pot is called '%s' (main, a bot: jb fx ladder fc race, subN, or pool0 / pool2)" % w)
+    raise Refused("no pot is called '%s' (main, a bot: jb fx ladder fc race, subN, subNpoolP, or pool0 / pool2)" % w)
 
 
 def parse_amount(word):
