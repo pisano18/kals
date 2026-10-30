@@ -104,6 +104,10 @@ import pinday                                                    # noqa: E402
 import pinledger                                                 # noqa: E402
 import pinxfer                                                   # noqa: E402  (deposit rules: finished, net of fee)
 from botdata import paths as _paths                              # noqa: E402
+import bots as _reg                                              # noqa: E402  (the registry, research/bots)
+from bots import fx as _b_fx, jumpband as _b_jb, pin as _b_pin  # noqa: E402  (their constants + old function names)
+from bots import forecaster as _b_fc, ladder as _b_lad, race as _b_race, weather as _b_wx  # noqa: E402
+from bots.spec import SettingsIn as _SettingsIn                  # noqa: E402
 
 # v-tg-rebuild step 2 (2026-10-30): RESULTS comes from the one place (botdata/paths.py) -- the same <repo>\results string
 # this line always computed. Tests still patch botstats.RESULTS as before (a copy, read by every function here).
@@ -116,25 +120,22 @@ PROC_STALE_S = 300              # an older process table is "could not tell", no
 PAGE = 200
 MAX_PAGES = 200                 # 40,000 settlements a pot: a runaway pager stops loudly
 POOL = 2                        # Kalshi's crypto & commodities cash pool, where pots 0-2 trade
-BOTS = ("pin", "race", "forecaster", "ladder", "weather", "fx", "jumpband")
-SUBS = ("0", "1", "2", "3", "4", "5")
-# the pool each pot TRADES in, whose cash /portfolio/balance is asked for (2026-10-04: the weather
-# dip-seller's KXHIGH markets are exchange_index 0; read live: sub 3 = $50.00 in pool 0, $0.00 in pool 2)
-SUB_POOL = {"0": POOL, "1": POOL, "2": POOL, "3": POOL, "4": 0, "5": POOL}   # 5: the FX taker's commodities (2026-10-25), pool 2 like crypto
-# v-tg-active (2026-10-30): subaccount 3 trades in POOL 2 now -- the jump band's $50 went into its pool 2 at ~05:35Z (the
-# weather dip-seller's pool 0 has held $0 since 10-15). Its cash read asks pool 2; every pool is still added for the pot.
-# 4: the FX taker's currency pairs (pool 0, created 2026-10-25 ~21:0xZ). The NUMBER 4 also names the old coin-race reward
-# test's pot in pool 2 (stopped 10-23, ~1c left), never counted here: in subaccount 4 only an FX pair is the FX taker's.
-FX_PAIRS = frozenset(["KXEURUSD15M", "KXGBPUSD15M", "KXUSDJPY15M", "KXAUDUSD15M", "KXUSDCAD15M"])
-# 2026-10-26: for a BOT's pot (its % of bank, its chart, the per-pot check) subaccount 4 is its POOL 0 only -- the money
-# moved in pool 0, its pool-0 cash, the FX pairs it settled. The pool-2 side (the old reward test: $100 in, $70.11 back,
-# lost in its races) made the FX taker's "put in" read $209.89 instead of $180. All pots together keep the whole number 4.
-POT_POOL_ONLY = {"4": 0, "3": POOL}
-# ... and whose bets are that pot's own (pot_rows, _pot_now): subaccount 3's pool 2 is the jump band's (2026-10-30), its pool 0
-# the weather dip-seller's old $50 (in 10-04, back out 10-15). All pots together keep the whole number 3 as well.
-POT_OWNER = {"4": "fx", "3": "jumpband"}
-# the jump band's coins (jumpband_live.SLOW): in subaccount 3 a 15-minute coin market is the jump band's, a KXHIGH the weather's
-JB_SERIES = frozenset(["KXBNB15M", "KXHYPE15M", "KXZEC15M", "KXNEAR15M"])
+# v-tg-rebuild step 3 (2026-10-30): every per-bot table below is DERIVED from the registry (research/bots, one file a
+# bot), no longer kept here by hand; bots/tests/test_registry.py proved each equal to the hand-kept table it replaces.
+# Adding a bot = one file in research/bots. The facts and their history (why sub 3 is two pots, why sub 4's pool 0 only
+# is the FX taker's, ...) are written next to them in those files. SUB_POOL / POT_POOL_ONLY are fresh dicts: tests
+# change them in place (the 10-04 weather world) and every function here reads these same objects.
+BOTS = _reg.names()                                      # ("pin", "race", "forecaster", "ladder", "weather", "fx", "jumpband")
+SUBS = _reg.subs()                                       # ("0", "1", "2", "3", "4", "5")
+# the pool each pot TRADES in, whose cash /portfolio/balance is asked for (bots.cash_pool: a pool-only pot's pool, else
+# its first bot's): {"0": 2, "1": 2, "2": 2, "3": 2, "4": 0, "5": 2}
+SUB_POOL = _reg.table("SUB_POOL")
+FX_PAIRS = _b_fx.FX_PAIRS
+# 2026-10-26: for a BOT's pot (its % of bank, its chart, the per-pot check) a pool-only pot is its POOL only -- sub 4 is
+# the FX taker's pool 0, sub 3 the jump band's pool 2 -- and only its owner's bets: {"4": 0, "3": 2}, {"4": "fx", "3": "jumpband"}
+POT_POOL_ONLY = _reg.table("POT_POOL_ONLY")
+POT_OWNER = _reg.table("POT_OWNER")
+JB_SERIES = _b_jb.JB_SERIES
 # the only things this file ever asks Kalshi for -- every one a GET, through `getter`
 POT_PATHS = ("/portfolio/settlements", "/portfolio/positions", "/portfolio/balance")    # each names its pot
 # account-wide LISTINGS (2026-10-02, for the pot): (path, the list's key, paged?)
@@ -156,53 +157,14 @@ POT_CHECK = 1.0                 # cash + open bets vs money put in + all settled
 KEEP = ("ticker", "settled_time", "market_result", "value", "yes_count_fp", "no_count_fp",
         "yes_total_cost_dollars", "no_total_cost_dollars", "fee_cost", "revenue")
 
-# The hourly ladders pinrun knows (v-ladder7); only KXBTCD trades live today. A new series in
-# subaccount 0 that is in neither list lands in `other`, loudly -- never folded into a bot.
-PIN_HOURLY = frozenset(["KXBTCD", "KXETHD", "KXSOLD", "KXXRPD", "KXDOGED", "KXBNBD", "KXHYPED"])
-
-SPEC = {
-    "pin": {"label": "Pin bot", "what": "15-minute coin markets + hourly Bitcoin", "sub": "0",
-            "script": "pinrun.py", "stop": "pinrun-live.stop", "log_glob": "pinrun-live-*.jsonl",
-            "keepalive": "watch_bot.ps1 restarts it unless the stop file is there"},
-    "race": {"label": "Coin race", "what": "which coin gains most in 15 minutes", "sub": "0",
-             "script": "pinracearm.py", "stop": "pinracepenny.stop", "log": "pinracepenny-live.jsonl",
-             # 2026-10-18: was None ("nothing restarts the live one"), stale since the 09-30 scale-up put the
-             # live race in boot_all.ps1's keep-alive list (section 3e, 'coin race (LIVE, main account)').
-             "keepalive": "boot_all.ps1 (every 10 min) restarts it unless the stop file is there"},
-    "forecaster": {"label": "Forecaster", "what": "buys the 15-minute coin side its own forecast calls decided, sized from its bank", "sub": "2",
-                   "script": "forecaster_live.py", "stop": "forecaster-live.stop",
-                   "log": "forecaster-live-orders.jsonl",
-                   "keepalive": "boot_all.ps1 (every 10 min) restarts it unless the stop file is there"},
-    "ladder": {"label": "Ladder", "what": "resting 98c bids on the decided side of NEAR ZEC DOGE HYPE XRP (one rung since 10-23), sized so every bid fits its bank (goal 1%/day)", "sub": "1",
-               "script": "ladder_live.py", "stop": "ladder-live.stop", "log": "ladder-live-orders.jsonl",
-               "keepalive": "boot_all.ps1 (every 10 min) restarts it unless the stop file is there"},
-    "weather": {"label": "Weather dip-seller",
-                "what": "sells YES on a daily-high temperature bracket after a 10c+ hourly drop, 2 contracts",
-                "sub": "3", "script": "dipsell_live.py", "stop": "dipsell-live.stop",
-                "log": "dipsell-live-orders.jsonl",
-                "keepalive": "boot_all.ps1 (every 10 min) restarts it unless the stop file is there"},
-    # 2026-10-25: the FX / commodity 15-minute TAKER, a live penny test (research/cleanroom/fxtake_live.py, ledger LS10)
-    "fx": {"label": "FX taker", "what": "buys the side already bid 98c+ at 99c or less 45 to 15 s before the close of the 15-minute markets (30 to 15 s until 10-30, v-fx-from45): the 5 currency pairs (subaccount 4) and the 8 commodities (subaccount 5), 10 contracts a market",
-           "sub": "5", "also": ("4",),            # 5 = commodities (pool 2), 4 = the 5 currency pairs (pool 0), since 10-25
-           "script": "fxtake_live.py", "stop": "fxtake-live.stop", "log": "fxtake-live-orders.jsonl",
-           "keepalive": "boot_all.ps1 (every 10 min) restarts it unless the stop file is there"},     # since 10-26 (add_fx_keepalive.ps1)
-    # v-tg-active (2026-10-30): the jump band, live stage 1 (research/cleanroom/jumpband_live.py --live --subaccount 3, ledger
-    # LS25): its paper arm runs the same script WITHOUT --live (log jumpband-paper.jsonl) and is never this bot
-    "jumpband": {"label": "Jump band",
-                 "what": "buys the 70-90c favourite on BNB/HYPE/ZEC/NEAR when the price jumps 2+ standard deviations in "
-                         "the last minute, 5 contracts, holds to the end",
-                 "sub": "3", "script": "jumpband_live.py", "stop": "jumpband-live.stop", "log": "jumpband-live.jsonl",
-                 "keepalive": None},          # started by hand on the server (results/jb_deploy.ps1); not in boot_all
-}
-SUB_NAME = {"0": "main account", "1": "subaccount 1", "2": "subaccount 2", "3": "subaccount 3", "4": "subaccount 4",
-            "5": "subaccount 5"}
+PIN_HOURLY = _b_pin.PIN_HOURLY                  # the hourly ladders pinrun knows (bots/pin.py)
+SPEC = _reg.legacy_spec()                       # {bot: label, what, sub, (also), script, stop, log | log_glob, keepalive}
+SUB_NAME = _reg.table("SUB_NAME")
 
 
 def bot_subs(name):
-    """Every pot a bot trades from, its main one first (the FX taker: 5 then 4)."""
-    if name not in SPEC:
-        return ("0",)
-    return (SPEC[name]["sub"],) + tuple(SPEC[name].get("also") or ())
+    """Every pot a bot trades from, its main one first (the FX taker: 5 then 4); ('0',) for a name no bot has."""
+    return _reg.bot_subs(name)
 
 
 def sub_name(sub):
@@ -213,11 +175,8 @@ def sub_name(sub):
         return " + ".join(SUB_NAME[s] for s in sub)
     return SUB_NAME[sub]
 
-# what counts as sent / filled / refused / stopped in each bot's own log
-HALT_KINDS = {"pin": ("halt", "entries_stopped", "pause"), "race": ("live_halt",),
-              "forecaster": ("halt", "day_stop", "run_stop"), "ladder": ("day_stop",),
-              "weather": ("day_stop", "kill", "done"), "fx": ("halt", "day_stop"),
-              "jumpband": ("halt", "day_stop", "stop_line")}
+# what counts as stopped in each bot's own log (bots: Records.halts)
+HALT_KINDS = _reg.table("HALT_KINDS")
 
 
 # ---- clocks (ET for people, UTC inside) -------------------------------------
@@ -327,24 +286,10 @@ def pot_words(w, whose="its bank"):
 
 # ---- which bot a settlement belongs to --------------------------------------
 def owner(ticker, sub):
-    series = str(ticker or "").split("-")[0]
-    if sub == "1":
-        return "ladder"
-    if sub == "2":
-        return "forecaster"
-    if sub == "3":
-        # 2026-10-30: the number 3 is two pots' history -- the weather dip-seller's KXHIGH brackets (pool 0, 10-04..10-10)
-        # and the jump band's 15-minute coins (pool 2, from 10-30)
-        return "jumpband" if (series in JB_SERIES or series in pinday.CRYPTO) else "weather"
-    if sub == "5":
-        return "fx"
-    if sub == "4":
-        return "fx" if series in FX_PAIRS else "other"
-    if series in pinday.RACE or series.startswith("KXCRYPTOLEAD"):
-        return "race"
-    if series in pinday.CRYPTO or series in PIN_HOURLY:
-        return "pin"
-    return "other"
+    """Which bot a settled market / position in subaccount `sub` is: a bot name or 'other'. v-tg-rebuild step 3
+    (2026-10-30): the registry's rule (bots.owner) -- within a sub the pots that CLAIM tickers in priority order (sub 0:
+    the race, then the pin bot; sub 3: the jump band; sub 4: the FX pairs), then the sub's catch-all pot, else 'other'."""
+    return _reg.owner(ticker, sub)
 
 
 def market(s):
@@ -901,16 +846,10 @@ def opt(cl, flag):
 
 
 def is_bot(name, cl):
-    """Is this command line the LIVE copy of `name`? Paper arms of the same script are not."""
-    t = _toks(cl)
-    script = SPEC[name]["script"]
-    if not any(re.search(r"(^|[\\/])" + re.escape(script) + "$", x) for x in t):
-        return False
-    if "--live" not in t:
-        return False
-    if name == "jumpband" and "--dry-run" in t:            # 2026-10-30: --live --dry-run sends nothing
-        return False
-    return not (name == "race" and "--paper-live" in t)
+    """Is this command line the LIVE copy of `name`? Paper arms of the same script are not. v-tg-rebuild step 3
+    (2026-10-30): the registry's rule -- its script and its is_live (the race's --paper-live and the jump band's
+    --live --dry-run are not the live copy)."""
+    return _reg.is_bot(name, cl)
 
 
 # ---- which bots the phone shows (v-tg-active, 2026-10-30) -------------------------------------------------------
@@ -922,7 +861,7 @@ def is_bot(name, cl):
 # --live) is not the jump band. A bot that stopped ITSELF for the day (a day stop, a halt) still runs and stays shown. The
 # pin bot is always shown: /status, /pause and /start are about it. Nothing here hides money: every total keeps every
 # bot's markets, and all_bots puts a hidden bot's past money on one line, 'earlier bots'.
-ALWAYS_SHOWN = ("pin",)
+ALWAYS_SHOWN = _reg.table("ALWAYS_SHOWN")       # ("pin",): bots with always_shown (v-tg-rebuild step 3)
 ACTIVE_TTL_S = 10               # the process table + stop files are re-read at most this often for active_bots()
 _ACTIVE = {"t": 0.0, "v": None}
 
@@ -1117,9 +1056,25 @@ def pin_logs():
     return sorted(glob.glob(os.path.join(RESULTS, SPEC["pin"]["log_glob"])))
 
 
+def _halt_why(r):
+    """A halt record in words from the bots' own halt_why hooks (only the jump band has one: its day_stop / stop_line
+    records), else ''. v-tg-rebuild step 3 (2026-10-30): asked of EVERY bot's halt records, exactly as botstats always
+    asked _jb_why -- a record of another bot never has the jump band's fields, so this only ever names the jump band's."""
+    for b in _reg.all_bots():
+        if b.halt_why is not None:
+            w = b.halt_why(r)
+            if w:
+                return w
+    return ""
+
+
 def activity(name, since):
-    """Counts from the bot's own log since `since` (midnight ET): what it DID, not what it made."""
-    if name == "pin":
+    """Counts from the bot's own log since `since` (midnight ET): what it DID, not what it made.
+    v-tg-rebuild step 3 (2026-10-30): the per-bot counting is each bot's own activity hook (research/bots/<name>.py,
+    the old elif bodies verbatim) and its note its activity_note hook; the log is its Logs (pin: every pinrun-live-*.jsonl
+    written since `since`)."""
+    b = _reg.get(name)
+    if b.logs.glob:
         paths = [p for p in pin_logs() if os.path.getmtime(p) >= since]
         if not pin_logs():
             paths = None
@@ -1134,135 +1089,25 @@ def activity(name, since):
         return out
     out["source"] = [os.path.basename(p) for p in paths]
     why = {}
-    triggers, filled_tk = 0, set()
+    st = {"triggers": 0, "filled_tk": set()}            # the counters a bot's hook keeps across records
     for p in paths:
         for r in read_since(p, since) or []:
             k = r.get("kind") or r.get("ev")
-            if name == "pin":
-                if k == "order":
-                    out["sent"] += 1
-                    f = pinledger.money(r, "filled")
-                    out["filled" if f > 0 else "not_filled"] += 1
-                    out["contracts_filled"] += f
-                elif k == "hedge":
-                    out["hedges"] += 1
-                elif k in ("refused", "late_refused"):
-                    out["refused"] += 1
-                    g = str(r.get("gate") or k)
-                    why[g] = why.get(g, 0) + 1
-            elif name == "race":
-                if k == "live_order":
-                    out["sent"] += 1
-                    f = pinledger.money(r, "filled")
-                    out["filled" if f > 0 else "not_filled"] += 1
-                    out["contracts_filled"] += f
-                elif k == "live_refused":
-                    out["refused"] += 1
-                    w = r.get("why")
-                    # the race writes numbers and coins into its reasons; group them by their shape
-                    g = re.sub(r"\d+(\.\d+)?", "N", str((w[0] if isinstance(w, list) and w else w) or "?"))
-                    g = re.sub(r"(YES|NO) on [A-Z]+ ", r"\1 on COIN ", g)[:80]
-                    why[g] = why.get(g, 0) + 1
-            elif name == "forecaster":
-                if k == "placed":
-                    out["sent"] += 1
-                    if pinledger.money(r, "filled") <= 0:
-                        out["not_filled"] += 1
-                elif k == "live_fill":
-                    out["filled"] += 1
-                    out["contracts_filled"] += pinledger.money(r, "n")
-                elif k in ("refused", "dropped", "body_refused"):
-                    out["refused"] += 1
-                    g = str(r.get("why") or k)
-                    why[g] = why.get(g, 0) + 1
-            elif name == "ladder":
-                if k == "placed":
-                    out["sent"] += 1
-                elif k == "cancelled":
-                    out["cancelled"] += 1
-                elif k == "live_fill":
-                    out["filled"] += 1
-                    out["contracts_filled"] += pinledger.money(r, "delta")
-                elif k == "rail_refused":
-                    out["refused"] += 1
-                    g = str(r.get("why") or k)
-                    why[g] = why.get(g, 0) + 1
-            elif name == "weather":
-                # dipsell_live.py: one resting SELL-YES order a trigger, 3 h, then cancelled if unfilled
-                if k == "trigger" and r.get("act"):
-                    triggers += 1
-                elif k == "placed":
-                    out["sent"] += 1
-                elif k == "fill":
-                    if r.get("ticker") not in filled_tk:
-                        filled_tk.add(r.get("ticker"))
-                        out["filled"] += 1
-                    out["contracts_filled"] += pinledger.money(r, "delta")
-                elif k == "cancel":
-                    out["cancelled"] += 1
-                elif k in ("rail_refused", "rejected", "body_refused"):
-                    out["refused"] += 1
-                    g = str(r.get("why") or ("Kalshi refused it (HTTP %s)" % r.get("status") if k == "rejected" else k))
-                    why[g] = why.get(g, 0) + 1
-            elif name == "fx":
-                # fxtake_live.py: one immediate-or-cancel buy a market ('placed'), its fill ('fill'), the rule's refusals
-                if k == "placed":
-                    out["sent"] += 1
-                    if pinledger.money(r, "filled") <= 0:
-                        out["not_filled"] += 1
-                elif k == "fill":
-                    out["filled"] += 1
-                    out["contracts_filled"] += pinledger.money(r, "n")
-                elif k in ("refused", "dropped", "body_refused"):
-                    out["refused"] += 1
-                    g = str(r.get("why") or k)
-                    why[g] = why.get(g, 0) + 1
-            elif name == "jumpband":
-                # jumpband_live.py (2026-10-30): 'trigger' = every qualifying jump it judged, 'order' = every IOC buy sent,
-                # 'fill' = what one got ('qty' contracts), and the money refusals the order path logs by their own kind
-                if k == "trigger":
-                    triggers += 1
-                elif k == "order":
-                    out["sent"] += 1
-                    if pinledger.money(r, "filled") <= 0:
-                        out["not_filled"] += 1
-                elif k == "fill":
-                    out["filled"] += 1
-                    out["contracts_filled"] += pinledger.money(r, "qty")
-                elif k in ("no_cash", "max_cost", "refused", "order_skip", "body_refused"):
-                    out["refused"] += 1
-                    g = str(r.get("why") or k)
-                    why[g] = why.get(g, 0) + 1
+            if b.activity is not None:
+                b.activity(k, r, out, why, st)
             if k in HALT_KINDS[name] or k in ("stop_file", "exit"):
-                w = r.get("why") or r.get("day_pnl") or r.get("run_pnl") or _jb_why(r) or ""
+                w = r.get("why") or r.get("day_pnl") or r.get("run_pnl") or _halt_why(r) or ""
                 if k == "exit" and r.get("stopped") is True and not r.get("why"):
                     w = "stop file, its run %s" % usd(_num(r.get("run_pnl")) or 0.0)
                 out["halts"].append({"t_et": et_clock(_t_of(r)), "what": k, "why": str(w)[:120]})
     out["refused_why"] = dict(sorted(why.items(), key=lambda kv: -kv[1]))
     out["contracts_filled"] = round(out["contracts_filled"], 2)
-    if name == "ladder":
-        out["note"] = "resting bids: most are cancelled unfilled at the close, by design"
-    if name == "weather":
-        out["triggers"] = triggers
-        out["note"] = ("%s seen today; each order rests up to 3 h and is cancelled if unfilled, by design"
-                       % _n(triggers, "price-drop trigger"))
-    if name == "jumpband":
-        out["triggers"] = triggers
-        out["note"] = ("%s judged today; it buys only one whose favourite asks 70-90c with 10-60 s left, once a market"
-                       % _n(triggers, "price jump"))
+    if b.activity_note is not None:
+        b.activity_note(out, st)
     return out
 
 
-def _jb_why(r):
-    """The jump band's day_stop / stop_line record in words ('settled -$15.20 today, its day stop -$15'), else ''."""
-    k = r.get("kind")
-    if k == "day_stop" and _num(r.get("day_money")) is not None:
-        return "settled %s on %s, its day stop %s" % (usd(_num(r["day_money"])), r.get("day") or "the day",
-                                                     usd(_num(r.get("day_stop")) or 0.0))
-    if k == "stop_line" and _num(r.get("line_money")) is not None:
-        return "settled %s since it went live, its stop line %s: stood down for good" % (
-            usd(_num(r["line_money"])), usd(_num(r.get("stop_line")) or 0.0))
-    return ""
+_jb_why = _b_jb.jb_why                  # (compatibility name: the jump band's halt words, bots/jumpband.py)
 
 
 # ---- every bot's FILLS, from its own log (2026-10-26) ------------------------------
@@ -1271,36 +1116,39 @@ def _jb_why(r):
 # SETTLED in; a fill (what a bot bought, when, at what price) is only in that bot's own log. fills_since reads each
 # bot's log backwards from its end (read_since: only the hours asked for, a few hundredths of a second) and tags every
 # fill with its bot and its pot. What a bot DID, never money: money stays Kalshi's settlements.
-FILL_KINDS = {"pin": ("order", "hedge"), "race": ("live_order",), "forecaster": ("live_fill",),
-              "ladder": ("live_fill",), "weather": ("fill",), "fx": ("fill",), "jumpband": ("fill",)}
+FILL_KINDS = _reg.table("FILL_KINDS")          # bots: Records.fills (v-tg-rebuild step 3)
 
 
 def fill_sub(name, ticker):
-    """The pot one of a bot's fills is in: the FX taker's currency pairs are subaccount 4, everything else its own pot."""
-    if name == "fx" and str(ticker or "").split("-")[0] in FX_PAIRS:
-        return "4"
-    return SPEC[name]["sub"]
+    """The pot one of a bot's fills is in: a pot of its own that claims the ticker (the FX taker's currency pairs are
+    subaccount 4), else its main pot.  (bots.fill_sub)"""
+    return _reg.fill_sub(name, ticker)
 
 
 def fill_of(name, r):
     """One record of bot `name`'s own log -> {"bot", "sub", "ticker", "what", "side", "contracts", "price", "t", "close",
     "hedge", "act"}, or None when it is not a fill (an order that got nothing, a hedge not executed, any other record).
     `side` is the side bought, 'yes' / 'no', or None when the log does not say; the weather dip-seller SELLS yes
-    (act 'sold'). `close` is the market's close (epoch) from its ticker, None for a market without a quarter-hour."""
+    (act 'sold'). `close` is the market's close (epoch) from its ticker, None for a market without a quarter-hour.
+    v-tg-rebuild step 3 (2026-10-30): which records are fills, their contracts field, side field, fixed side and verb
+    are the bot's Records in the registry."""
     if not isinstance(r, dict):
         return None
-    k = r.get("kind") or r.get("ev")
-    if k not in FILL_KINDS.get(name, ()):
+    b = _reg.get(name)
+    if b is None:
         return None
-    hedge = name == "pin" and k == "hedge"
+    rec = b.records
+    k = r.get("kind") or r.get("ev")
+    if k not in rec.fills:
+        return None
+    hedge = rec.hedge is not None and k == rec.hedge
     if hedge and str(r.get("status")) != "executed":
         return None
-    n = pinledger.money(r, "n" if hedge else {"pin": "filled", "race": "filled", "forecaster": "n",
-                                              "fx": "n", "jumpband": "qty"}.get(name, "delta"))
+    n = pinledger.money(r, "n" if hedge else rec.fill_qty)
     if n <= 0:
         return None
     tk = r.get("ticker")
-    side = str(r.get("want" if (name == "pin" and not hedge) else "side") or "").lower()
+    side = str(r.get("side" if hedge else rec.fill_side) or "").lower()
     px = next((_num(r.get(f)) for f in ("exec_price", "px", "price") if r.get(f) is not None), None)
     close = None
     if tk:
@@ -1310,9 +1158,9 @@ def fill_of(name, r):
         except Exception:                                       # noqa: BLE001
             close = None
     return {"bot": name, "sub": fill_sub(name, tk), "ticker": tk, "what": describe(tk) if tk else "?",
-            "side": "yes" if name == "weather" else (side if side in ("yes", "no") else None),
+            "side": rec.fixed_side or (side if side in ("yes", "no") else None),
             "contracts": round(n, 2), "price": px, "t": _t_of(r), "close": close, "hedge": hedge,
-            "act": "sold" if name == "weather" else "bought"}
+            "act": rec.act}
 
 
 def fills_since(since, names=None):
@@ -1321,7 +1169,7 @@ def fills_since(since, names=None):
     names = BOTS if names is None else tuple(names)
     out, unread = [], {}
     for name in names:
-        if name == "pin":
+        if _reg.get(name).logs.glob:
             logs = pin_logs()
             paths = []
             for p in logs:
@@ -1351,7 +1199,7 @@ def fills_since(since, names=None):
 # ---- what is running, and on what settings -----------------------------------
 _VER = re.compile(r"^#\s+(v-[\w.-]+(?:\s*\+\s*v-[\w.-]+)*)\s+--\s+(.*)$")
 # the weather dip-seller's VERSIONS.md entries (v-dipsell-live ...); pinphone._NOT_PIN_RE carries the same words
-WX_VER = r"dipsell|dip.?sell"
+WX_VER = _b_pin.WX_VER                          # r"dipsell|dip.?sell" (bots/pin.py, bots/weather.py)
 _VER_T = re.compile(r"(\d{4}-\d{2}-\d{2})(?:\s+~?(\d{2}):(\d[\dx])(?::(\d{2}))?Z?)?", re.I)
 # VERSIONS.md entries that change the phone, the PC or the recorders -- never a trading bot's version (2026-10-23)
 INFRA_VER = r"v-(tg|phone|telegram|wifi|recorder|collector)\b"
@@ -1379,59 +1227,13 @@ def version_of(name):
         # 2026-10-29: WITHDRAWN too (v-wrongside2 was built and withdrawn before it ran; /pin named it live)
         if re.match(r"(KILLED|STOPPED|REVERTED|DEAD|WITHDRAWN)\b", rest.strip()) or re.match(INFRA_VER, vname):
             continue
-        low = (vname + " " + rest).lower()
-        # 2026-10-01: a heading that ships several bots at once ("v-race40 + v-forecaster-scale + v-ladder-size
-        # + v-crash-guard") names every bot, so the text test below claimed it for none of them and the phone
-        # showed the race's OLD version. A combined heading belongs to each bot one of its names is about.
-        names = [n.strip() for n in vname.split("+")]
-        if len(names) > 1:
-            own = {"race": [n for n in names if n.startswith("v-race")],
-                   "forecaster": [n for n in names if "forecaster" in n or n == "v-crash-guard"],
-                   "ladder": [n for n in names if re.match(r"v-ladder-[a-z]", n)],
-                   "weather": [n for n in names if re.search(WX_VER, n)],
-                   "fx": [n for n in names if "fxtake" in n or n.startswith("v-fx")],
-                   "jumpband": [n for n in names if "jumpband" in n or n.startswith("v-jb")]}
-            if any(own.values()):
-                own["pin"] = []
-            elif not re.search(r"cleanroom|clean-room|bettor|penny|jumpband|" + WX_VER, low):
-                own["pin"] = names
-            else:
-                own["pin"] = []
-            if not own[name]:
-                continue
-            vname = " + ".join(own[name])
-            mt = _VER_T.search(rest)
-            t = None
-            if mt:
-                day, hh, mm = mt.group(1), mt.group(2), mt.group(3)
-                try:
-                    t = float(calendar.timegm(time.strptime(
-                        "%sT%s:%s" % (day, hh or "00", (mm or "00").lower().replace("x", "0")), "%Y-%m-%dT%H:%M")))
-                except ValueError:
-                    t = None
-            return vname, t, rest.strip()
-        # An entry naming two clean-room bots (v-keepalive-cleanroom) is infrastructure, not either
-        # bot's version; `v-ladder7` is pin's hourly ladder table, not the penny ladder.
-        race = vname.startswith("v-race") or bool(re.search(r"coin.?race", low))
-        fc = "forecaster" in low
-        lad = "ladder_live" in low or "penny ladder" in low
-        wx = bool(re.search(WX_VER, low))
-        fx = "fxtake" in low or vname.startswith("v-fx")
-        # 2026-10-30: the jump band's entries name its script (jumpband_live) or start v-jb; never the pin bot's
-        jb = "jumpband" in low or vname.startswith("v-jb")
-        if vname.startswith("v-fx"):                     # its own name wins over words about the pots it shares
-            race = fc = lad = wx = jb = False
-        if vname.startswith("v-jb"):
-            race = fc = lad = wx = fx = False
-        clean = bool(re.search(r"cleanroom|clean-room|bettor|forecaster|ladder_live|penny", low))
-        mine = {"race": race and not fc and not lad and not wx and not fx and not jb,
-                "forecaster": fc and not lad and not race and not wx and not fx and not jb,
-                "ladder": lad and not fc and not race and not wx and not fx and not jb,
-                "weather": wx and not (race or fc or lad or fx or jb),
-                "fx": fx and not (race or fc or lad or wx or jb),
-                "jumpband": jb and not (race or fc or lad or wx or fx),
-                "pin": not (race or fc or lad or clean or wx or fx or jb)}[name]
-        if not mine:
+        # 2026-10-01: a heading that ships several bots at once names every bot and belongs to each bot one of its
+        # names is about; a single heading is a bot's when it is about that bot alone (its own v-fx / v-jb name wins
+        # over words about the pots it shares); the pin bot's is every heading no other bot claims and no clean-room
+        # word names. v-tg-rebuild step 3 (2026-10-30): that rule is the registry's (bots.version_claim, each bot's
+        # VersionRule) -- the old per-bot dicts and flags, verbatim, moved there.
+        shown = _reg.version_claim(name, vname, rest)
+        if shown is None:
             continue
         t = None
         mt = _VER_T.search(rest)
@@ -1442,7 +1244,7 @@ def version_of(name):
                     "%sT%s:%s" % (day, hh or "00", (mm or "00").lower().replace("x", "0")), "%Y-%m-%dT%H:%M")))
             except ValueError:
                 t = None
-        return vname, t, rest.strip()
+        return shown, t, rest.strip()
     return None
 
 
@@ -1461,190 +1263,29 @@ def _c(p):
     return ("%dc" % c) if abs(c - round(c)) < 1e-9 else ("%.1fc" % c)
 
 
-def settings_pin(start, cl, sizef):
-    s = {}
-    if start:
-        for k in ("size", "price_ceiling", "tau_max", "early_tau_max", "early_frac", "early_min_price",
-                  "early_max_price", "hedge_belief", "loss_abort", "loss_cap", "max_positions",
-                  "ladder_series", "late_tau", "late_mult", "bank_brake", "code_sha"):
-            if k in start:
-                s[k] = start[k]
-    if cl:
-        for flag in ("--series-size", "--max-losses"):
-            v = opt(cl, flag)
-            if v is not None:
-                s[flag[2:].replace("-", "_")] = _num(v)
-        for flag in ("--one-full-bet", "--toxic-fresh", "--jump-gate", "--no-hedge-prop"):
-            s[flag[2:].replace("-", "_")] = flag in _toks(cl)
-    if sizef:
-        s["bet_now"] = sizef.get("size")
-        s["bank_at_sizing"] = sizef.get("bank")
-        s["sized_at_et"] = et_clock(_num(sizef.get("epoch")) or _epoch(sizef.get("at")))
-    bits = []
-    bet = s.get("bet_now") or s.get("size")
-    if bet is not None:
-        bits.append("bet %g contracts" % bet + (" (sized on a %s bank)" % usd(s["bank_at_sizing"]).lstrip("+")
-                                                  if s.get("bank_at_sizing") else ""))
-    if s.get("price_ceiling") is not None:
-        bits.append("buys up to %s with %s s or less left" % (_c(s["price_ceiling"]), s.get("tau_max", "?")))
-    if s.get("early_tau_max"):
-        frac = s.get("early_frac")
-        size = ("a third of a bet" if frac is not None and abs(float(frac) - 0.333) < 0.01
-                else "%g of a bet" % frac if frac is not None else "?")
-        bits.append("early bet from %s s left: %s, %s to %s" % (s["early_tau_max"], size, _c(s.get("early_min_price")),
-                                                              _c(s.get("early_max_price") or s.get("price_ceiling"))))
-    if s.get("hedge_belief") is not None:
-        bits.append("hedges if our odds fall under %d%%" % round(100 * float(s["hedge_belief"])))
-    stops = []
-    if s.get("max_losses"):
-        stops.append("%d losing bets" % s["max_losses"])
-    if s.get("loss_cap"):
-        stops.append("a %s run loss" % usd(float(s["loss_cap"])).lstrip("+"))
-    if stops:
-        bits.append("halts after " + " or ".join(stops))
-    if s.get("ladder_series"):
-        bits.append("hourly %s: %g contract a market" % ("/".join(s["ladder_series"]), s.get("series_size") or 1))
-    return s, "; ".join(bits)
-
-
-def settings_race(start, cl):
-    s = {}
-    rails = (start or {}).get("live_rails") or {}
-    src = cl or " ".join((start or {}).get("argv") or [])
-    for flag, key in (("--max-contracts", "contracts_per_bet"), ("--max-stake", "max_in_play"),
-                      ("--live-tau-max", "buys_within_s"), ("--live-min-price", "min_price"),
-                      ("--live-max-legs", "max_bets_per_race"), ("--live-confirm", "confirm_s")):
-        v = _num(opt(src, flag))
-        if v is not None:
-            s[key] = v
-    s["stop_on_first_loss"] = bool(rails.get("stop_on_loss", (start or {}).get("stop_on_loss")))
-    # v-race40 (2026-09-30): --live-max-losses N > 1 stops for the rest of the ET day after N losing races
-    ml = _num(opt(src, "--live-max-losses"))
-    if ml is not None and ml > 1:
-        s["max_losses_per_day"] = ml
-        s["stop_on_first_loss"] = False
-    if start and start.get("version"):
-        s["code_version"] = start["version"]
-    bits = []
-    if "contracts_per_bet" in s:
-        bits.append("%g contracts a bet" % s["contracts_per_bet"])
-    if "min_price" in s or "buys_within_s" in s:
-        bits.append("buys at %s or more with %g s or less left" % (_c(s.get("min_price")), s.get("buys_within_s", 0)))
-    if "max_in_play" in s:
-        bits.append("at most %s in play" % usd(s["max_in_play"]).lstrip("+"))
-    if "max_bets_per_race" in s:
-        bits.append("up to %g bets a race" % s["max_bets_per_race"])
-    if s.get("max_losses_per_day"):
-        bits.append("stops for the rest of the ET day after %g losing races" % s["max_losses_per_day"])
-    elif s["stop_on_first_loss"]:
-        bits.append("stops after its first loss")
-    return s, "; ".join(bits)
-
-
-def settings_fx(start):
-    """The FX taker's settings, all from its own start record (fxtake_live.py writes size, fav, cap, entry window, caps)."""
-    s = dict(start or {})
-    for k in ("t", "kind", "pid", "argv", "series", "minutes"):
-        s.pop(k, None)
-    bits = []
-    if s.get("size") is not None:
-        bits.append("%s contracts a market" % s["size"])
-    if s.get("fav") is not None and s.get("cap") is not None:
-        bits.append("buys the side bid %s+ at %s or less" % (_c(s["fav"]), _c(s["cap"])))
-    if s.get("hold_s"):                                  # v-fx-hold5 (2026-10-26)
-        bits.append("only once that bid has held %g s" % float(s["hold_s"]))
-    if s.get("entry_from") is not None and s.get("entry_to") is not None:
-        bits.append("%g to %g s before the close" % (float(s["entry_from"]), float(s["entry_to"])))
-    if s.get("max_per_close") is not None:
-        bits.append("up to %s markets a quarter-hour, %s in play" % (s["max_per_close"], usd(float(s.get("max_held") or 0)).lstrip("+")))
-    if s.get("day_stop") is not None:
-        bits.append("stops the day at %s" % usd(float(s["day_stop"])))
-    return s, "; ".join(bits)
-
-
-def settings_jumpband(start):
-    """The jump band's settings, all from its own start record (jumpband_live.py writes max_contracts, max_cost, k, lo, hi,
-    tau, series, stop_line, day_stop): 'up to 5 contracts a buy, at most $20.00 an order; ...'."""
-    st = start or {}
-    s = {k: st.get(k) for k in ("max_contracts", "max_cost", "k", "lo", "hi", "tau", "series", "stop_line", "day_stop",
-                                "subaccount", "rule_override") if k in st}
-    bits = []
-    if s.get("max_contracts") is not None:
-        bits.append("up to %s contracts a buy%s" % (_fmt_g(s["max_contracts"]), (", at most %s an order"
-                                                    % usd(float(s["max_cost"])).lstrip("+")) if s.get("max_cost") else ""))
-    if s.get("lo") is not None and s.get("hi") is not None:
-        tau = s.get("tau") or []
-        bits.append("buys the favourite at %s-%s when the price moves %s+ standard deviations in its last minute%s"
-                    % (_c(s["lo"]), _c(s["hi"]), _fmt_g(s.get("k")),
-                       (", %s-%s s before the close" % (_fmt_g(tau[0]), _fmt_g(tau[-1]))) if len(tau) == 2 else ""))
-    if s.get("series"):
-        bits.append("coins %s" % " ".join(re.sub(r"^KX|15M$", "", x) for x in s["series"]))
-    if s.get("day_stop") is not None:
-        bits.append("stops the day at %s settled" % usd(float(s["day_stop"])))
-    if s.get("stop_line") is not None:
-        bits.append("stands down for good at %s since it went live" % usd(float(s["stop_line"])))
-    return s, "; ".join(bits)
+# v-tg-rebuild step 3 (2026-10-30): each bot's settings words live in its registry file (research/bots/<name>.py,
+# verbatim); these are the old names, kept for the phone (pinphone uses settings_race) and the registry's test.
+settings_pin = _b_pin.settings_pin
+settings_race = _b_race.settings_race
+settings_fx = _b_fx.settings_fx
+settings_jumpband = _b_jb.settings_jumpband
+settings_weather = _b_wx.settings_weather
 
 
 def settings_clean(name, start, cl):
-    s = {}
-    r = (start or {}).get("rails") or {}
-    s["rails"] = r
+    """The clean-room bots' settings (the forecaster's, else the ladder's) -- the old name for the two hooks."""
     if name == "forecaster":
-        s["variant"] = (start or {}).get("variant") or opt(cl, "--variant")
-        s["variant_params"] = (start or {}).get("variant_params")
-        if cl and opt(cl, "--variant") and s["variant"] != opt(cl, "--variant"):
-            s["variant_mismatch"] = "log says %s, command line says %s" % (s["variant"], opt(cl, "--variant"))
-        bits = ["variant %s" % (s["variant"] or "none")]
-        if r.get("scale") is not None:
-            bits.append("%g%% of paper size" % (100 * float(r["scale"])))
-        if r.get("per_side") is not None:
-            bits.append("up to %s a side, %s a quarter-hour" % (r["per_side"], r.get("per_close", "?")))
-        if r.get("max_commit") is not None:
-            bits.append("at most %s in play" % usd(float(r["max_commit"])).lstrip("+"))
-        if r.get("px"):
-            bits.append("buys %s to %s" % (_c(r["px"][0]), _c(r["px"][1])))
-        if r.get("day_stop") is not None:
-            bits.append("stops the day at %s, the run at %s" % (usd(float(r["day_stop"])), usd(float(r.get("run_stop") or 0))))
-    else:
-        bits = []
-        lv = r.get("live_levels")
-        bits.append("%s-contract resting bids%s" % (r.get("size", 1), " on the top rung" if lv == [0] else ""))
-        if r.get("max_live_per_close") is not None:
-            bits.append("up to %s coins a quarter-hour" % r["max_live_per_close"])
-        if r.get("max_contracts") is not None:
-            bits.append("at most %s contracts / %s in play" % (r["max_contracts"], usd(float(r.get("max_commit") or 0)).lstrip("+")))
-        if r.get("day_stop") is not None:
-            bits.append("stops the day at %s" % usd(float(r["day_stop"])))
-    return s, "; ".join(bits)
+        return _b_fc.settings_forecaster(start, cl)
+    return _b_lad.settings_ladder(start, cl)
 
 
-def settings_weather(start, cl):
-    """The weather dip-seller's rails, from its live start record (they are code constants there)."""
-    st = start or {}
-    r, tr = st.get("rails") or {}, st.get("trigger") or {}
-    s = {"rails": r, "trigger": tr, "start_pot": st.get("start_pot"), "subaccount": st.get("subaccount"),
-         "pool": r.get("pool")}
-    bits = []
-    if tr:
-        hl = tr.get("hours_left") or ["?", "?"]
-        bits.append("sells YES 1c over the ask after a %sc+ hourly drop with %s-%s h left"
-                    % (_fmt_g(tr.get("drop_c")), _fmt_g(hl[0]), _fmt_g(hl[-1])))
-    if r.get("contracts") is not None:
-        bits.append("%s contracts an order, one order a market" % _fmt_g(r["contracts"]))
-    if r.get("max_open") is not None:
-        bits.append("at most %s open" % _fmt_g(r["max_open"]))
-    if r.get("window_s"):
-        bits.append("unfilled orders cancelled after %s h" % _fmt_g(float(r["window_s"]) / 3600.0))
-    if r.get("day_stop_frac") is not None:
-        pot = st.get("start_pot")
-        bits.append("stops the day at -%s%% of its %s start" % (
-            _fmt_g(100.0 * float(r["day_stop_frac"])), usd(float(pot)).lstrip("+") if pot is not None else "?"))
-    if r.get("kill_after") is not None:
-        bits.append("stops for good if behind after %s settled fills" % _fmt_g(r["kill_after"]))
-    if r.get("max_fills") is not None or r.get("max_days") is not None:
-        bits.append("ends at %s fills or %s days" % (_fmt_g(r.get("max_fills")), _fmt_g(r.get("max_days"))))
-    return s, "; ".join(bits)
+def _read_json(name):
+    """A RESULTS json file, or None (a settings hook's reader: the pin bot's pinrun-live-size.json)."""
+    try:
+        with open(os.path.join(RESULTS, name), encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return None
 
 
 def _fmt_g(x):
@@ -1679,8 +1320,13 @@ def running(name, rows, ok, now):
                 out["started_utc"] = mine[0][1]
         if len(mine) > 1:
             out["problems"].append("%d live copies running (pids %s)" % (len(mine), ", ".join(map(str, out["pids"]))))
-    # its log, its latest start record, its settings
-    if name == "pin":
+    # its log, its latest start record, its settings. v-tg-rebuild step 3 (2026-10-30): the registry says which rule
+    # finds the start record (Logs.start_rule: 'first_line' = the pin bot's newest log's first record; 'pid_then_live' =
+    # the start record of the running pid, else the newest live one; 'live' = the newest live one), how its settings
+    # read (the bot's settings hook), which records halt it and which lift a halt (Records.halts / halt_lifts /
+    # halt_lifts_next_day: the jump band's day stop lifts itself the next ET day)
+    b = _reg.get(name)
+    if b.logs.glob:
         logs = pin_logs()
         log = logs[-1] if logs else None
     else:
@@ -1695,7 +1341,7 @@ def running(name, rows, ok, now):
             out["log_last_et"] = et_clock(mt)
         except OSError:
             pass
-        if name == "pin":
+        if b.logs.start_rule == "first_line":
             try:
                 with open(log, encoding="utf-8") as fh:
                     r = json.loads(fh.readline() or "{}")
@@ -1704,50 +1350,34 @@ def running(name, rows, ok, now):
                 start = None
         else:
             pid = out["pid"]
-            if pid is not None and name in ("forecaster", "ladder", "weather", "fx", "jumpband"):
+            if pid is not None and b.logs.start_rule == "pid_then_live":
                 start = last_record(log, ("start",), lambda r: r.get("pid") == pid)
             if start is None:
                 start = last_record(log, ("start",), lambda r: r.get("live") is not False)
     if out["started_utc"] is None and start and start.get("t"):
         out["started_utc"] = str(start["t"])[:19] + "Z"
     out["started_et"] = et_clock(_epoch(out["started_utc"])) if out["started_utc"] else None
-    if name == "pin":
-        sizef = None
-        try:
-            with open(os.path.join(RESULTS, "pinrun-live-size.json"), encoding="utf-8") as fh:
-                sizef = json.load(fh)
-        except (OSError, ValueError):
-            sizef = None
-        out["settings"], out["settings_text"] = settings_pin(start, out["command"], sizef)
-    elif name == "race":
-        out["settings"], out["settings_text"] = settings_race(start, out["command"])
-    elif name == "weather":
-        out["settings"], out["settings_text"] = settings_weather(start, out["command"])
-    elif name == "fx":
-        out["settings"], out["settings_text"] = settings_fx(start)
-    elif name == "jumpband":
-        out["settings"], out["settings_text"] = settings_jumpband(start)
-    else:
-        out["settings"], out["settings_text"] = settings_clean(name, start, out["command"])
-        if out["settings"].get("variant_mismatch"):
-            out["problems"].append("variant: " + out["settings"]["variant_mismatch"])
+    out["settings"], out["settings_text"] = b.settings(_SettingsIn(start, out["command"], _read_json))
+    if out["settings"].get("variant_mismatch"):
+        out["problems"].append("variant: " + out["settings"]["variant_mismatch"])
     # halted since its start?
     if log:
         paths = [log]
         st_t = _t_of(start) if start else None
+        lifts = tuple(b.records.halt_lifts)
         for p in paths:
             # 2026-10-26: a 'pause' the bot lifted itself ('resume', pinrun AMENDMENT 14) is not a halt -- the pin bot
             # paused 27 s on its open cap at 10-25 05:59Z and /pin and /bots said HALTED for two days after
-            h = last_record(p, HALT_KINDS[name] + ("resume",))
-            if h and (h.get("kind") or h.get("ev")) == "resume":
+            h = last_record(p, HALT_KINDS[name] + lifts)
+            if h and (h.get("kind") or h.get("ev")) in lifts:
                 continue
             ht = _t_of(h) if h else None
             # 2026-10-30: the jump band's day stop names its ET day and lifts by itself the next day (no restart)
-            if h and name == "jumpband" and h.get("kind") == "day_stop" and h.get("day") and h["day"] != et_day(now):
+            if h and h.get("kind") in b.records.halt_lifts_next_day and h.get("day") and h["day"] != et_day(now):
                 continue
             if h and ht is not None and (st_t is None or ht >= st_t):
                 out["halted"] = {"t_et": et_clock(ht), "what": h.get("kind") or h.get("ev"),
-                                 "why": str(h.get("why") or h.get("day_pnl") or h.get("run_pnl") or _jb_why(h) or "")[:160]}
+                                 "why": str(h.get("why") or h.get("day_pnl") or h.get("run_pnl") or _halt_why(h) or "")[:160]}
     v = version_of(name)
     if v:
         out["version"], out["version_et"], out["version_title"] = v[0], et_clock(v[1]), v[2][:300]
@@ -2173,6 +1803,48 @@ def _load(now, getter, procs):
     return c, rows, ok
 
 
+def pot_groups():
+    """[(key, [bots])]: the cash pots all_bots names, one a subaccount that is some bot's MAIN pot -- 'main' for the main
+    account, else its pool-only pot's owner (sub 3: the jump band), else its one bot -- with the bots whose main pot it
+    is (the owner first, then bot order). A bot's second pot (the FX taker's sub 4) is in its main pot's group.
+    v-tg-rebuild step 3 (2026-10-30): derived from the registry, was a hand-kept map. In subaccount order:
+    main [pin, race], ladder, forecaster, jumpband [jumpband, weather], fx."""
+    groups = {}
+    for b in BOTS:
+        groups.setdefault(SPEC[b]["sub"], []).append(b)
+    out = []
+    for sub in SUBS:
+        if sub not in groups:
+            continue
+        names = groups[sub]
+        key = "main" if sub == "0" else (POT_OWNER.get(sub) if POT_OWNER.get(sub) in names else names[0])
+        out.append((key, ([key] if key in names else []) + [n for n in names if n != key]))
+    return out
+
+
+def _balances(bots):
+    """all_bots' balances: one cash figure a POT (pot_groups), in the order of each pot's first bot (main, forecaster,
+    ladder, jumpband, fx), from its key bot's balance block ('main' from the main account's first bot, the pin bot);
+    'all' adds them; then every other bot of a subaccount pot keeps that same figure under its own name for older
+    readers, never added twice (subaccount 3 is the jump band's pot now and was the weather dip-seller's: 'weather');
+    main_holds and pot_bots name who is in which pot."""
+    order = {b: i for i, b in enumerate(BOTS)}
+    groups = pot_groups()
+    bal = {}
+    for key, names in sorted(groups, key=lambda kv: min(order[b] for b in kv[1])):
+        src = names[0] if key == "main" else key
+        bal[key] = bots[src]["balance"]["dollars"]
+    bal["all"] = round(sum(bal.values()), 4) if all(v is not None for v in bal.values()) else None
+    for key, names in groups:
+        if key != "main":
+            for n in names:
+                if n != key:
+                    bal[n] = bal[key]
+    bal["main_holds"] = list(dict(groups)["main"])
+    bal["pot_bots"] = {key: list(names) for key, names in groups}
+    return bal
+
+
 def bot(name, now=None, getter=None, procs=None):
     """One bot's full report (see the module docstring for what each block means)."""
     if name not in SPEC:
@@ -2242,16 +1914,7 @@ def all_bots(now=None, getter=None, procs=None):
         days_30.append({"day": d, "money": mo, "pot": None if pot is None else round(pot, 2),
                         "pot_pct": round(100.0 * mo / pot, 2) if pot else None,
                         "before_first": not firsts or d < min(firsts)})
-    # one figure a POT: subaccount 3 is the jump band's pot now (its cash read is pool 2 since 10-30) and was the weather
-    # dip-seller's; "weather" keeps that same figure for older readers and is not added twice
-    bal = {"main": bots["pin"]["balance"]["dollars"], "forecaster": bots["forecaster"]["balance"]["dollars"],
-           "ladder": bots["ladder"]["balance"]["dollars"], "jumpband": bots["jumpband"]["balance"]["dollars"],
-           "fx": bots["fx"]["balance"]["dollars"]}
-    bal["all"] = round(sum(bal.values()), 4) if all(v is not None for v in bal.values()) else None
-    bal["weather"] = bal["jumpband"]
-    bal["main_holds"] = ["pin", "race"]
-    bal["pot_bots"] = {"main": ["pin", "race"], "ladder": ["ladder"], "forecaster": ["forecaster"],
-                       "jumpband": ["jumpband", "weather"], "fx": ["fx"]}
+    bal = _balances(bots)
     note = ("The main account's cash%s holds the pin bot and the coin race together; the forecaster "
             "(subaccount 2), the ladder (subaccount 1), the jump band (subaccount 3, once the weather dip-seller's) "
             "and the FX taker (subaccounts 5 + 4) are separate pots and are NOT in the main account's cash or "
@@ -2267,30 +1930,9 @@ def all_bots(now=None, getter=None, procs=None):
 
 
 # ---- words for a phone screen -------------------------------------------------
-# The bots' refusal reasons in ordinary words (the dict keeps the raw names).
-PLAIN = [(r"^no_offer$", "nothing for sale"), (r"^edge_floor$", "edge too thin"),
-         (r"^price_ceiling$", "price over the cap"), (r"^confidence$", "not sure enough"),
-         (r"^depth_floor$", "too few for sale"), (r"^book_stale$", "order book too old"),
-         (r"^index_stale$", "price feed too old"), (r"^toxic_fresh$", "sellers dumping"),
-         (r"^jump_against$", "price jumped against us"), (r"^early_dear$", "early price too high"),
-         (r"^early_once$", "early bet already taken"), (r"^max_per_market$", "market already full"),
-         (r"^market_attempts$", "tried this market enough"), (r"^close_budget", "quarter-hour budget used"),
-         (r"^tau N is past", "too early"), (r"already holding", "already holds that coin"),
-         (r"^halted", "halted after a loss"), (r"confirmation", "still confirming"),
-         (r"^price N is under", "price under its floor"), (r"under one contract", "bet under 1 contract"),
-         (r"^in_flight$", "order already in flight"), (r"^late$", "too late to send"),
-         (r"^stale$", "decision went stale"), (r"^cap$", "at its cap"), (r"^price$", "price out of range"),
-         (r"^max_contracts$", "contract cap"), (r"^max_commit$", "money cap"),
-         # the weather dip-seller's rails (dipsell_live.rails_refusal)
-         (r"^one_per_market$", "already ordered in that market"), (r"^max_open$", "5 already open"),
-         (r"^no_cash$", "not enough cash"), (r"^day_stop$", "day stop hit"), (r"^killed$", "stopped for good"),
-         (r"^done$", "test finished"), (r"^stopped$", "stop file"), (r"^pool \S+ is not", "wrong cash pool"),
-         # the FX taker's (fxtake_live.decide)
-         (r"^unfunded_pool$", "no cash in that market's pool"), (r"^per_close$", "6 already this quarter-hour"),
-         (r"^held$", "$70 already in play"),
-         # the jump band's (jumpband_live.plan_live, 2026-10-30)
-         (r"^max_cost$", "order over its $ cap"), (r"^under_one_contract$", "under one contract offered"),
-         (r"^no_pool$", "market's cash pool unknown")]
+# The bots' refusal reasons in ordinary words (the dict keeps the raw names). v-tg-rebuild step 3 (2026-10-30): the
+# shared part (bots.PLAIN_BASE) then each bot's own Records.refusal_words, in bot order; the first match wins.
+PLAIN = _reg.table("PLAIN")
 
 
 def plain(why):
