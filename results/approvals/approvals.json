@@ -57,6 +57,17 @@
    "added_by": "Claude (assistant), for the operator",
    "date": "2026-10-31",
    "sha256": "f8a664fb4e783ebfbbabeef1275109f03128dc010c9d5aaa327ef72570d8c25b"
+  },
+  {
+   "id": "pinband99",
+   "title": "Pin: small 99c test -- buy 98-99c offers at a tenth of a bet, only in markets pin holds nothing in",
+   "description": "Puts pin on a new build (C:\\kals-live-0925p = today's build plus this one change) and restarts it once, when it holds no open bet. From then on, when sellers offer the winning side above pin's 98c limit but at 99c or less, in a market pin has not bought anything in yet, pin buys a TENTH of its normal bet there (about 28 contracts at today's size of 281), once per market. Every other safety check still applies; the one exception is the expected-value check, which at 99c refuses everything and would make the test measure nothing. One loss costs about -$28, one win makes about +$0.26, and there are about 78 such markets a day, so in 2-3 days we learn the real fill rate on winners vs losers (history 09-14 to 10-31: 2,967 such markets, 3 lost, +$3,679 if every order had filled; markets pin bought anyway were left out because those lost money). Scale up only if at least 60% of the winning band orders fill. It also logs the recent top price on every pin order (no trading change). The script refuses unless the new build's own self-test passes with the full new settings, and keeps backups of both pin launchers (the one used by hand and the one the keep-alive uses), so nothing changes if any step fails.",
+   "stop_rule": "Off again (copy the two .before-band99 launcher backups back and restart while flat) if band orders lose more than $60 in total, or if after 3 days the winning band orders fill under 50%.",
+   "script": "pin_band99.ps1",
+   "log": "pin_band99.out",
+   "added_by": "Claude (assistant), for the operator",
+   "date": "2026-10-31",
+   "sha256": "4027c770e3ad95bfed492b6f4890c34cc66a474c4c8ff01255f24e73a629ed17"
   }
  ]
 }
