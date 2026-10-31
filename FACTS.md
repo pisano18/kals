@@ -88,7 +88,7 @@ is falsified, and say so in the commit. Never edit a fact to fit a story.
 | F-P05 | Mean entry 95.6c; mean edge at signal +3.9c (current version), +4.60c over all history. | `pinver` |
 | F-P06 | The hedge recovers about one third of a loss, and that decays with size: 34.9% at 20, 33.2% at 68, 22.3% at 250. | `CURRENT_STATE.md` |
 | F-P07 | Selling a winner before settlement always loses money. By 15s out a loser's bid is already 23c, 6c at 10s. | `results/RESULTS_exit.md` |
-| F-P08 | 0 of 18 closes FOLLOWING a loss lost. Mean dollars after a loss is HIGHER. | 2026-09-13 |
+| F-P08 | The close FOLLOWING a loss loses 9.4% of the time (3 of 32) against a 3.2% base; same-close siblings 14.8% (4 of 27); 45-60 min later 0 of 57. Over 60 losses in 1,861 settled markets. *Replaces the 2026-09-13 reading "0 of 18 closes following a loss lost, mean dollars after a loss HIGHER" — falsified: 18 closes carried 0.87 expected losses, and the larger sample has the opposite sign.* | `results/IDEA_LEDGER.md` LS06 |
 | F-P09 | Removing the depth floor costs 30% of the money: +15% fills, -35% mean size, -25% contracts. | `results/RESULTS_levels.md` |
 | F-P10 | Market-making at the touch earns +0.48c per fill, t=+6.4, on 17.1M fills — and takers there carry ZERO information (t=0.2). Never turned into dollars because queue position is unmeasured. | `results/RESULTS_informed` |
 | F-P11 | No coin is reliably safer: rank correlation between halves is +0.35 and the rule fails non-monotonically out of sample. | `results/PREREG_coinrank.md` |
