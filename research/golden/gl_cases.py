@@ -328,9 +328,12 @@ def case_list(rt):
 EXTRA_RUNNERS = {}      # kind -> runner(rt, arg): shadow.py adds its 'shadow' kind; replay's case list never uses one
 
 
-def run_case(rt, case):
+def run_case(rt, case, restore=True):
+    """One case. restore=False (gl_child --warm, v-tg-fast2): the code's module caches are NOT put back first, so the
+    case runs on whatever the case before it left (a warm tap); everything else is reset as always."""
     cid, kind, arg = case
-    restore_caches(rt)
+    if restore:
+        restore_caches(rt)
     rt.health = copy.deepcopy(rt.health0)
     rt.fence.take_events()
     gl_fence.join_threads(rt.fence, 0)

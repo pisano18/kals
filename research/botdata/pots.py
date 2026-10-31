@@ -4,6 +4,9 @@ pot that cannot be worked out from one consistent read is None with the reason -
 
 v-tg-rebuild step 7 (2026-10-30): split out of botstats.py verbatim (botstats.py is now a facade over botdata).
 """
+import collections
+import threading
+
 import pinxfer
 from botdata import kalshi as _kalshi
 from botdata import money as _money
@@ -174,10 +177,38 @@ def _pot_now(c, sub, own=False):
     return cash + sum(float(p.get("at_risk") or 0.0) + float(p.get("fees") or 0.0) for p in ps), None
 
 
+_CTX = collections.OrderedDict()        # v-tg-fast2: (cache version, ET day) -> pot_context's answer, built once
+_CTX_MAX = 16
+_CTX_LOCK = threading.Lock()
+
+
+def remembered_context(c, today):
+    """The pot_context(c, today) object already built for c's cache version (kalshi.version), or None."""
+    tok = _kalshi.version(c)
+    return None if tok is None else _CTX.get((tok, today))
+
+
 def pot_context(c, today):
     """What every pot percentage in one report needs, worked out once: per pot its value now (or why
     not) and its settled money by ET close day -- EVERY market in the pot, whichever bot's -- plus the
-    account's books."""
+    account's books. v-tg-fast2: built once per cache version and ET day (the same object is handed to every
+    caller; nothing changes it after it is built)."""
+    tok = _kalshi.version(c)
+    if tok is None:
+        return _pot_context_raw(c, today)
+    k = (tok, today)
+    with _CTX_LOCK:
+        hit = _CTX.get(k)
+    if hit is None:
+        hit = _pot_context_raw(c, today)
+        with _CTX_LOCK:
+            hit = _CTX.setdefault(k, hit)
+            while len(_CTX) > _CTX_MAX:
+                _CTX.popitem(last=False)
+    return hit
+
+
+def _pot_context_raw(c, today):
     ctx = {"today": today, "led": c.get("ledgers") or {}, "subs": {}, "as_of": None, "stale_why": None,
            "t_read": None}
     cur = {sub: _pot_now(c, sub) for sub in _tables.SUBS}

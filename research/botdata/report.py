@@ -5,6 +5,8 @@ v-tg-rebuild step 7 (2026-10-30): split out of botstats.py verbatim (botstats.py
 all_bots() is a contract: the laptop's pindesk reads it from server_bots.json (server_sync), possibly with older code --
 additive changes only.
 """
+import collections
+import threading
 import time
 
 from botdata import activity as _activity
@@ -20,7 +22,39 @@ from botdata.fmt import usd
 
 
 # ---- the per-bot report ------------------------------------------------------
+# v-tg-fast2 (2026-10-31): a bot's money block is the same for every tap between two Kalshi reads, and /today /bots
+# /days /stats /status /losses and their pictures each built every bot's (0.5-0.9 s a tap). It is now built once per
+# (cache version, bot, ET day) -- kalshi.version(c), set by _load -- and each caller gets its own copy of the dict and of
+# its lists (the market rows and day rows inside are shared and never changed: botdata/tests/test_fast2.py checks that
+# every command leaves them as they were).
+_BLOCKS = collections.OrderedDict()
+_BLOCKS_MAX = 64
+_BLOCKS_LOCK = threading.Lock()
+
+
 def _money_block(c, name, today, ctx=None):
+    tok = _kalshi.version(c)
+    if tok is None or not (ctx is None or ctx is _pots.remembered_context(c, today)):
+        return _money_block_raw(c, name, today, ctx)
+    k = (tok, name, today)
+    with _BLOCKS_LOCK:
+        hit = _BLOCKS.get(k)
+        if hit is not None:
+            _BLOCKS.move_to_end(k)
+    if hit is None:
+        hit = _money_block_raw(c, name, today, ctx)
+        with _BLOCKS_LOCK:
+            _BLOCKS[k] = hit
+            while len(_BLOCKS) > _BLOCKS_MAX:
+                _BLOCKS.popitem(last=False)
+    return _block_copy(hit)
+
+
+def _block_copy(b):
+    return {k: (list(v) if isinstance(v, list) else v) for k, v in b.items()}
+
+
+def _money_block_raw(c, name, today, ctx=None):
     subs = _tables.bot_subs(name)                      # 2026-10-25: the FX taker trades from two pots (5 and 4)
     sub = subs[0]
     xs = [(s, (c.get("subs") or {}).get(s) or {}) for s in subs]
@@ -147,10 +181,15 @@ def _load(now, getter, procs):
     ro = _kalshi.is_readonly()
     with _kalshi.LOCK:
         c = _kalshi.load_cache()
+        key0 = _kalshi.served_key()
         changed = False if ro else _kalshi.refresh(c, now, getter)
         rows, ok, pchanged = _procs.procs_for(c, now, procs)
+        saved = None
         if (changed or pchanged) and not ro:
-            _kalshi.save_cache(c)
+            saved = _kalshi.save_cache(c)
+        # v-tg-fast2: which file version c's pots and ledgers are (procs_for touches c["procs"] only): the one read when
+        # nothing was refreshed, the one just written when it was saved, else none (then nothing is remembered for it)
+        _kalshi.set_version(c, key0 if not changed else (_kalshi.served_key_after_save() if saved else None))
     return c, rows, ok
 
 

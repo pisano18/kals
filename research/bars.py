@@ -66,6 +66,8 @@ sys.path.insert(0, HERE)
 import pinphone                                                      # noqa: E402
 import pinflat                                                       # noqa: E402
 from pindesk import et_str, money                                    # noqa: E402
+from botdata import clock as _clock                                  # noqa: E402
+from botdata import filefold as _fold                                # noqa: E402
 
 RESULTS = pinphone.RESULTS
 DAY = 86400.0
@@ -119,11 +121,27 @@ WATCH_LINE = re.compile(r"PASS so far|FAIL so far|^BAR \d|days so far|of the \d+
 # small helpers
 # ===========================================================================
 def ep(t):
-    """UTC epoch from an ISO 'Z' stamp (fractions ignored); None if unreadable."""
+    """UTC epoch from an ISO 'Z' stamp (fractions ignored); None if unreadable. v-tg-fast2 (2026-10-31): through
+    botdata.clock.utc_epoch's fast path (/bars parsed ~31k stamps a tap through time.strptime, 1.5 s) -- the same
+    strptime answer for every input, as an int."""
+    v = _clock.utc_epoch(t)
+    return None if v is None else int(v)
+
+
+_CLOSE = {}
+
+
+def close_epoch(tk):
+    """pinflat.close_epoch, remembered per ticker string (it reads only the ticker)."""
+    if not isinstance(tk, str):
+        return pinflat.close_epoch(tk)
     try:
-        return calendar.timegm(time.strptime(str(t)[:19], "%Y-%m-%dT%H:%M:%S"))
-    except (TypeError, ValueError):
-        return None
+        return _CLOSE[tk]
+    except KeyError:
+        if len(_CLOSE) > 200000:
+            _CLOSE.clear()
+        v = _CLOSE[tk] = pinflat.close_epoch(tk)
+        return v
 
 
 def _f(x, default=0.0):
@@ -197,50 +215,74 @@ def load_run(path, since_e=None, keep=(), count=None):
              the `realised` running total)
     kept     the records of `keep` kinds, in file order
     counts   {name: lines containing that substring} for `count`
+
+    v-tg-fast2 (2026-10-31): /bars read every paper log (633 files, 704 MB on
+    the server) on every tap: ~10 s. Each log's reading is now remembered
+    (botdata.filefold): a log whose bytes did not change is not read again,
+    one that only grew has just its new lines read, checked on the bytes
+    themselves, never on a directory time stamp alone. The
+    answer is exactly the old full read's (botdata/filefold.py; tests in
+    botdata/tests/test_fast2.py). The last record's time (hi) is remembered
+    with it.
     """
-    needles = {k: '"kind": "%s"' % k for k in set(keep) | {"start", "settled"}}
-    count = count or {}
-    out = dict(path=path, start=None, lo=None, hi=None, settled={}, kept=[],
-               counts={k: 0 for k in count})
-    try:
-        fh = open(path, encoding="utf-8", errors="replace")
-    except OSError:
+    count = dict(count or {})
+    keep = frozenset(keep)
+    spec = ("bars.load_run", since_e, tuple(sorted(keep)), tuple(sorted(count.items())))
+    needles = sorted('"kind": "%s"' % k for k in keep | {"start", "settled"})
+    needle_re = _NEEDLES.get(tuple(needles))
+    if needle_re is None:
+        needle_re = _NEEDLES[tuple(needles)] = re.compile("|".join(re.escape(n) for n in needles))
+    st, e = _fold.fold(path, spec, lambda: dict(start=None, lo=None, settled={}, kept=[], counts={k: 0 for k in count}),
+                       lambda o, line: _run_line(o, line, needle_re, count, since_e, keep), _run_copy)
+    if st is None:
         return None
-    with fh:
-        for line in fh:
-            if out["lo"] is None:
-                try:
-                    d0 = json.loads(line)
-                except ValueError:
-                    d0 = None
-                if isinstance(d0, dict) and d0.get("t"):
-                    out["lo"] = ep(d0["t"])
-            for name, needle in count.items():
-                if needle in line:
-                    out["counts"][name] += 1
-            if not any(n in line for n in needles.values()):
-                continue
-            try:
-                d = json.loads(line)
-            except ValueError:
-                continue
-            if not isinstance(d, dict):
-                continue
-            k = d.get("kind")
-            if k == "start":
-                if out["start"] is None:
-                    out["start"] = d
-            elif k == "settled":
-                tk = d.get("ticker")
-                t = ep(d.get("t"))
-                if tk and d.get("pnl_c") is not None and t is not None and (since_e is None or t >= since_e):
-                    out["settled"][tk] = out["settled"].get(tk, 0.0) + _f(d["pnl_c"]) / 100.0
-            if k in keep:
-                out["kept"].append(d)
-    out["hi"] = _tail_t(path)
+    if "hi" not in e["memo"]:
+        e["memo"]["hi"] = _tail_t(path)
+    out = dict(path=path, start=st["start"], lo=st["lo"], hi=e["memo"]["hi"], settled=st["settled"], kept=st["kept"],
+               counts=st["counts"])
     if out["lo"] is None and out["start"]:
         out["lo"] = ep(out["start"].get("t"))
     return out
+
+
+_NEEDLES = {}
+
+
+def _run_copy(st):
+    return dict(st, settled=dict(st["settled"]), kept=list(st["kept"]), counts=dict(st["counts"]))
+
+
+def _run_line(out, line, needle_re, count, since_e, keep):
+    """One line of load_run's loop, into `out` (start / lo / settled / kept / counts)."""
+    if out["lo"] is None:
+        try:
+            d0 = json.loads(line)
+        except ValueError:
+            d0 = None
+        if isinstance(d0, dict) and d0.get("t"):
+            out["lo"] = ep(d0["t"])
+    for name, needle in count.items():
+        if needle in line:
+            out["counts"][name] += 1
+    if not needle_re.search(line):
+        return
+    try:
+        d = json.loads(line)
+    except ValueError:
+        return
+    if not isinstance(d, dict):
+        return
+    k = d.get("kind")
+    if k == "start":
+        if out["start"] is None:
+            out["start"] = d
+    elif k == "settled":
+        tk = d.get("ticker")
+        t = ep(d.get("t"))
+        if tk and d.get("pnl_c") is not None and t is not None and (since_e is None or t >= since_e):
+            out["settled"][tk] = out["settled"].get(tk, 0.0) + _f(d["pnl_c"]) / 100.0
+    if k in keep:
+        out["kept"].append(d)
 
 
 def _recent(paths, since_e, slack_days=4):
@@ -346,7 +388,7 @@ def h2h(live, logs, ladder=None):
         spans.append((x["lo"], x["hi"]))
 
     def both(tk):
-        c = pinflat.close_epoch(tk)
+        c = close_epoch(tk)
         return c is not None and up(spans, c) and up(Lspans, c)
     common = [tk for tk in A if tk in L and both(tk)]
     arm_only = [tk for tk in A if tk not in L and both(tk)]
@@ -540,7 +582,7 @@ def btcd_paper(logs, since_e):
             tk = d["ticker"]
             first_tau.setdefault(tk, _f(d.get("tau"), 999))
             take += _f(d.get("take_n"))
-            c = pinflat.close_epoch(tk)
+            c = close_epoch(tk)
             closes.add(c if c is not None else tk)
     settled = {}
     for x in logs:

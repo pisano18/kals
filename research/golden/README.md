@@ -72,7 +72,8 @@ appends one line per matching changed case to `CHANGES.md` (pattern: `world/case
 
 A whole run: about 3.5 minutes on the laptop (`--jobs 3`), 13 worlds x 90 cases. Useful options: `--world base`
 (repeatable), `--only REGEX` (case ids), `--repeat N` (each case N times in one process: flakiness check),
-`--keep-work`, `--jobs`. `GOLDEN_MPL_TRACE=1` writes every matplotlib drawing call's data to `mpl_trace.txt` (for
+`--keep-work`, `--jobs`, `--repeat N --warm` (the repeats keep the code's module caches: a remembered answer
+must equal the cold one; use with `--only "^(cmd|chart|data)/"`, v-tg-fast2). `GOLDEN_MPL_TRACE=1` writes every matplotlib drawing call's data to `mpl_trace.txt` (for
 a chart diff).
 
 ## Cases (ids)

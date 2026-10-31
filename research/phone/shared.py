@@ -340,7 +340,26 @@ def raw_ledger(path):
     return rows
 
 
+_MKT = {"key": None, "out": None}
+
+
 def markets_from(rows, sides=None):
+    """markets_from_rows (below), remembered (v-tg-fast2, 2026-10-31): /today /status /stats and the desk rebuilt every
+    market of the ledger on each tap (0.3 s). When `rows` is raw_ledger's own list for a file version, the answer for
+    those rows and these `sides` is kept and each caller gets a copy of every market dict."""
+    sides = sides or {}
+    src = next((p for p, hit in list(_RAW.items()) if hit[1] is rows), None)
+    if src is None:
+        return markets_from_rows(rows, sides)
+    key = (src, _RAW[src][0], id(rows), len(rows), tuple(sorted(sides.items())))
+    if _MKT["key"] != key:
+        out = markets_from_rows(rows, sides)
+        _MKT.update(key=key, out=out)
+    out = _MKT["out"]
+    return {tk: dict(m) for tk, m in out.items()}
+
+
+def markets_from_rows(rows, sides=None):
     """{ticker: market} -- ONE entry per market, everything from Kalshi's row.
 
     n / cost / fee / paid (= cost + fee, the dollars risked), pnl, payout,

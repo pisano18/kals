@@ -23,7 +23,6 @@ bot-by-bot lists like any hidden bot, but /status and /bots print one warning li
 alerts tell the operator when a bot ENTERS DOWN (after a debounce: phone/monitor.py) and when it is back. down(fleet)
 names them; last_log_t(name) is when its own log last moved (the line says it: 'last log 10:42 AM').
 """
-import glob
 import os
 import time
 from dataclasses import dataclass, field
@@ -31,6 +30,7 @@ from dataclasses import dataclass, field
 import bots as _reg
 from botdata import paths as _paths
 from botdata import procs as _procs
+from botdata import dirlist as _dirlist
 
 ACTIVE, STOPPING, STOPPED, DOWN, UNKNOWN, RETIRED = "active", "stopping", "stopped", "down", "unknown", "retired"
 SHOWN_STATES = (ACTIVE, UNKNOWN)
@@ -205,7 +205,7 @@ def last_log_t(name):
         if lg.path:
             paths.append(os.path.join(_paths.RESULTS, lg.path))
         if lg.glob:
-            paths += glob.glob(os.path.join(_paths.RESULTS, lg.glob))
+            paths += _dirlist.glob(os.path.join(_paths.RESULTS, lg.glob))
         ts = []
         for p in paths:
             try:

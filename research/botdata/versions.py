@@ -27,10 +27,31 @@ _VER_T = re.compile(r"(\d{4}-\d{2}-\d{2})(?:\s+~?(\d{2}):(\d[\dx])(?::(\d{2}))?Z
 INFRA_VER = r"v-(tg|phone|telegram|wifi|recorder|collector)\b"
 
 
+_SEEN = {}          # v-tg-fast2: (path, size, mtime) -> {bot: answer}; every page asked it for every bot, every tap
+
+
 def version_of(name):
-    """The newest VERSIONS.md heading for this bot: (name, epoch or None, title) or None."""
+    """The newest VERSIONS.md heading for this bot: (name, epoch or None, title) or None. v-tg-fast2 (2026-10-31):
+    remembered while VERSIONS.md keeps its size and modified time (it is written whole by the deploy scripts, never
+    held open), per bot."""
+    path = os.path.join(_paths.RESULTS, VERSIONS_NAME)
     try:
-        with open(os.path.join(_paths.RESULTS, VERSIONS_NAME), encoding="utf-8", errors="replace") as fh:
+        st = os.stat(path)
+    except OSError:
+        return _version_of(name, path)
+    key = (path, st.st_size, st.st_mtime_ns)
+    seen = _SEEN.get(key)
+    if seen is None:
+        _SEEN.clear()
+        seen = _SEEN[key] = {}
+    if name not in seen:
+        seen[name] = _version_of(name, path)
+    return seen[name]
+
+
+def _version_of(name, path):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
             lines = fh.readlines()
     except OSError:
         return None

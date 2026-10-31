@@ -15,6 +15,7 @@ Added here (no output change):
              built, so no Kalshi request) and never written -- for a smoke run on the server's real data (DESIGN
              risk 3).
 """
+import collections
 import json
 import os
 import threading
@@ -55,6 +56,37 @@ KEEP = ("ticker", "settled_time", "market_result", "value", "yes_count_fp", "no_
 
 # ---- the cache and the Kalshi reads -----------------------------------------
 _MEMO = {"key": None, "data": None}
+_SERVED = {"key": None}                 # the file version load_cache's last answer was a copy of (None: a default)
+# v-tg-fast2 (2026-10-31): a cache dict report._load handed out, and the file version its pots / ledgers are a copy of
+# (version(c)), so per-version work (pots.pot_context, report._money_block) is done once per Kalshi read, not per tap
+_VER = collections.OrderedDict()
+_VER_MAX = 6
+_VER_LOCK = threading.Lock()
+
+
+def set_version(c, key):
+    """Remember that dict `c` holds exactly the cache file's version `key` (None forgets it)."""
+    with _VER_LOCK:
+        _VER.pop(id(c), None)
+        if key is not None:
+            _VER[id(c)] = (c, key)
+            while len(_VER) > _VER_MAX:
+                _VER.popitem(last=False)
+
+
+def version(c):
+    """The file version dict `c` was handed out as (set_version), or None."""
+    e = _VER.get(id(c))
+    return e[1] if e is not None and e[0] is c else None
+
+
+def served_key():
+    return _SERVED["key"]
+
+
+def served_key_after_save():
+    """The file version save_cache just wrote (call only after it returned True)."""
+    return _MEMO["key"]
 # v-tg-rebuild step 7 (2026-10-30): one lock around load + refresh + save; a caller arriving during a refresh waits for
 # it and finds the cache just read (no second Kalshi pass). Re-entrant: report._load holds it around procs_for too.
 LOCK = threading.RLock()
@@ -96,14 +128,17 @@ def load_cache():
         st = os.stat(p)
         key = (p, st.st_mtime, st.st_size)
         if _MEMO["key"] == key:
+            _SERVED["key"] = key
             return json.loads(json.dumps(_MEMO["data"]))         # a private copy
         with open(p, encoding="utf-8") as fh:
             d = json.load(fh)
         if not isinstance(d, dict):
             raise ValueError("not a dict")
         _MEMO.update(key=key, data=d)
+        _SERVED["key"] = key
         return json.loads(json.dumps(d))
     except (OSError, ValueError):
+        _SERVED["key"] = None
         return {"v": 1, "subs": {}, "procs": None}
 
 

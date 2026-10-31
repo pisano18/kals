@@ -127,9 +127,20 @@ def fig_new(n, h, ratios=None, sharex=False):
     return fig, list(axs)
 
 
+# v-tg-fast2 (2026-10-31): fig.savefig drew every picture TWICE -- with a layout engine set, matplotlib's print_figure
+# first draws the whole figure with drawing switched off just to lay it out, then draws it again for the pixels (40-50%
+# of a picture's 1-3 s). The figure's own canvas (FigureCanvasAgg, set by fig_new) prints the PNG in ONE draw, the layout
+# done inside it, at the figure's dpi (= DPI) with the same facecolor and metadata: the same bytes (the golden compare
+# checks every picture's digest). Off = the old savefig.
+ONE_PASS = True
+
+
 def png(fig):
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=DPI)
+    if ONE_PASS and fig.dpi == DPI and isinstance(fig.canvas, mpl()["Canvas"]):
+        fig.canvas.print_png(buf)
+    else:
+        fig.savefig(buf, format="png", dpi=DPI)
     out = buf.getvalue()
     _check(fig, len(out))                               # the layout rules (only when STRICT / AUDIT: the tests)
     fig.clear()

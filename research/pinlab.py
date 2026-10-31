@@ -20,12 +20,12 @@ its own paper log, so the catalogue is never a stale description of something
 that stopped days ago.
 """
 import collections
-import glob
 import json
 import os
 import re
 import time
 import sys
+from botdata import dirlist as _dirlist                              # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
@@ -1400,7 +1400,7 @@ def _paper_logs():
     out = []
     for pat in ("pinrun-paper-*.jsonl", "cmdarm-*.jsonl", "cmdlive-*.jsonl",
                 "pinracearm-*.jsonl"):
-        out += glob.glob(os.path.join(RESULTS, pat))
+        out += _dirlist.glob(os.path.join(RESULTS, pat))
     return sorted(out)
 
 
@@ -1424,6 +1424,29 @@ def _sel_ok(got, want):
     if isinstance(want, (int, float)) and isinstance(got, (int, float)):
         return abs(float(got) - float(want)) < 1e-9
     return got == want
+
+
+_FIRST = {}
+
+
+def _first_record_kept(path):
+    """_first_record, remembered while the file's size and modified time are the same (v-tg-fast2: /brief read the
+    first line of 668 logs on every tap). A log only grows after its first line, so a grown log keeps its first record
+    too; a file rewritten in place gets a new modified time and is read again."""
+    try:
+        st = os.stat(path)
+    except OSError:
+        return _first_record(path)
+    key = (st.st_size, st.st_mtime_ns)
+    hit = _FIRST.get(path)
+    if hit is not None and hit[0] == key:
+        return hit[1]
+    r = _first_record(path)
+    if len(_FIRST) > 20000:
+        _FIRST.clear()
+    if r is not None:
+        _FIRST[path] = (key, r)
+    return r
 
 
 def _first_record(path):
@@ -1632,32 +1655,35 @@ def summarise_log(path):
                 "lost": sum(x["lost"] for x in parts),
                 "net": sum(x["net"] for x in parts),
                 "logs": len(parts)}
-    n = won = lost = 0
-    net = 0.0
+    # v-tg-fast2 (2026-10-31): remembered per file by botdata.filefold (an unchanged log is not read again, a grown
+    # one only from where it was); the answer is the old full read's, line for line
+    from botdata import filefold
+    st, _e = filefold.fold(path, "pinlab.summarise_log", _sum_new, _sum_line, dict)
+    return st
+
+
+def _sum_new():
+    return {"settled": 0, "won": 0, "lost": 0, "net": 0.0}
+
+
+def _sum_line(st, line):
+    if '"settled"' not in line:
+        return
     try:
-        fh = open(path, encoding="utf-8", errors="replace")
-    except OSError:
-        return None
-    with fh:
-        for line in fh:
-            if '"settled"' not in line:
-                continue
-            try:
-                r = json.loads(line)
-            except ValueError:
-                continue
-            if r.get("kind") != "settled":
-                continue
-            v = _settled_pnl(r)
-            if v is _NOPOS:
-                continue
-            n += 1
-            net += v
-            if v < 0:
-                lost += 1
-            else:
-                won += 1
-    return {"settled": n, "won": won, "lost": lost, "net": net}
+        r = json.loads(line)
+    except ValueError:
+        return
+    if r.get("kind") != "settled":
+        return
+    v = _settled_pnl(r)
+    if v is _NOPOS:
+        return
+    st["settled"] += 1
+    st["net"] += v
+    if v < 0:
+        st["lost"] += 1
+    else:
+        st["won"] += 1
 
 
 # AMENDMENT 80 (2026-09-20): DATA FROM BEFORE THIS INSTANT IS NOT COMPARABLE.
@@ -1958,6 +1984,10 @@ def live_progress(cmdlines=None, logs=None):
     # 64 entries and the first record read 24,627 times for 668 logs; see the note above _SPANS)
     pool = logs if logs is not None else _paper_logs()
     firsts = {}
+    # v-tg-fast2 (2026-10-31): each log's start stamp and base name worked out once a call, not once per entry
+    # (64 entries x 668 logs = 43k re.search + basename, ~0.4 s of every /brief)
+    stamps = {p: re.search(r"(\d{8})T\d{6}Z", os.path.basename(p)) for p in pool}
+    known = None
     for e in EXPERIMENTS:
         m = e.get("match")
         if not m:
@@ -1995,11 +2025,11 @@ def live_progress(cmdlines=None, logs=None):
         since = str(e.get("since") or "").replace("-", "")[:8]
         if sel:
             for p in pool:
-                stamp = re.search(r"(\d{8})T\d{6}Z", os.path.basename(p))
+                stamp = stamps[p]
                 if since and stamp and stamp.group(1) < since:
                     continue
                 if p not in firsts:
-                    firsts[p] = _first_record(p)
+                    firsts[p] = _first_record_kept(p)
                 r = firsts[p]
                 if r is None or r.get("kind") != "start":
                     continue
@@ -2022,7 +2052,8 @@ def live_progress(cmdlines=None, logs=None):
             # here so three days of arm history stays visible instead of being
             # thrown away by a restart. Runs started after the fix identify
             # themselves and never reach this branch.
-            known = {os.path.basename(p): p for p in pool}
+            if known is None:
+                known = {os.path.basename(p): p for p in pool}
             for nm in e["legacy_logs"]:
                 if nm in known:
                     best = known[nm]

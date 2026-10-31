@@ -19,6 +19,7 @@ from botdata.fmt import _f, cnt as _cnt, dollars, nof as _nof, num as _fnum, usd
 from botdata.fmt import dot, of100 as _of100, pct1, pct_of, ret              # noqa: F401  (step 12: merged into botdata.fmt)
 from phone.command import Command, declare
 from phone.html import Html, details, elines, esc, i_, pre, table
+from botdata import dirlist as _dirlist
 
 
 # ===========================================================================
@@ -201,13 +202,12 @@ def speed_pin_money(results, server_rows, since):
     """What the pin bot made on the server, per filled contract: the `settled` rows' pnl_c (each leg, a hedge's
     included, fees in) of the pin logs written since `since`, on the markets it got contracts in on the server, over those
     contracts. Markets not settled yet are left out (their contracts are `open_contracts`)."""
-    import glob
     got = {}
     for o in server_rows:
         if o.get("tk") and _f(o.get("got")) > 0:
             got[o["tk"]] = got.get(o["tk"], 0.0) + _f(o["got"])
     made = {}
-    for p in sorted(glob.glob(os.path.join(results, "pinrun-live-*.jsonl"))):
+    for p in sorted(_dirlist.glob(os.path.join(results, "pinrun-live-*.jsonl"))):
         try:
             if os.path.getmtime(p) < since:
                 continue

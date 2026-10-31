@@ -9,6 +9,8 @@ registry as bots); its two copied helpers are shared since rebuild step 12 (_bs:
 botdata.paths). Kalshi is read only through the `getter` the
 caller passes (GET only; ctx.funds_get() -- botstats.default_getter(), kauth.get -- in production).
 """
+import collections
+import copy
 import re
 import time
 import traceback
@@ -379,7 +381,26 @@ def funds_hist(getter, subs, now, bs_getter=None, memo=None):
     return out
 
 
+_DAYS_SEEN = collections.OrderedDict()   # v-tg-fast2: (id(res), ...) -> (res, answer); /funds asked 52 times a tap
+
+
 def funds_days(res, today, days=FUNDS_DAYS, sub=None):
+    """funds_days_of (below), remembered for the same `res` dict (v-tg-fast2, 2026-10-31: one /funds built the same
+    account's days ~13 times, 1.1 s); each caller gets its own copy. The dict is held while remembered, so its id is
+    never another's; its rows' count, error and oldest are part of the key."""
+    rows = res.get("rows") if isinstance(res, dict) else None
+    key = (id(res), len(rows) if isinstance(rows, list) else None, res.get("err") if isinstance(res, dict) else None,
+           res.get("oldest") if isinstance(res, dict) else None, today, days, sub)
+    hit = _DAYS_SEEN.get(key)
+    if hit is None or hit[0] is not res:
+        hit = (res, funds_days_of(res, today, days, sub))
+        _DAYS_SEEN[key] = hit
+        while len(_DAYS_SEEN) > 64:
+            _DAYS_SEEN.popitem(last=False)
+    return copy.deepcopy(hit[1])
+
+
+def funds_days_of(res, today, days=FUNDS_DAYS, sub=None):
     """One account's pull (funds_settled) -> its last `days` ET days, newest first:
     {"days": [{"day", "read", "all", "bot", "race", "other"}], "total": {"all", "bot", "race", "other"},
      "other_series": the series in "other" on the days read}.

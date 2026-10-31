@@ -35,6 +35,7 @@ import threading
 import traceback
 
 import bots as _bots
+from botdata import dirlist as _dirlist
 from phone import command as _cmd
 from phone.context import Ctx
 from phone.html import Html, esc, i_
@@ -221,7 +222,13 @@ def unknown(ctx):
 # ---- dispatch -----------------------------------------------------------------------------------------------------------
 def dispatch(phone, chat_id, text):
     """The reply for one incoming message to `phone` (the runtime: phone.app.Phone), or None to ignore it. Phone.handle's
-    rules, in its order (see the module note). A command with no `fail` may raise: the poll loop answers 'error: ...'."""
+    rules, in its order (see the module note). A command with no `fail` may raise: the poll loop answers 'error: ...'.
+    v-tg-fast2: one tap (botdata.dirlist.tap): the results folder is listed once for all of the reply's globs."""
+    with _dirlist.tap():
+        return _dispatch(phone, chat_id, text)
+
+
+def _dispatch(phone, chat_id, text):
     ctx = Ctx.from_phone(phone, text, chat_id=chat_id)
     cmd = ctx.cmd
     if cmd == PAIR:

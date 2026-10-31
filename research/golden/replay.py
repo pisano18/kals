@@ -76,6 +76,8 @@ def run_world(world, a, env):
         cmd += ["--only", a.only]
     if a.repeat > 1:
         cmd += ["--repeat", str(a.repeat)]
+        if a.warm:
+            cmd += ["--warm"]
     t1 = time.perf_counter()
     with open(os.path.join(out, "stdout.txt"), "w", encoding="utf-8") as fh:
         rc = subprocess.run(cmd, cwd=work, env=e, stdout=fh, stderr=subprocess.STDOUT, timeout=a.timeout).returncode
@@ -103,6 +105,8 @@ def main():
     ap.add_argument("--jobs", type=int, default=2)
     ap.add_argument("--only", default=None, help="regex over case ids")
     ap.add_argument("--repeat", type=int, default=1, help="run each case N times per process (flakiness check)")
+    ap.add_argument("--warm", action="store_true", help="with --repeat: the repeats keep the code's caches (a warm tap: "
+                    "a remembered answer must equal the cold one)")
     ap.add_argument("--python", default=sys.executable)
     ap.add_argument("--timeout", type=int, default=3600)
     ap.add_argument("--keep-work", action="store_true")

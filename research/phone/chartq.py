@@ -24,6 +24,7 @@ import threading
 import time
 import traceback
 
+from botdata import dirlist as _dirlist
 from phone.log import log
 from phone.transport import net_error
 
@@ -151,7 +152,8 @@ class ChartQueue:
             return
         t0 = self.monotonic()
         try:
-            got = (st.chart_fn or self._tgc().build)(job["kind"], job["ctx"])
+            with _dirlist.tap():                             # v-tg-fast2: the folder listed once a picture
+                got = (st.chart_fn or self._tgc().build)(job["kind"], job["ctx"])
         except ImportError as e:
             if "matplotlib" in str(e):
                 st.charts_on = False

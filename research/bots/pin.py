@@ -3,6 +3,7 @@ botstats.py / pinphone.py / tgcharts.py at 8a9c5e1 (v-tg-rebuild step 1, 2026-10
 from bots.spec import Book, Bot, Feature, Gauge, Logs, Pot, Records, VersionRule, live_flag, opt, toks
 from botdata.clock import et_clock, utc_epoch
 from botdata.fmt import cents as _c, num as _num, usd
+from botdata import dirlist as _dirlist
 
 # The hourly ladders pinrun knows (v-ladder7); only KXBTCD trades live today. A new series in
 # subaccount 0 that is in neither list lands in `other`, loudly -- never folded into a bot.  (botstats.PIN_HOURLY)
@@ -105,10 +106,9 @@ def activity(k, r, out, why, st):
 # closure over its `when` and `results`; spec.SizeIn hands it those and the phone's readers).
 def size_words(si):
     """/funds: the main bot's bet size now -- its newest autosize record, else results/pinrun-live-size.json."""
-    import glob
     import os
     import re
-    logs = sorted(glob.glob(os.path.join(si.results, "pinrun-live-*.jsonl")))
+    logs = sorted(_dirlist.glob(os.path.join(si.results, "pinrun-live-*.jsonl")))
     r = si.last_record(logs[-1], ("autosize",)) if logs else None
     if r and si.num(r.get("new")) is not None:
         m = re.search(r"bank \$([\d.]+)", str(r.get("why") or ""))
@@ -127,9 +127,8 @@ def stop_gauges(wi):
     """The pin bot's loss abort (pinrun.risk_abort): it halts when the run's settled money, or the ET day's, reaches
     loss_abort (its newest loss_cap / autosize record; the start record before any). One gauge: the worse of the two,
     warned at 60% and 80% of the line, once each per ET day and run."""
-    import glob
     import os
-    logs = sorted(glob.glob(os.path.join(wi.results, "pinrun-live-*.jsonl")))
+    logs = sorted(_dirlist.glob(os.path.join(wi.results, "pinrun-live-*.jsonl")))
     if not logs:
         return []
     path = logs[-1]
@@ -154,10 +153,9 @@ def stop_gauges(wi):
 def books(wi, upto):
     """The main account's money as the pin bot last read it (its newest autosize 'bank $X', or an external-move record's
     bank, both read while flat) at or before `upto`, plus every market it settled since (settled.pnl_c, fees in)."""
-    import glob
     import os
     import re
-    logs = sorted(glob.glob(os.path.join(wi.results, "pinrun-live-*.jsonl")))
+    logs = sorted(_dirlist.glob(os.path.join(wi.results, "pinrun-live-*.jsonl")))
     if not logs:
         return []
     path = logs[-1]

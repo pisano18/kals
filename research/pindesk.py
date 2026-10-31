@@ -69,7 +69,6 @@ import bisect
 import calendar
 import collections
 import ctypes
-import glob
 import json
 import os
 import re
@@ -86,6 +85,8 @@ from downtime import et_offset, hours_up_et_day, lost_by_et_day     # noqa: E402
 import pinflat                                                       # noqa: E402
 import pinlab                                                        # noqa: E402
 import pinsupply                                                     # noqa: E402
+from botdata import clock as _clock                                  # noqa: E402
+from botdata import dirlist as _dirlist                              # noqa: E402
 
 REPO = os.path.dirname(HERE)
 RESULTS = os.path.join(REPO, "results")
@@ -129,15 +130,17 @@ GATE_WORDS = {
 # time and tickers
 # ===========================================================================
 def parse_t(s):
-    """'2026-09-16T13:59:31Z' -> epoch. None if it is not that shape."""
-    try:
-        return calendar.timegm(time.strptime(str(s)[:19], "%Y-%m-%dT%H:%M:%S"))
-    except (TypeError, ValueError):
-        return None
+    """'2026-09-16T13:59:31Z' -> epoch. None if it is not that shape. v-tg-fast2 (2026-10-31): botdata.clock.utc_epoch
+    (the same strptime answer for every input, read directly in the common shape), as an int."""
+    v = _clock.utc_epoch(s)
+    return None if v is None else int(v)
 
 
 def et_day(epoch):
-    """ET calendar day of an epoch, as 'YYYY-MM-DD'."""
+    """ET calendar day of an epoch, as 'YYYY-MM-DD'. v-tg-fast2 (2026-10-31): a number goes through botdata.clock.et_day
+    (the same arithmetic, remembered per UTC hour: /days asked for 24k of these, 0.4 s)."""
+    if type(epoch) in (int, float):
+        return _clock.et_day(epoch)
     e = epoch + et_offset(epoch)
     return time.strftime("%Y-%m-%d", time.gmtime(e))
 
@@ -322,8 +325,8 @@ class Ledger:
         # number. The record shapes differ (the commodity log has `won` where
         # the crypto log has `want`/`cost`), and `_ingest` reads every one of
         # those with .get(), so a missing field shows blank instead of lying.
-        paths = sorted(glob.glob(os.path.join(self.results, "pinrun-live-*.jsonl"))
-                       + glob.glob(os.path.join(self.results, "cmdlive-*.jsonl")))
+        paths = sorted(_dirlist.glob(os.path.join(self.results, "pinrun-live-*.jsonl"))
+                       + _dirlist.glob(os.path.join(self.results, "cmdlive-*.jsonl")))
         if not paths:
             return False
         changed = False
@@ -1352,14 +1355,14 @@ def health(ledger):
     h["kalshi_ok"], h["kalshi_prev"], h["kalshi_open"], h["kalshi_chans"], h["kalshi_age"] = recorder_ok(os.path.join(KALS, "kalshi_data"))
     h["feeds_ok"], h["feeds_prev"], h["feeds_open"], h["feeds_chans"], h["feeds_age"] = recorder_ok(os.path.join(KALS, "feed_data"))
     if not remote:
-        lives = glob.glob(os.path.join(RESULTS, "pinrun-live-*.jsonl"))
+        lives = _dirlist.glob(os.path.join(RESULTS, "pinrun-live-*.jsonl"))
         h["blind"] = (blind_of(tail_rows(max(lives, key=os.path.getmtime)), time.time())
                       if lives and h["alive"] else None)
     h["cdc_age"] = newest_mtime_age(os.path.join(KALS, "cdc_data"))
     now = time.time()
-    h["paper_arms"] = sum(1 for p in glob.glob(os.path.join(RESULTS, "pinrun-paper-*.jsonl"))
+    h["paper_arms"] = sum(1 for p in _dirlist.glob(os.path.join(RESULTS, "pinrun-paper-*.jsonl"))
                           if now - os.path.getmtime(p) < 900)
-    h["race_arms"] = sum(1 for p in glob.glob(os.path.join(RESULTS, "pinracearm-*.jsonl"))
+    h["race_arms"] = sum(1 for p in _dirlist.glob(os.path.join(RESULTS, "pinracearm-*.jsonl"))
                          if now - os.path.getmtime(p) < 900)
     try:
         h["disk_gb"] = shutil.disk_usage("C:\\").free / 1e9
@@ -1604,7 +1607,7 @@ def quick_health():
     h = {"pid": pid, "alive": bool(pid) and pinflat.pid_alive(pid), "flag": read_flag(),
          "quiet_s": None, "watchdog_s": _file_age_s(HEARTBEAT), "open": {}, "halt": None,
          "blind": None}
-    lives = glob.glob(os.path.join(RESULTS, "pinrun-live-*.jsonl"))
+    lives = _dirlist.glob(os.path.join(RESULTS, "pinrun-live-*.jsonl"))
     if lives:
         for r in tail_rows(max(lives, key=os.path.getmtime)):
             if r.get("kind") == "halt":
@@ -1781,7 +1784,7 @@ def status_facts(now=None):
         h["flat"], h["open"] = st, d.get("open") or {}
     except Exception as e:                              # noqa: BLE001
         h["flat"], h["flat_err"] = "UNKNOWN", str(e)[:120]
-    lives = glob.glob(os.path.join(RESULTS, "pinrun-live-*.jsonl"))
+    lives = _dirlist.glob(os.path.join(RESULTS, "pinrun-live-*.jsonl"))
     ages = [a for a in ((_file_age_s(max(lives, key=os.path.getmtime)) if lives else None),
                         _file_age_s(os.path.join(RESULTS, "pinrun-live.out"))) if a is not None]
     h["quiet_s"] = min(ages) if ages else None

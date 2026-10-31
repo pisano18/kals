@@ -3,7 +3,6 @@ from a moment on), last_record (the newest record of some kinds, memoised on the
 
 v-tg-rebuild step 7 (2026-10-30): split out of botstats.py verbatim (botstats.py is now a facade over botdata).
 """
-import glob
 import json
 import os
 import zlib
@@ -11,6 +10,7 @@ import zlib
 from botdata import paths as _paths
 from botdata import tables as _tables
 from botdata.clock import utc_epoch as _epoch
+from botdata import dirlist as _dirlist
 
 
 # ---- the bots' own logs (what they DID; never money) -------------------------
@@ -206,4 +206,4 @@ def settings_now(path, start, kinds, as_start=None):
 
 
 def pin_logs():
-    return sorted(glob.glob(os.path.join(_paths.RESULTS, _tables.SPEC["pin"]["log_glob"])))
+    return sorted(_dirlist.glob(os.path.join(_paths.RESULTS, _tables.SPEC["pin"]["log_glob"])))

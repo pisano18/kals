@@ -122,6 +122,7 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--only", default=None, help="regex over case ids")
     ap.add_argument("--repeat", type=int, default=1, help="run each case N times in this process (flakiness check)")
+    ap.add_argument("--warm", action="store_true", help="with --repeat: the repeats keep the module caches (a warm tap)")
     a = ap.parse_args()
     w = open_world(a.fixture, a.code, a.world, a.work, a.out)
     if w is None:
@@ -140,7 +141,7 @@ def main():
     for case in cases:
         res, secs, trace = gl_cases.run_case(rt, case)
         for _k in range(max(0, a.repeat - 1)):      # --repeat N: the same case again in this process; any change = flaky
-            again, _s, _t = gl_cases.run_case(rt, case)
+            again, _s, _t = gl_cases.run_case(rt, case, restore=not a.warm)
             if C.canon(again) != C.canon(res):
                 flaky.append(case[0])
                 print("golden FLAKY (in one process): %s" % case[0], flush=True)
