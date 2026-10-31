@@ -48,10 +48,12 @@ def moved_today(now):
 
 def _usage(cfg):
     mx, day, margin = _money.limits(cfg)
+    caps = ("no limit on a move or a day" if mx is None and day is None else
+            "%s a move, %s a day" % ("no limit" if mx is None else dollars(mx), "no limit" if day is None else dollars(day)))
     return i_("Move: /move 50 main jb (amount, from, to) · /move 25 fx main · between the main account's pools: "
               "/move 20 main pool0 pool2. You get the plan and a code; /move yes CODE within %d minutes sends it. "
-              "Limits: %s a move, %s a day; a pot holding open bets keeps their cost + %s in cash."
-              % (ASK_TTL_S // 60, dollars(mx), dollars(day), dollars(margin)))
+              "Limits: %s; a pot holding open bets keeps their cost + %s in cash."
+              % (ASK_TTL_S // 60, caps, dollars(margin)))
 
 
 def listing(ctx):

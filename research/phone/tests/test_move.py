@@ -119,7 +119,7 @@ def test_listing_shows_every_pot_and_how():
               "<b>ladder</b> · subaccount 1 (Ladder), crypto pool: $300.00",
               "<b>jb</b> · subaccount 3 (Jump band), crypto pool: $48.10",
               "<b>fx</b> · subaccount 5 (FX taker), crypto pool: $120.00", "<b>sub4</b> · subaccount 4 (FX taker)",
-              "open bets in account 0: $12.30 (2)", "/move 50 main jb", "$500.00 a move, $1,000.00 a day",
+              "open bets in account 0: $12.30 (2)", "/move 50 main jb", "no limit on a move or a day",
               "Cash in all pots"):
         assert s in r, (s, r)
     assert K.posts == [] and all(p != "POST" for p, _q in K.gets)
@@ -180,7 +180,7 @@ def test_between_the_main_accounts_pools():
 
 def test_rails():
     fresh()
-    for text, why in (("/move 600 main jb", "at most $500.00 a move"),
+    for text, why in (("/move 6000 main jb", "the source holds $812.40"),
                       ("/move 60 jb main", "the source holds $48.10"),
                       ("/move 45 jb main", "under its open bets' cost $4.40 + $2.00 margin"),
                       ("/move 10 sub4 jb", "different pools"),
@@ -217,18 +217,24 @@ def test_open_bets_keep_their_cost_and_margin():
 
 
 def test_day_limit_counts_the_journal():
+    """v-move-nocap: no cap unless telegram.json sets one; a set day cap counts the journal across restarts."""
     fresh()
     K.cash[(0, 2)] = 2000.0
     for i, a in enumerate((400, 400)):
         run("/move %d main ladder" % a, now=T + 10 * i)
         assert "Moved" in run("/move yes 4821", now=T + 10 * i + 1)
-    r = run("/move 300 main ladder", now=T + 100)
+    assert "Move $1,100.00" in run("/move 1100 main ladder", now=T + 99), "no day cap by default"
+    cfg = {"move_day_max_usd": 1000}
+    r = run("/move 300 main ladder", now=T + 100, cfg=cfg)
     assert "at most $1,000.00 a day" not in r and "at most $1000.00 a day: $800.00 moved today already" in r, r
-    assert "Move $200.00" in run("/move 200 main ladder", now=T + 101)
+    assert "Move $200.00" in run("/move 200 main ladder", now=T + 101, cfg=cfg)
     # the next ET day starts again
-    assert "Move $300.00" in run("/move 300 main ladder", now=T + 86400)
-    # configurable
+    assert "Move $300.00" in run("/move 300 main ladder", now=T + 86400, cfg=cfg)
+    # configurable per move too; 0 / junk = no cap
     assert "at most $50.00 a move" in run("/move 60 main ladder", cfg={"move_max_usd": 50}, now=T + 86400)
+    assert "Move $60.00" in run("/move 60 main ladder", cfg={"move_max_usd": 0}, now=T + 86400)
+    assert "Move $60.00" in run("/move 60 main ladder", cfg={"move_max_usd": "x"}, now=T + 86400)
+    assert M.limits({}) == (None, None, 2.0) and M.limits({"move_margin_usd": -1}) == (None, None, 2.0)
 
 
 def test_code_expiry_and_no():

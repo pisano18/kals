@@ -43,8 +43,8 @@ POOL_KEYS = {"source", "destination", "amount", "source_exchange_shard", "destin
              "source_subaccount", "destination_subaccount"}
 POOLS = (0, 2)                  # the pools the bots use: 0 (weather / FX pairs), 2 (crypto & commodities)
 POOL_NAME = {0: "weather pool", 2: "crypto pool"}
-MAX_MOVE_USD = 500.0
-MAX_DAY_USD = 1000.0
+MAX_MOVE_USD = None             # v-move-nocap: None = no cap (telegram.json move_max_usd sets one)
+MAX_DAY_USD = None              # v-move-nocap: None = no cap (telegram.json move_day_max_usd sets one)
 MARGIN_USD = 2.0
 POST_TIMEOUT_S = 20
 
@@ -60,15 +60,20 @@ def _ordercli():
 
 def limits(cfg=None):
     """(max a move, max a day, margin) in dollars: the defaults, or telegram.json's move_max_usd / move_day_max_usd /
-    move_margin_usd when they are positive numbers."""
+    move_margin_usd. A cap is None (no cap) unless its default or cfg value is a positive number; the margin is never
+    None (a bad value = the default)."""
     cfg = cfg if isinstance(cfg, dict) else {}
     out = []
     for k, d in (("move_max_usd", MAX_MOVE_USD), ("move_day_max_usd", MAX_DAY_USD), ("move_margin_usd", MARGIN_USD)):
+        v = cfg.get(k, d)
         try:
-            v = float(cfg.get(k, d))
-            out.append(v if v >= 0 else d)
+            v = float(v) if v is not None else None
         except (TypeError, ValueError):
-            out.append(d)
+            v = d
+        if k == "move_margin_usd":
+            out.append(v if v is not None and v >= 0 else MARGIN_USD)
+        else:
+            out.append(v if v is not None and v > 0 else None)
     return tuple(out)
 
 
@@ -226,9 +231,9 @@ def check(plan, src_cash, dst_cash, cfg=None, moved_today=0.0):
     mx, day_max, _margin = limits(cfg)
     bad = []
     a = float(plan["amount"])
-    if a > mx + 1e-9:
+    if mx is not None and a > mx + 1e-9:
         bad.append("at most $%.2f a move (asked $%.2f)" % (mx, a))
-    if moved_today + a > day_max + 1e-9:
+    if day_max is not None and moved_today + a > day_max + 1e-9:
         bad.append("at most $%.2f a day: $%.2f moved today already" % (day_max, moved_today))
     if src_cash is None:
         bad.append("the source's cash could not be read -- refusing blind")
