@@ -80,6 +80,7 @@ DAY_STOP_FRAC, COMMIT_FRAC = 0.20, 0.70
 LIMBO_S = 60.0                                   # v-ladder-limbo: a failed cancel's remainder counts at most this long
 MARKET_CAP_X = 0                                 # --market-cap-x 2: at most 2 bids' worth in one market
 CLOSE_CAP_X = 0                                  # --close-cap-x 5: at most 5 bids' worth across one close's markets
+REPLACE_WAIT_RAILS = ("max_commit", "max_contracts", "market_cap", "close_cap")   # v-ladder-replace: rails that count the bid being replaced
 
 # v-ladder-optc (2026-10-22, operator: "Okay option c"): --coins limits which 15-minute series the ladder bids on
 # (None = every coin, as before); --pot-per-contract sets the size divisor (default 14 = as before). Option C =
@@ -326,6 +327,7 @@ class Broker:
         self.live = {}            # paper order id -> {kid, ticker, side, px, status, filled}
         self.live_markets = {}    # close_s -> set(tickers)
         self.deferred = set()      # v-ladder-reserve: extra bids held back (logged once each)
+        self.replace_wait = set()  # v-ladder-replace: moved bids waiting for the old bid's cancel (logged once each)
         self.held = {}            # ticker -> {"side", "n", "cost"}
         self.day, self.day_pnl = None, 0.0
         self.halted = self.stopped = False
@@ -376,6 +378,13 @@ class Broker:
         """Contracts resting + held + cancelling/limbo remainder in one market."""
         h = self.held.get(ticker)
         return (h["n"] if h else 0) + sum(float(SIZE) for v in self.open_orders() if v["ticker"] == ticker)             + sum(float(SIZE) - v["filled"] for v in self.pending() if v["ticker"] == ticker)
+
+    def replacing(self, ticker, desired):
+        """True when a bid on `ticker` that the paper engine no longer wants (being replaced) still counts against the
+        rails: resting, sending, cancelling or in limbo."""
+        counted = self.open_orders() + self.pending()
+        return any(v["ticker"] == ticker and q not in desired and any(v is c for c in counted)
+                   for q, v in self.live.items())
 
     def rails_refusal(self, px, ticker=None, close_s=None):
         if self.stopped:
@@ -437,6 +446,17 @@ class Broker:
                                            why="reserve: room kept for the first 98c bid of coins not yet decided")
                         continue                    # not marked: it is tried again next tick, when room may exist
                     why = self.rails_refusal(o.price, m.ticker, m.close_s)
+                    if why in REPLACE_WAIT_RAILS and self.replacing(m.ticker, desired):
+                        # v-ladder-replace (2026-10-31): the paper engine MOVED this market's bid (97.9c -> 98c is a new
+                        # paper order); the old bid is still counted until its cancel lands, so the rails refused the new
+                        # one for good and the old one was then cancelled: the market had NO bid (11 times 10-30, 21 on
+                        # 10-29). Wait instead: tried again every tick, placed once the old bid's money is free. The rails
+                        # are never exceeded.
+                        if pid not in self.replace_wait:
+                            self.replace_wait.add(pid)
+                            self.log.write("deferred", ticker=m.ticker, paper_id=pid, px=str(o.price),
+                                           why="replace: waits for the old bid's cancel (%s)" % why)
+                        continue
                     if why:
                         self.live[pid] = {"kid": None, "ticker": m.ticker, "side": o.side, "px": o.price,
                                           "status": "refused", "filled": 0}
@@ -698,6 +718,35 @@ def selftest():
     while not br4.q.empty():
         br4.work_once(br4.q.get())
     ck(len(sent) == n_sent and any(r["ev"] == "would_place" for r in sink), "dry run sends nothing")
+    # v-ladder-replace: a moved bid (97.9c -> 98c) on a full rail waits for the old bid's cancel, then is placed
+    _sv = (MAX_CONTRACTS, MAX_COMMIT)
+    try:
+        MAX_COMMIT = 0.99 * float(SIZE)                  # room for exactly one bid
+        brR = Broker(log, 3, False, fake_send, lambda: now[0])
+        mR = _M("R1", 7000, [_O(7001, "yes", "0.979")])
+        brR.sync(_E([mR]))
+        while not brR.q.empty():
+            brR.work_once(brR.q.get())
+        mR.orders = [_O(7001, "yes", "0.979", live_to=now[0]), _O(7002, "yes", "0.98")]
+        nref = len([r for r in sink if r["ev"] == "rail_refused"])
+        brR.sync(_E([mR]))
+        ck(len([r for r in sink if r["ev"] == "rail_refused"]) == nref and 7002 not in brR.live
+           and any(r["ev"] == "deferred" and r.get("paper_id") == 7002 and r["why"].startswith("replace")
+                   for r in sink), "v-ladder-replace: the moved bid is not refused for good while the old one is counted")
+        while not brR.q.empty():
+            brR.work_once(brR.q.get())
+        ck(brR.live[7001]["status"] == "cancelled", "v-ladder-replace: the old bid is cancelled")
+        brR.sync(_E([mR]))
+        while not brR.q.empty():
+            brR.work_once(brR.q.get())
+        n_, c_ = brR.exposure()
+        ck(brR.live.get(7002, {}).get("status") == "resting" and sent[-1][2]["price"] == "0.9800"
+           and c_ <= MAX_COMMIT + 1e-9, "v-ladder-replace: once the old bid is gone the 98c bid rests, inside the rail")
+        mR2 = _M("R2", 7000, [_O(7101, "yes", "0.98")])
+        brR.sync(_E([mR, mR2]))
+        ck(brR.live.get(7101, {}).get("status") == "refused", "v-ladder-replace: a NEW market on a full rail is still refused")
+    finally:
+        MAX_CONTRACTS, MAX_COMMIT = _sv
     # the only write endpoints in this file are create/cancel order
     src = open(os.path.abspath(__file__), encoding="utf-8").read()
     body = src[:src.index("# ----" + "-" * 20)]
@@ -989,7 +1038,8 @@ def selftest():
            "a 404 cancel keeps its 5 counted (5 limbo + the 5 re-bid = 10) and the broker is NOT flat")
         mm2 = [_M("L1", 7800, [_O(78002, "yes", "0.98")])]
         brl.sync(_E(mm2))
-        ck(brl.live.get(78002, {}).get("status") == "refused", "market cap x2 sees the limbo bid: a 3rd bid is refused")
+        ck(brl.live.get(78002, {}).get("status") in (None, "refused") and brl.market_contracts("L1") <= 10,
+           "market cap x2 sees the limbo bid: a 3rd bid is not placed (v-ladder-replace: it waits, rails re-checked)")
         brl.on_fill(78000, 5)
         ck(not brl.limbo() and brl.held["L1"]["n"] == 5, "once the poller books the fill the limbo remainder is 0 (no double count)")
         brl2 = Broker(log, 3, False, send404, lambda: clkl[0])
@@ -1020,11 +1070,14 @@ def selftest():
            "capfix: a cancelling bid counts at its remainder (5 held + 5 cancelling = 10 contracts, $9.80)")
         mz[0].orders = [_O(86001, "yes", "0.98")]           # the re-bid arrives before the cancel completes
         brz.sync(_E(mz))
-        ck(brz.live[86001]["status"] == "refused" and sink[-1].get("why") == "market_cap",
-           "capfix: the 10-06 shape -- a re-bid while A's cancel is in flight is refused with why=market_cap (was 15)")
+        ck(86001 not in brz.live and sink[-1].get("ev") == "deferred" and "market_cap" in sink[-1].get("why", ""),
+           "capfix + v-ladder-replace: a re-bid while A's cancel is in flight is NOT placed (it waits on market_cap)")
         brz.on_fill(86000, 5)                               # Kalshi had filled A; the poller books it mid-cancel
         ck(brz.market_contracts("Z1") == 10 and brz.exposure()[0] == 10 and not brz.in_cancel(),
            "capfix: once A's fill is booked mid-cancel its remainder is 0 -> held 10, no double count")
+        brz.sync(_E(mz))
+        ck(brz.live[86001]["status"] == "refused" and sink[-1].get("why") == "market_cap",
+           "capfix: A had filled -> the re-bid is refused with why=market_cap (was 15), never placed")
         brz2 = Broker(log, 3, False, fake_send, lambda: now[0])
         mz2 = [_M("Z2", 8700, [_O(87000, "yes", "0.98")])]
         brz2.sync(_E(mz2))

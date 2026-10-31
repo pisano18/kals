@@ -46,6 +46,17 @@
    "added_by": "Claude (assistant), for the operator",
    "date": "2026-10-30",
    "sha256": "e555297671e051b3de6b0025e74caf30cbab6c98dba655639181ecce8d32d7cc"
+  },
+  {
+   "id": "ladder82",
+   "title": "Ladder: 82% money rail (bids ~118 -> ~138) + the moved-bid fix, one restart",
+   "description": "Restarts the ladder once with two changes. 1) The money rail goes from 70% to 82% of its pot (--commit-frac 0.82, as asked on 10-31), so each 98c bid is about 138 contracts instead of 118 at today's $830 pot: about +$1.10-1.28 a day on the same fills, $98 more resting at once, worst single market about -$132 instead of -$113 (the ladder has never lost a market). 2) A fix: when the ladder moves a bid from 97.9c to 98c it used to count the old and the new bid together, refuse the new one for good and then cancel the old one, leaving that market with NO bid (11 times on 10-30, 21 on 10-29); now the new bid waits a moment for the old one's cancel and is placed. The rails are never exceeded. The script refuses unless the server has the new code and the ladder's self-test passes, edits boot_all's ladder line once (backup kept, parse checked), then restarts the ladder between closes (minutes 2-9 of a quarter hour) through the keep-alive; the ladder misses at most one close.",
+   "stop_rule": "Back to 70% (remove --commit-frac 0.82 from boot_all and restart) if the ladder ever loses a market at the bigger size, or if its 7-day money per fill falls below the 70% rail's.",
+   "script": "ladder82.ps1",
+   "log": "ladder82.out",
+   "added_by": "Claude (assistant), for the operator",
+   "date": "2026-10-31",
+   "sha256": "f8a664fb4e783ebfbbabeef1275109f03128dc010c9d5aaa327ef72570d8c25b"
   }
  ]
 }
