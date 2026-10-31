@@ -11,7 +11,8 @@
 #   2. copy 0925n -> 0925p, patch 0925p\research\pinrun.py, refuse unless its sha is exactly 24eec22bbaa7
 #   3. edit BOTH launchers: $code -> 0925p, $codeSha -> 24eec22bbaa7, the two flags after --wrongside-rise-c
 #      (backups kept, parse-checked); the build's own copy of the launcher too (its self-test reads it)
-#   4. -Check, then the FULL new argv + --selftest on the new build at BelowNormal priority: must print SELF-TEST PASSED
+#      + the keep-alive launcher's --bank-brake 4.00 -> 3.00 (the approved trial size; it had been missed); argv diff logged
+#   4. -Check (both launchers), then the FULL new argv + --selftest on the new build at BelowNormal priority: must print SELF-TEST PASSED
 #   5. a VERSIONS.md entry (repo + build copies), then restart pin through C:\kals-live-0925n\restart_bot.ps1 by WMI (it waits until pin holds no open bet)
 # REVERT: copy the two .before-band99-* backups over the launchers and rerun restart_bot while flat (0925n is untouched).
 # Log: results\pin_band99.out; the restart's own output: results\pin_band99_restart.out
@@ -34,10 +35,16 @@ $edits = @(
   @('    "--wrongside-rise-c", "1.0",',
     ('    "--wrongside-rise-c", "1.0",' + "`r`n" + '    # v-band99 2026-10-31 (operator: "I like the test you came up with, do that."): offers over 98c and at or under 99c, only in a market with nothing held, at a tenth of the bet; off again if band orders lose more than $60 or winners fill under 50% after 3 days. Revert: delete this line pair and $code/$codeSha back to C:\kals-live-0925n / e51a465d8b5c' + "`r`n" + '    "--band99-ceiling", "0.99", "--band99-frac", "0.10",'))
 )
+# keep-alive fix (coordinator, 10-31): the keep-alive launcher (C:\kals-repo\restart_bot.ps1, which watch_bot.ps1
+# runs after a crash) still had --bank-brake 4.00 while the hand launcher has the approved 1.33x trial's 3.00, so a
+# crash restart would have silently dropped the trial size. It gets the hand launcher's line.
+$bbEdit = @('    "--bank-brake", "4.00",',
+  ('    # v-size15 2026-10-30 (operator: "You decide on pin size"): 4.00 -> 3.00 = 1.33x bet (trial; operator asked for caution; jump hedge kept); +$2/day, 84% of resamples; back to 4.00 on a day under -$100 or a bad 11-10 read' + "`r`n" + '    # (keep-alive copy fixed 2026-10-31 by pin_band99.ps1: it still had 4.00, so a crash restart would have dropped the trial size)' + "`r`n" + '    "--bank-brake", "3.00",'))
+function EditsFor($f) { if ($f -eq 'C:\kals-repo\restart_bot.ps1') { return @($edits) + @(,$bbEdit) } else { return $edits } }
 foreach ($f in $launchers) {
   $t = [IO.File]::ReadAllText($f)
   if ($t -match 'band99') { Say "REFUSED: $f already mentions band99; nothing changed"; exit 1 }
-  foreach ($e in $edits) {
+  foreach ($e in (EditsFor $f)) {
     $n = ([regex]::Matches($t, [regex]::Escape($e[0]))).Count
     if ($n -ne 1) { Say ("REFUSED: {0}: expected once, found {1}: {2}; nothing changed" -f $f, $n, $e[0]); exit 1 }
   }
@@ -62,7 +69,7 @@ foreach ($f in $launchers) {
   $bak = $f + ".before-band99-" + $stamp
   Copy-Item $f $bak
   $baks[$f] = $bak
-  foreach ($e in $edits) { $t = $t.Replace($e[0], $e[1]) }
+  foreach ($e in (EditsFor $f)) { $t = $t.Replace($e[0], $e[1]) }
   [IO.File]::WriteAllText($f, $t, (New-Object System.Text.UTF8Encoding($bom)))
   $errs = $null
   [void][System.Management.Automation.Language.Parser]::ParseFile($f, [ref]$null, [ref]$errs)
@@ -70,6 +77,15 @@ foreach ($f in $launchers) {
   Say "CHANGED $f (parses OK; backup $bak)"
 }
 Copy-Item 'C:\kals-live-0925n\restart_bot.ps1' "$new\restart_bot.ps1" -Force
+# the two launchers' pin argv (every string line, comments dropped) should now match; any difference is logged
+function ArgvOf($f) { @([IO.File]::ReadAllLines($f) | Where-Object { $_ -match '^\s*"--' } | ForEach-Object { $_.Trim().TrimEnd(',') }) }
+$dif = @(Compare-Object (ArgvOf $launchers[0]) (ArgvOf $launchers[1]))
+if ($dif.Count) { foreach ($d in $dif) { Say ("ARGV DIFFERS ({0}): {1}" -f $(if ($d.SideIndicator -eq '<=') { 'hand launcher only' } else { 'keep-alive only' }), $d.InputObject) } }
+else { Say ("the two launchers' pin argv match ({0} lines)" -f (ArgvOf $launchers[0]).Count) }
+$chk2 = & powershell -NoProfile -ExecutionPolicy Bypass -File 'C:\kals-repo\restart_bot.ps1' -Check 2>&1 | Out-String
+Add-Content -Path $log -Value $chk2
+if ($chk2 -notmatch "code_sha $newSha" -or $chk2 -notmatch '--band99-ceiling 0\.99' -or $chk2 -notmatch '--bank-brake 3\.00') { Say "the keep-alive launcher's -Check did not show the new build, the band flags and --bank-brake 3.00"; RestoreAll; exit 1 }
+Say "keep-alive launcher -Check ok: new build, band flags, --bank-brake 3.00"
 # ---- 5. check + the full-argv self-test on the new build, before anything stops
 $chk = & powershell -NoProfile -ExecutionPolicy Bypass -File 'C:\kals-live-0925n\restart_bot.ps1' -Check 2>&1 | Out-String
 Add-Content -Path $log -Value $chk
