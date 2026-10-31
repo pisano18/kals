@@ -28,7 +28,8 @@ def ck(cond, msg):
 
 # the botdata caches a sandbox empties, by name -> their just-imported state (any other module dict is left alone)
 FRESH = {"_MEMO": {"key": None, "data": None}, "_BACK": {}, "_ACTIVE": {"t": 0.0, "v": None},
-         "_FLEET": {"t": 0.0, "v": None}, "_TABLE": {"t": 0.0, "rows": None}}
+         "_FLEET": {"t": 0.0, "v": None}, "_TABLE": {"t": 0.0, "rows": None},
+         "_SINCE": {}, "_MARKETS": {}}                               # v-tg-fast: read_since's and market()'s memos
 
 
 def _caches():

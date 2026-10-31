@@ -40,8 +40,35 @@ def describe(ticker):
     return str(ticker)
 
 
+# v-tg-fast (2026-10-31): market() is a pure function of these fields of a settlement row (pinledger.money/pnl/payout,
+# the ticker's day and words, the settled time). One /today turned 16k rows into markets (botstats' cache is copied
+# afresh on every read, so the same rows come back as new dicts), ~1 s of CPU; the answer is remembered on the
+# fields' values (a missing field is its own value) and handed out as a fresh dict each time.
+_MARKET_FIELDS = ("ticker", "settled_time", "market_result", "value", "yes_count_fp", "no_count_fp",
+                  "yes_total_cost_dollars", "no_total_cost_dollars", "fee_cost")
+_MISSING = object()
+_MARKETS = {}
+_MARKETS_MAX = 200_000
+
+
 def market(s):
-    """One settled market, in the terms the operator reads. Money is pinledger.pnl -- Kalshi's."""
+    """One settled market, in the terms the operator reads. Money is pinledger.pnl -- Kalshi's. (v-tg-fast: the
+    answer for the same field values is remembered; a new dict each call.)"""
+    try:
+        key = tuple(s.get(f, _MISSING) for f in _MARKET_FIELDS)
+        hash(key)
+    except TypeError:                                    # an unhashable field value: worked out, not remembered
+        return _market(s)
+    got = _MARKETS.get(key)
+    if got is None:
+        got = _market(s)
+        if len(_MARKETS) >= _MARKETS_MAX:
+            _MARKETS.clear()
+        _MARKETS[key] = got
+    return dict(got)
+
+
+def _market(s):
     yn, nn = pinledger.money(s, "yes_count_fp"), pinledger.money(s, "no_count_fp")
     side = "both" if yn > 0 and nn > 0 else ("yes" if yn > 0 else ("no" if nn > 0 else "-"))
     tk = s.get("ticker") or ""

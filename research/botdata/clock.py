@@ -19,7 +19,9 @@ merged here -- each is kept under its own name so every caller can stay on its o
 """
 import calendar
 import datetime
+import math
 import os
+import re
 import sys
 import time
 
@@ -29,18 +31,81 @@ if _RESEARCH not in sys.path:
 from downtime import et_offset                                   # noqa: E402  (pinday's and pindesk's offset)
 
 
-def utc_epoch(t):
-    """'2026-09-30T04:15:06.437143Z' or '...:06Z' -> UTC epoch, or None.  (botstats._epoch)"""
+_ISO19 = re.compile(r"([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})\Z")
+
+
+def _utc_epoch_strptime(t):
+    """The original reader (time.strptime): every input the fast path below does not take comes here."""
     try:
         return float(calendar.timegm(time.strptime(str(t)[:19], "%Y-%m-%dT%H:%M:%S")))
     except (TypeError, ValueError):
         return None
 
 
+def utc_epoch(t):
+    """'2026-09-30T04:15:06.437143Z' or '...:06Z' -> UTC epoch, or None.  (botstats._epoch)
+
+    v-tg-fast (2026-10-31): a canonical ASCII 'YYYY-MM-DDTHH:MM:SS' prefix with an ordinary date and time is read with
+    int() and calendar.timegm (the phone parsed 30-40k of these for one /today or /bots, ~1.2 s of CPU in strptime);
+    anything else -- other digits, seconds 60/61, a day past the month's end, year 0 -- takes the old strptime path, so
+    every answer is the old one (botdata/tests/test_fast.py checks them against each other)."""
+    if type(t) is str:
+        m = _ISO19.match(t[:19])
+        if m is not None:
+            y, mo, d, hh, mm, ss = (int(x) for x in m.groups())
+            if (y >= 1 and 1 <= mo <= 12 and hh <= 23 and mm <= 59 and ss <= 59
+                    and 1 <= d <= (28 if d <= 28 else calendar.monthrange(y, mo)[1])):
+                return float(calendar.timegm((y, mo, d, hh, mm, ss)))
+    return _utc_epoch_strptime(t)
+
+
+# v-tg-fast (2026-10-31): the ET offset and the ET day are the same for every moment of one UTC hour -- the clock
+# changes (07:00Z in March, 06:00Z in November) and ET midnights (04:00Z / 05:00Z) all fall on whole UTC hours -- so
+# both are remembered per UTC hour (a /pin picture asked for 86k ET days, 1.8 s of CPU in downtime.et_offset). A
+# moment within 1 s of an hour's edge is always worked out the old way. downtime.py itself is untouched (pinrun.py
+# imports it).
+_HOUR_OFF, _HOUR_DAY = {}, {}
+_HOUR_MAX = 200_000
+
+
+def _hour_of(e):
+    """The UTC hour of epoch `e` when `e` is more than 1 s inside it, else None."""
+    try:
+        h = math.floor(e / 3600.0)
+    except (ValueError, OverflowError):
+        return None
+    r = e - h * 3600.0
+    return h if 1.0 <= r <= 3599.0 else None
+
+
+def _et_off(epoch):
+    """downtime.et_offset(epoch), remembered per UTC hour."""
+    e = float(epoch)
+    h = _hour_of(e)
+    if h is None:
+        return et_offset(e)
+    v = _HOUR_OFF.get(h)
+    if v is None:
+        v = et_offset(e)
+        if len(_HOUR_OFF) >= _HOUR_MAX:
+            _HOUR_OFF.clear()
+        _HOUR_OFF[h] = v
+    return v
+
+
 def et_day(epoch):
-    """'YYYY-MM-DD' in Eastern, from a UTC epoch.  (botstats.et_day -> pinday.et_day_of_epoch)"""
-    e = float(epoch) + et_offset(float(epoch))
-    return time.strftime("%Y-%m-%d", time.gmtime(e))
+    """'YYYY-MM-DD' in Eastern, from a UTC epoch.  (botstats.et_day -> pinday.et_day_of_epoch; v-tg-fast: per hour)"""
+    e0 = float(epoch)
+    h = _hour_of(e0)
+    v = _HOUR_DAY.get(h) if h is not None else None
+    if v is None:
+        e = e0 + et_offset(e0)
+        v = time.strftime("%Y-%m-%d", time.gmtime(e))
+        if h is not None:
+            if len(_HOUR_DAY) >= _HOUR_MAX:
+                _HOUR_DAY.clear()
+            _HOUR_DAY[h] = v
+    return v
 
 
 def day_start(day):
@@ -94,6 +159,6 @@ def et_clock(epoch, with_day=True):
     """UTC epoch -> 'Sep 30 12:15 AM ET' (or '12:15 AM ET').  (botstats.et_clock)"""
     if epoch is None:
         return None
-    tm = time.gmtime(float(epoch) + et_offset(float(epoch)))
+    tm = time.gmtime(float(epoch) + _et_off(epoch))
     hm = ampm(tm.tm_hour, tm.tm_min)
     return ("%s %d %s ET" % (time.strftime("%b", tm), tm.tm_mday, hm)) if with_day else hm + " ET"
