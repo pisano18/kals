@@ -117,6 +117,15 @@ BOT = Bot(
     name="ladder", label="Ladder", short="Ladder", word="ladder",
     what="resting 98c bids on the decided side of NEAR ZEC DOGE HYPE XRP (one rung since 10-23), sized so every bid "
          "fits its bank (goal 1%/day)",
+    strategy=(
+        "Rests 98c bids on the decided side of the 15-minute NEAR ZEC DOGE HYPE and XRP markets in the last 30 "
+        "seconds, once the settlement average has locked.",
+        "A maker: it fills only when someone sells the winner at 98c, keeps partial fills and cancels the rest at"
+        " the close.",
+        "It wins about 2c a contract because it bids only after the outcome is locked.",
+        "Sized so every bid fits in 70% of its pot; it stops for the day after losing 20% of it.",
+        "Quiet when nobody dumps the winner at 98c (most of that flow now trades at 99.9c).",
+    ),
     help=("/ladder — the penny ladder (subaccount 1), the same detail as /pin",),
     command="/ladder", commands=("/ladder",),
     pots=(Pot("1", 2, what="penny ladder", short="ladder"),),

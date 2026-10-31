@@ -189,3 +189,11 @@ then in `Records.resize` (+ `resize_as_start`); every reader of its settings goe
 script's self-change kinds are declared and scans bots/ and botdata/ for a start-record read without them (a deliberate
 one says `# start-only: <why>`). A % of a bank counts a deposit or withdrawal only from when it landed
 (`botdata.pots.span_base`; several days: each day's % chained).
+
+## 7. Every one-bot page states its strategy (v-tg-strategy, 10-31)
+
+A bot's own page -- the registry bot pages (`render/botcards.bs_bot_html`), /race, and the paused-bot answer
+(`router.hidden_reply`, legacy `Phone.text_hidden`) -- shows `botcards.strategy_html(name)`: the registry's
+`Bot.strategy` (a required field; `bots.validate` refuses an empty one, a dash, a sentence with no full stop) under the
+header. A new bot or a new one-bot page goes through that one helper; `phone/tests/test_strategy.py` checks every
+registry bot on every such page, and keeps the sentences under 600 characters so a page still fits one message.

@@ -187,14 +187,16 @@ def chart_kinds():
 def hidden_reply(ctx, name):
     """The answer to a paused or retired bot's own command (/race, /fc, /wx ... while it is not active). Phone.text_hidden,
     verbatim."""
-    from phone.render.botcards import BOT_CMD_OF
+    from phone.render.botcards import BOT_CMD_OF, strategy_html
     bs = ctx.bs()
     label = bs.SPEC[name]["label"] if name in bs.SPEC else name
     why = "its stop file is set" if bs.stop_set(name) else "no live copy of it is running"
-    return Html("⏸ <b>%s is not running now</b> (%s), so it is left off every page and /help.\n%s\n%s" % (
-        esc(label), esc(why), i_("It comes back by itself -- here, in /help, /bots and the rest -- once it runs "
-                                 "again with no stop file. Its past money stays in every total, on the 'earlier bots' "
-                                 "line of /bots."),
+    st = strategy_html(name)                     # v-tg-strategy: what it does, even while it is not running
+    return Html("⏸ <b>%s is not running now</b> (%s), so it is left off every page and /help.\n%s%s\n%s" % (
+        esc(label), esc(why), ("\n".join(st) + "\n") if st else "",
+        i_("It comes back by itself -- here, in /help, /bots and the rest -- once it runs "
+           "again with no stop file. Its past money stays in every total, on the 'earlier bots' "
+           "line of /bots."),
         i_("The bots running now: %s" % " ".join(BOT_CMD_OF.get(b, "/" + b) for b in ctx.active()))))
 
 

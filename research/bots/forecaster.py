@@ -66,6 +66,14 @@ def size_words(si):
 BOT = Bot(
     name="forecaster", label="Forecaster", short="Forecaster", word="forecaster",
     what="buys the 15-minute coin side its own forecast calls decided, sized from its bank",
+    strategy=(
+        "Buys either side of a 15-minute coin market in the last 30 seconds when its own forecast prices that "
+        "side 2c or more above the ask after fees.",
+        "It pays 75c to 98.5c, only for what is still offered 1 second after it decides.",
+        "It loses when a late move flips a market it called.",
+        "Sized from its bank; it stops for the day at -$12 and halts at -$20 since its start (base size; both "
+        "scale).",
+    ),
     help=("/forecaster (or /fc) — the forecaster (subaccount 2), the same detail as /pin",),
     command="/fc", commands=("/forecaster", "/fc"),
     pots=(Pot("2", 2, what="forecaster", short="forecaster"),),

@@ -726,6 +726,16 @@ def _unit_of(name):
     return b.unit if b is not None else "market"
 
 
+def strategy_html(name):
+    """v-tg-strategy (2026-10-31; operator: "/fx should give a description and what the bot does for any bot. Its
+    strategy."): the registry's Bot.strategy as one visible block, the same on every page that is one bot's (bs_bot_html,
+    /race, the paused-bot answer): ['🧭 <b>Strategy</b>', its sentences as one paragraph]. [] for a name no bot has."""
+    b = _bots.get(name)
+    if b is None or not b.strategy:
+        return []
+    return ["🧭 <b>Strategy</b>", esc(" ".join(b.strategy))]
+
+
 def _goal_of(name):
     """A bot's daily goal in % of its bank (Bot.goal_pct), or None."""
     b = _bots.get(name)
@@ -888,6 +898,9 @@ def bs_bot_html(b, now_et):
          "%s <b>%s</b> -- %s" % (state_icon(r), esc(b["label"].upper()), esc(b["what"])),
          "<i>%s · Pot: %s.</i>" % (esc(now_et), esc(pot))]
     L.append("")
+    st = strategy_html(b["name"])
+    if st:
+        L += st + [""]
     L.append("⚙️ <b>Status</b>")
     L += bs_running_html(r)
     setup = bs_setup_lines(r)

@@ -194,6 +194,15 @@ def books(wi, upto):
 BOT = Bot(
     name="pin", label="Pin bot", short="Pin bot", word="pin bot",
     what="15-minute coin markets + hourly Bitcoin",
+    strategy=(
+        "Buys the near-certain side of the 15-minute coin markets and hourly Bitcoin in the last 45 seconds.",
+        "Early: a third of a bet at 90c or more from 45 s left; the main bet in the last 30 s at up to 98c, with "
+        "at least 0.3c a contract of edge after fees.",
+        "It wins because some sellers still offer the decided side under $1; a win pays 2 to 3c a contract.",
+        "A bet is the bank divided by 8.82 in contracts, so it grows with the bank.",
+        "It hedges if its odds fall under 40% and halts after losing 18.7% of its bank in a run.",
+        "Quiet when nobody sells the winner cheap.",
+    ),
     help=("/pin — the pin bot: running or not and why, version, settings, money by window, worst, open bets, cash, "
           "last markets",),
     command="/pin", commands=("/pin",),

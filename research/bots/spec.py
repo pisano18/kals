@@ -217,6 +217,8 @@ class Bot:
     short: str                                            # tgcharts.BOT_SHORT / pinphone.SPEED_LABEL
     word: str                                             # pinphone.BOT_WORD ('pin bot')
     what: str                                             # SPEC what
+    strategy: tuple                                       # v-tg-strategy: what it buys, why it wins, size, stops,
+                                                          # when it is quiet; plain sentences, shown on its page
     help: tuple                                           # pinphone.HELP_BOT_LINES lines
     command: str                                          # pinphone.BOT_CMD_OF
     commands: tuple                                       # every alias, in order

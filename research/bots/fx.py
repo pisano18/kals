@@ -216,6 +216,18 @@ BOT = Bot(
     what="buys the side already bid 98c+ at 99c or less 30 to 15 s before the close of the 15-minute markets (45 to 15 s on 10-30 only; 30 to 15 s "
          "until 10-30, v-fx-from45): the 5 currency pairs (subaccount 4) and the 8 commodities (subaccount 5) as ONE "
          "bank: $20 of it a contract (10 contracts a market at ~$207; v-fx-onepot)",
+    strategy=(
+        "Buys the favourite in the 15-minute currency (5 pairs) and commodity (8) markets 30 to 15 seconds before"
+        " the close.",
+        "Only when its bid has held 98c or more for 5 seconds and it is still sold at 99c or less; one order a "
+        "market.",
+        "It wins because a 98c bid that late almost never flips; a win earns about 1c a contract, a loss costs "
+        "99c.",
+        "A bet is the bank divided by $20 in contracts.",
+        "It stops for the day at -$25 and for good at -$10 since its stop line was set (at 10 contracts; both "
+        "scale).",
+        "Quiet on weekends: Friday about 5 PM ET to Sunday about 6 PM ET.",
+    ),
     help=("/fx — the FX taker: the 5 currency pairs (subaccount 4) and the 8 commodities (subaccount 5), the same detail "
           "as /pin",),
     command="/fx", commands=("/fx",),

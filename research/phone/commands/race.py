@@ -18,6 +18,7 @@ import pindesk
 from phone.command import Command, declare
 from phone.html import Html, details, elines, esc, i_, pre
 from phone.log import log
+from phone.render.botcards import strategy_html
 from pindesk import et_day, et_str
 
 RACE_LOG = "pinracepenny-live.jsonl"
@@ -72,6 +73,7 @@ def render(d, ctx):
     if d["stop"]:
         L.append("⏸ <b>STOOD DOWN</b>: the stop file results/pinracepenny.stop is present.")
     L.append("")
+    L += strategy_html("race") + [""]                   # v-tg-strategy: every bot page states its strategy
     size, rules = P.race_size_words(pv["start"], pv["bank_size"]), P.race_rule_words(pv["start"])
     L.append("📏 <b>How it bets</b>%s" % ("" if fl["penny"] else " <i>(its last start record)</i>"))
     if size:

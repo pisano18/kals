@@ -1285,7 +1285,7 @@ from phone.render.botcards import (                       # noqa: E402,F401
     bs_running_html, main_words, main_bot_of, _mkt_short, buys_words, bs_money_table, money_legend, bs_days_table,
     _money_detail, bs_money_html, LADDER_GOAL_PCT, _unit_of, _goal_of, bs_avg_day_line, bs_avg30_line, bots_avg_table,
     bs_headline, bots_window_table, _day_long, nice_coin, bs_bot_html, _short_html, all_bots_avg_before, _bot_parked,
-    bs_all_html)
+    bs_all_html, strategy_html)
 
 
 # ===========================================================================
@@ -1660,10 +1660,12 @@ class Phone:
         bs = _bs()
         label = bs.SPEC[name]["label"] if name in bs.SPEC else name
         why = "its stop file is set" if bs.stop_set(name) else "no live copy of it is running"
-        return Html("⏸ <b>%s is not running now</b> (%s), so it is left off every page and /help.\n%s\n%s" % (
-            esc(label), esc(why), i_("It comes back by itself -- here, in /help, /bots and the rest -- once it runs "
-                                     "again with no stop file. Its past money stays in every total, on the 'earlier bots' "
-                                     "line of /bots."),
+        st = strategy_html(name)                     # v-tg-strategy: what it does, even while it is not running
+        return Html("⏸ <b>%s is not running now</b> (%s), so it is left off every page and /help.\n%s%s\n%s" % (
+            esc(label), esc(why), ("\n".join(st) + "\n") if st else "",
+            i_("It comes back by itself -- here, in /help, /bots and the rest -- once it runs "
+               "again with no stop file. Its past money stays in every total, on the 'earlier bots' "
+               "line of /bots."),
             i_("The bots running now: %s" % " ".join(BOT_CMD_OF.get(b, "/" + b) for b in self.active()))))
 
     def save_cfg(self):
@@ -2645,6 +2647,7 @@ class Phone:
         if os.path.exists(os.path.join(res, "pinracepenny.stop")):
             L.append("⏸ <b>STOOD DOWN</b>: the stop file results/pinracepenny.stop is present.")
         L.append("")
+        L += strategy_html("race") + [""]               # v-tg-strategy: every bot page states its strategy
         size, rules = race_size_words(pv["start"], pv["bank_size"]), race_rule_words(pv["start"])
         L.append("📏 <b>How it bets</b>%s" % ("" if fl["penny"] else " <i>(its last start record)</i>"))
         if size:

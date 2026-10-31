@@ -75,6 +75,13 @@ def activity_note(out, st):
 BOT = Bot(
     name="weather", label="Weather dip-seller", short="Weather", word="weather dip-seller",
     what="sells YES on a daily-high temperature bracket after a 10c+ hourly drop, 2 contracts",
+    strategy=(
+        "Sells YES on a daily high-temperature bracket (18 cities) after its price falls 10c or more in an hour, "
+        "6 to 12 hours before the close.",
+        "It rests the sell 1c above the new ask for 3 hours, 2 contracts, at most 5 open, held to settlement.",
+        "The bet: a bracket that just dropped is still overpriced.",
+        "A pre-registered micro test: 100 fills or 14 days; killed if negative after 60 fills.",
+    ),
     help=("/weather (or /wx) — the weather dip-seller (subaccount 3, weather cash pool), the same detail as /pin",),
     command="/weather", commands=("/weather", "/wx"),
     # the rest of subaccount 3 (its KXHIGH brackets, pool 0); no short /funds name since the jump band took the number

@@ -166,6 +166,14 @@ BOT = Bot(
     name="jumpband", label="Jump band", short="Jump band", word="jump band",
     what="buys the 70-90c favourite on BNB/HYPE/ZEC/NEAR when the price jumps 2+ standard deviations in "
          "the last minute, 5 contracts, holds to the end",
+    strategy=(
+        "Buys the favourite on 15-minute BNB HYPE ZEC and NEAR after a one-second price jump of 2 or more "
+        "standard deviations, 10 to 60 seconds before the close.",
+        "Only at 70c to 90c; one buy a market, held to the close.",
+        "It wins because the market reprices slower than the jump (replay: about 6.6c a contract).",
+        "Stage 1: 5 contracts a buy from a $50 pot; it stops for the day at -$15 and for good at -$25.",
+        "Quiet when the slow coins are calm.",
+    ),
     help=("/jb (or /jumpband) — the jump band: buys the 70-90c favourite on BNB/HYPE/ZEC/NEAR after a 2+ sd price "
           "jump, 5 contracts (subaccount 3), the same detail as /pin",),
     command="/jb", commands=("/jb", "/jumpband"),

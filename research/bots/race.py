@@ -101,6 +101,13 @@ def size_words(si):
 BOT = Bot(
     name="race", label="Coin race", short="Coin race", word="coin race",
     what="which coin gains most in 15 minutes",
+    strategy=(
+        "Bets on Kalshi's 15-minute coin race: which of BTC ETH SOL XRP and HYPE gains most in the quarter-hour.",
+        "In the last 30 seconds it buys the leader's YES or a trailer's NO at 90c or more when its model, checked"
+        " 5 times, says the lead is safe.",
+        "It loses on a late overtake or a tie (a tie pays 50c).",
+        "About 1.9 contracts per $100 of bank, at most 20 and $40 a bet; it halts after 2 losses.",
+    ),
     help=("/race — the live coin race right now (real money; its bets grow with the bank), its last 10 races, and its "
           "money by window",
           "/racestats — the coin race record, and the paper arms on the same races"),

@@ -84,9 +84,25 @@ def _discover():
     return found
 
 
+def strategy_problem(strategy):
+    """Why a Bot.strategy is not usable, or None: a non-empty tuple of plain sentences, each ending in a full stop, no
+    em/en dash and no '--' (v-tg-strategy, 2026-10-31)."""
+    if not isinstance(strategy, tuple) or not strategy:
+        return "is empty (a tuple of plain sentences)"
+    for s in strategy:
+        if not isinstance(s, str) or not s.strip():
+            return "has an empty sentence"
+        if "\u2014" in s or "\u2013" in s or "--" in s:
+            return "uses a dash: %r" % s[:60]
+        if not s.rstrip().endswith((".", "!", "?")):
+            return "has a sentence with no full stop: %r" % s[:60]
+    return None
+
+
 def validate(bots):
     """Raise RegistryError on: a repeated name, order or command; a bot with no pot; two catch-all pots (or two
-    pool-only pots) in one subaccount; a sub-claims pot that is no callable."""
+    pool-only pots) in one subaccount; a sub-claims pot that is no callable; a bot with no strategy sentences (or one
+    with a dash for punctuation: the phone's words never use one)."""
     seen_name, seen_order, seen_cmd = set(), set(), {}
     catch, pool_only = {}, {}
     for b in bots:
@@ -104,6 +120,9 @@ def validate(bots):
             raise RegistryError("%s: its command %s is not one of its commands" % (b.name, b.command))
         if not b.pots:
             raise RegistryError("%s has no pot" % b.name)
+        bad = strategy_problem(b.strategy)
+        if bad:
+            raise RegistryError("%s: its strategy %s" % (b.name, bad))
         for p in b.pots:
             if p.claims is None:
                 if p.sub in catch:
