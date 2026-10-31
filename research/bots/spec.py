@@ -87,6 +87,11 @@ class Records:
     halt_lifts: tuple = ("resume",)
     halt_lifts_next_day: tuple = ()                       # the jump band's day_stop names its ET day
     refusal_words: tuple = ()                             # its part of botstats.PLAIN (pattern, words)
+    # v-tg-settings-now (2026-10-31): the records in which the RUNNING bot changes its own settings (a resize from its
+    # bank, a new loss cap), and how one reads as start-record fields (None = its own fields). botdata.logs.settings_now
+    # lays them over the start record; test_settings_now makes every self-change kind its live script writes listed here
+    resize: tuple = ()
+    resize_as_start: Optional[Callable[[dict], dict]] = None
 
 
 @dataclass(frozen=True)

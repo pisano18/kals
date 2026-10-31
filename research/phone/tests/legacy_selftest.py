@@ -415,10 +415,10 @@ def selftest():
         # headline is EVERY bot's money (botstats.all_bots, the /bots number); the main account follows, as before
         # 2026-10-26 ("/yesterday doesn't look good or show % of bank return"): a bot-by-bot table with each bot's
         # % of its own bank, its return on the bets and its losers; the main account's block behind a tap
-        ck(_tl[0].split(" ", 1)[-1].startswith("All bots today") and "% of all pots)" in _tl[0]
+        ck(_tl[0].split(" ", 1)[-1].startswith(("All bots made", "All bots lost")) and " today (" in _tl[0] and "% of all pots)" in _tl[0]
            and "🏦 Pin bot + coin race (main account)" in P(t) and "📊 By bot" in P(t)
            and any(x.split() == ["ALL", "-$12.53", "-1.1%", "-10.1%", "2/5"] for x in _tl)
-           and any(x.split() == ["forecaster", "-$2.54", "-9.6%", "-103.7%", "1/1"] for x in _tl)
+           and any(x.split() == ["forecaster", "-$2.54", "-12.9%", "-103.7%", "1/1"] for x in _tl)   # v-tg-twr: its mid-day $5 for its share
            and "🟢 Pin + race +$1.66 (+0.33% of the bank)" in _tl and "1 of 1 closes won (100.0%), 0 lost" in P(t)
            and "of the $500.00 it held at the start of the ET day" in P(t) and not tg_html_problems(t),
            "/today: every bot's money as the headline, then the main account's money and its %% of the bank at day "
@@ -557,10 +557,11 @@ def selftest():
            "/open: every pot -- no pin bet open here (its own log), the coin race's one open leg from Kalshi's "
            "positions (botstats), with what is at risk: %r" % _op)
         _dd = P(ph.handle(111, "/days"))
-        ck(_dd.startswith("🔴 All bots last 7 days -$15.95 (-10.0% on $160.13 staked · -1.4% of all pots)")
+        # v-tg-twr (2026-10-31): the week's withdrawal and moves count for their share of it: -1.4% -> -1.6%
+        ck(_dd.startswith("🔴 All bots lost -$15.95 last 7 days (-10.0% on $160.13 staked · -1.6% of all pots)")
            and "all time -$15.95 (-1.4% on the $1,103.75 put in)" in _dd
            and any(x.split()[:6] == ["Sep", "16", "-$12.53", "-1.1%", "-10.1%", "2/5"] for x in _dd.split("\n"))
-           and any(x.split() == ["ALL", "-$15.95", "-1.4%", "-10.0%", "3/8"] for x in _dd.split("\n"))
+           and any(x.split() == ["ALL", "-$15.95", "-1.6%", "-10.0%", "3/8"] for x in _dd.split("\n"))
            and "Sep 16: +$1.66 (+0.33% of the bank) · 0 of 1 closes lost" in _dd,
            "/days: every bot's week as the headline with its % of all pots, all time on the money put in, each day's "
            "% of all pots, the week bot by bot, the main account's own days (with % of its bank) behind a tap")
@@ -831,7 +832,7 @@ def selftest():
             finally:
                 ph.ledger.days = _days0
             ck("Pin bot since v-pinfix (" in P(_dy) and ": +$1.66, 1 markets, 0 lost (0.0%)" in P(_dy)
-               and P(_dy).startswith("🔴 All bots last 7 days "),
+               and P(_dy).startswith(("🔴 All bots lost ", "🟢 All bots made ")) and " last 7 days (" in P(_dy),
                "/days carries the running version's own line (a deploy day mixes two versions), same money as /stats; "
                "all time is its headline")
 
@@ -1040,7 +1041,7 @@ def selftest():
         bh_ = ph.handle(111, "/bots")
         b_ = P(bh_)
         ck(b_.split("\n")[1] == "🤖 ALL BOTS · Sep 16 11:00 AM ET", "/bots: header in ET")
-        ck(b_.split("\n")[0] == "🔴 All bots today -$12.53 (-10.1% on $123.81 staked · -1.1% of all pots)",
+        ck(b_.split("\n")[0] == "🔴 All bots lost -$12.53 today (-10.1% on $123.81 staked · -1.1% of all pots)",
            "/bots: today's money over every pot is the headline, with its return and its share of all pots")
         ck(fits(bh_) and not any(tg_html_problems(c) for c in split_html(bh_)), "/bots: Telegram-valid messages")
         # THE POT (2026-10-02), worked by hand. Now: main 1000 + open 29.10 + 19.60 = 1048.70; ladder
@@ -1053,13 +1054,14 @@ def selftest():
         # v-tg-active (2026-10-30): in this world the ladder is stopped by its stop file and the weather dip-seller, the FX
         # taker and the jump band do not run -- none is named; the ladder's +$0.04 sits on the one 'earlier' entry
         ck("Today: -$12.53 on $123.81 put in (-10.1%) = -1.1% of all pots ($1,100.33); 5 markets, 3 won, 2 lost\n"
-           "  pin -$10.40 (-0.96%) | race +$0.37 (+0.03%) | forecaster -$2.54 (-9.6%) | earlier +$0.04"
+           "  pin -$10.40 (-0.96%) | race +$0.37 (+0.03%) | forecaster -$2.54 (-12.9%) | earlier +$0.04"
            in b_,
            "/bots TODAY is all four pots: -10.40 + 0.37 - 2.54 + 0.042 = -12.53 on 99.80 + 19.60 + 2.45 + 1.958 "
            "put in = -1.1% of the $1,100.33 all pots held at midnight; each running bot's share of ITS OWN pot listed, "
            "the stopped ladder's money on the 'earlier' entry (no pot %%: earlier bots' pots differ)")
-        ck("Yesterday: -$3.42 on $36.32 put in (-9.4%) = -0.31% of all pots ($1,103.75); 3 markets, 2 won, 1 lost\n"
-           "  pin +$0.54 (+0.05%) | race none | forecaster +$0.55 (+2.7%) | other -$4.51 (-0.42%)"
+        # v-tg-twr (2026-10-31): a move inside a window counts for its share of it (the $98 deposit, the moves)
+        ck("Yesterday: -$3.42 on $36.32 put in (-9.4%) = -0.32% of all pots ($1,062.92); 3 markets, 2 won, 1 lost\n"
+           "  pin +$0.54 (+0.05%) | race none | forecaster +$0.55 (+2.8%) | other -$4.51 (-0.43%)"
            in b_ and "ladder" not in b_.lower().replace("/ladder", "") and "weather" not in b_.lower()
            and "fx" not in b_.lower() and "jump" not in b_.lower(),
            "YESTERDAY: the SOL and XRP markets that closed before midnight ET count on Sep 15 though Kalshi "
@@ -1084,7 +1086,7 @@ def selftest():
         # 2026-10-26 (operator: "a green emoji for a negative bank makes no sense"): a card's dot is the bot's money
         # TODAY -- the pin bot is running and DOWN, so red -- and whether it runs is in words on the line under it
         ck("🔴 PIN BOT · main account · /pin\nrunning since Sep 16 7:59 AM ET · v-reopen98 + v-floor90\ntoday -$10.40 "
-           "(-10.4% on bets · -0.96% of bank) · 7 days -$9.86 (-7.6% on bets · -0.93% of bank) · all time -$9.86 "
+           "(-10.4% on bets · -0.96% of bank) · 7 days -$9.86 (-7.6% on bets · -0.91% of bank) · all time -$9.86 "
            "(-7.6% on bets · -0.93% of bank) · open: 1 ($29.10 at risk)" in b_,
            "a card a bot: its dot is its money today (pin is running and down: red), running since (ET) in words, "
            "version, money with its share of the pot, open bets, its command")
@@ -1126,7 +1128,7 @@ def selftest():
         p_ = P(ph_)
         ck(fits(ph_) and len(split_html(ph_)) == 1 and not tg_html_problems(ph_),
            "/pin fits one Telegram message on this world (%d chars), Telegram-valid" % len(ph_))
-        ck(p_.split("\n")[0] == "🔴 Pin bot today -$10.40 (-10.4% on $99.80 staked · -0.96% of its bank)",
+        ck(p_.split("\n")[0] == "🔴 Pin bot lost -$10.40 today (-10.4% on $99.80 staked · -0.96% of its bank)",
            "/pin: today's money, its return on what the bets cost and its share of the pot lead the page")
         ck(p_.split("\n")[1] == "▶️ PIN BOT -- 15-minute coin markets + hourly Bitcoin" and "🟢" not in p_.split("\n")[1],
            "/pin (10-26): under the red money headline the running state is an icon that is not a money colour")
@@ -1136,20 +1138,21 @@ def selftest():
                 ("Version: v-reopen98 + v-floor90, live since Sep 16 8:00 AM ET.", "its version from VERSIONS.md"),
                 ("Settings: halts after 2 losing bets.", "its settings from its command line"),
                 ("Keep-alive: watch_bot.ps1 restarts it", "what restarts it"),
-                ("Money (Kalshi settlements, main account, read Sep 16 11:00 AM ET;", "where the money comes from"),
-                ("Today: -$10.40 on $99.80 put in (-10.4%) = -0.96% of its bank ($1,081.78); 2 markets, 1 won, 1 lost",
+                ("Money made (Kalshi settlements, main account, read Sep 16 11:00 AM ET;", "where the money comes from"),
+                ("Today: -$10.40 on $99.80 put in (-10.4%) = -0.96% of its bank ($1,077.95); 2 markets, 1 won, 1 lost",
                  "today: the both-sides ETH market pays its winning YES side (-$11.30, not -$51.30); -0.96% of the "
                  "main pot at midnight ET"),
-                ("Yesterday: +$0.54 on $29.40 put in (+1.8%) = +0.05% of its bank ($1,085.75); 1 market, 1 won, 0 lost",
+                ("Yesterday: +$0.54 on $29.40 put in (+1.8%) = +0.05% of its bank ($1,043.58); 1 market, 1 won, 0 lost",
                  "yesterday"),
-                ("Last 7 days: -$9.86 on $129.20 put in (-7.6%) = -0.93% of its bank ($1,062.70); 3 markets, 2 won, "
+                ("Last 7 days: -$9.86 on $129.20 put in (-7.6%) = -0.91% of its bank (day by day); 3 markets, 2 won, "
                  "1 lost; 1 day up, 1 down", "7 days, with days up and down"),
                 ("All time (since Sep 15): -$9.86 on $129.20 put in (-7.6%) = -0.93% on money put in ($1,062.70)",
                  "all time, since its first day, of the main account's money put in (1103.75 deposited - 41.05 "
                  "moved to the bot pots)"),
-                ("% of its bank = of what the pot held when the window began (cash + open bets, + any money moved in "
-                 "during it); all time = of the money put in -- the pot is the whole main account, shared with the "
-                 "coin race.", "what the percentages are, and that pin's pot is shared"),
+                ("% of its bank = of what the pot held when the window began (cash + open bets); money moved in or out "
+                 "during it counts only from when it landed (several days: each day's % chained); all time = of the "
+                 "money put in -- the pot is the whole main account, shared with the coin race.",
+                 "what the percentages are, and that pin's pot is shared"),
                 ("Worst market today: -$11.30 ETH 9:45 AM; best +$0.90 BTC 10:30 AM.", "worst and best today"),
                 ("Worst market all time: -$11.30 ETH 9:45 AM (Sep 16); best +$0.90 BTC 10:30 AM (Sep 16).",
                  "worst and best all time, with the day"),
@@ -1177,9 +1180,10 @@ def selftest():
                 ("Version: v-forecaster-race1, live since Sep 16 8:35 AM ET.", "its version, not the keep-alive entry"),
                 ("Settings: variant race1_98; 5% of paper size; up to 5 a side, 20 a quarter-hour; at most $22.00 in "
                  "play; buys 75c to 98.5c; stops the day at -$12.00, the run at -$20.00.", "its rails from its start record"),
-                ("Today: -$2.54 on $2.45 put in (-103.7%) = -9.6% of its bank ($26.54); 1 market, 0 won, 1 lost",
-                 "subaccount 2's money today: -$2.54 is -9.6% of the $26.54 it had (18.55 at midnight + 7.99 moved in)"),
-                ("Yesterday: +$0.55 on $2.42 put in (+22.6%) = +2.7% of its bank ($20.00); 1 market, 1 won, 0 lost",
+                ("Today: -$2.54 on $2.45 put in (-103.7%) = -12.9% of its bank ($19.64); 1 market, 0 won, 1 lost",
+                 "subaccount 2's money today: -$2.54 is -12.9% of the $19.64 it had (18.55 at midnight + the 7.99 moved "
+                 "in for the part of the day after it landed, v-tg-twr)"),
+                ("Yesterday: +$0.55 on $2.42 put in (+22.6%) = +2.8% of its bank ($19.34); 1 market, 1 won, 0 lost",
                  "and yesterday"),
                 ("= -7.7% on money put in ($25.99)", "all time: of the 20 - 2 + 7.99 moved into its pot"),
                 ("Cash: $24.00 -- its own pot (subaccount 2).", "its own cash"),
@@ -1195,7 +1199,7 @@ def selftest():
            "and the bots that do run: %r" % lh_)
         l_ = P(_cmdrun(ph, "/ladder"))
         ck("⏸ Running: NO -- stopped by its stop file (set " in l_ and ': "stood down by the operator".' in l_
-           and "stopped on its own" not in l_ and l_.split("\n")[0].startswith("🟢 Ladder today +$0.04")
+           and "stopped on its own" not in l_ and l_.split("\n")[0].startswith("🟢 Ladder made +$0.04 today")
            and l_.split("\n")[1].startswith("⏸ LADDER -- "),
            "/ladder: NOT running, and WHY -- its stop file, with what the file says, said loud under a headline whose "
            "dot is its money (up: green)")
@@ -1208,12 +1212,12 @@ def selftest():
         r_ = P(rh_)
         ck("COIN RACE · " in r_ and "Last 10 races (Kalshi's books)" in r_ and "Paper race arms running:" in r_,
            "/race still says everything it said before")
-        ck("Money (Kalshi settlements, main account, read Sep 16 11:00 AM ET; a leg counts on the ET day it closed)"
-           in r_ and "Today: +$0.37 on $19.60 put in (+1.9%) = +0.03% of its bank ($1,081.78); 1 leg, 1 won, 0 lost"
+        ck("Money made (Kalshi settlements, main account, read Sep 16 11:00 AM ET; a leg counts on the ET day it closed)"
+           in r_ and "Today: +$0.37 on $19.60 put in (+1.9%) = +0.03% of its bank ($1,077.95); 1 leg, 1 won, 0 lost"
            in r_ and "All time (since Sep 16): +$0.37 on $19.60 put in (+1.9%) = +0.03% on money put in ($1,062.70); "
            "1 leg, 1 won, 0 lost" in r_,
            "/race adds the race's money by window, legs not races, each a share of the main pot it shares with pin")
-        ck(r_.index("Paper race arms running:") < r_.index("Money (Kalshi settlements"),
+        ck(r_.index("Paper race arms running:") < r_.index("Money made (Kalshi settlements"),
            "...AFTER what /race already said")
         ck("Version: v-race20, live since Sep 15 10:50 PM ET." in r_
            and "Keep-alive: boot_all.ps1 (every 10 min) restarts it unless the stop file is there." in r_
@@ -1677,7 +1681,7 @@ def selftest():
         sent = ph.alerts_tick()
         _dl = [m for m in sent if "YESTERDAY" in P(m).split("\n")[0]]
         ck(len(_dl) == 1 and P(_dl[0]).startswith("☀️ YESTERDAY, Wed Sep 16 · every bot")
-           and "All bots yesterday" in P(_dl[0]) and "📊 By bot" in P(_dl[0])
+           and ("All bots made " in P(_dl[0]) or "All bots lost " in P(_dl[0])) and " yesterday (" in P(_dl[0]) and "📊 By bot" in P(_dl[0])
            and "☀️ YESTERDAY -$37.14 (-7.43%) · Wed Sep 16" in P(_dl[0])
            and "MONEY: -$37.14, which is -7.43% of the $500.00" in P(_dl[0]) and not tg_html_problems(_dl[0]),
            "after 8 AM ET the daily summary of yesterday goes out: every bot's day with its % of all pots and each "
@@ -1779,7 +1783,7 @@ def selftest():
             ph._chart_q.join()
             with open(LOG, encoding="utf-8") as _fh:
                 _lgc = _fh.read()
-            ck(len(tg.photos) == _n1 and _why in _lgc and ("All bots last 7 days" in P(tg.sent[-1][1]).split("\n")[0]
+            ck(len(tg.photos) == _n1 and _why in _lgc and (" last 7 days (" in P(tg.sent[-1][1]).split("\n")[0]
                                                             or "All time" in P(tg.sent[-1][1]).split("\n")[0]),
                "charts: a picture that fails or has nothing to draw only logs (%s); the words went as always" % _why)
         ph.chart_fn, ph.chart_stale_s = _slow_chart, -1

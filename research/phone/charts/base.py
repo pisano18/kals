@@ -47,6 +47,7 @@ checks every drawn picture (the selftest; a golden replay with KALS_CHART_STRICT
 import datetime as _dt
 import io
 import os
+import re
 import sys
 
 _RESEARCH = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -139,6 +140,32 @@ def headline(fig, text):
     """The number that matters, bold, top left; smaller type for a long one so it never runs off a phone."""
     fig.suptitle(text, x=0.012, ha="left", fontsize=min(14.0, 14.0 * 54 / max(1, len(text))), fontweight="bold",
                  color=INK)
+
+
+# ---- the money-words rule (v-tg-money-words, 2026-10-31) ------------------------------------------------------------
+# The operator, after a $1,000 deposit, looked at /pin's picture ("Pin bot: all time +$1,406.27 ... today +$0.23", a
+# running total panel at +$1,406) and read it as the BANK: "it says pin is still in the 1000s". The rules, checked by
+# audit() on every picture: (1) a headline or panel title that shows a signed amount (+$x / -$x), and every panel whose
+# dollar axis is money made (kind 'pnl'), says so in words -- MADE_WORDS; (2) a bot's own picture opens with what its
+# pot holds NOW (bot_headline: 'bank $2,461.68'), so a deposit is seen to land.
+MADE_WORDS = re.compile(r"\b(made|lost|profit|profits|loss|losses|gains?)\b", re.I)
+SIGNED_MONEY = re.compile(r"[+\-\u2212]\$\d")
+BANK_WORDS = re.compile(r"\b(bank|pot|pots|holds) \$\d")
+
+
+def made(v, signed=True):
+    """'made +$18.40' / 'lost -$5.00': money made, said as made (MADE_WORDS)."""
+    v = float(v or 0.0)
+    return ("lost " if v < -0.004 else "made ") + usd(v, signed)
+
+
+def bot_headline(fig, label, bank_now, made_all, made_today, pct_all=None, pct_kind="on money put in"):
+    """A bot picture's headline: '<label> · bank $2,461.68 · made +$1,406.27 all time · +$0.23 today' -- the pot NOW
+    first (None: 'bank not read'), then money made, said as made (or lost); pct_all adds '(+x% on money put in)'."""
+    fig._kals_bot = True
+    bank = ("bank %s" % usd(bank_now, False)) if bank_now is not None else "bank not read"
+    pct = (" (%+.1f%% %s)" % (pct_all, pct_kind)) if pct_all is not None else ""
+    headline(fig, "%s · %s · %s all time%s · %s today" % (label, bank, made(made_all), pct, usd(made_today or 0.0)))
 
 
 def legend(ax):
@@ -401,7 +428,7 @@ def value_axis(ax, ys, unit="$", kind="balance", signed=None, axis="y", move=Non
     for r in drawn:
         draw_ref(ax, r, axis)
     setattr(ax, "_kals_" + axis, {"kind": "value", "unit": unit, "room": (room_top + room_bottom) * span,
-                                  "move": move, "data": declared, "widened": widened})
+                                  "move": move, "data": declared, "widened": widened, "of": kind})
     return {"lo": lo_v, "hi": hi_v, "step": nice_step(lo_v, hi_v, integer), "far": far}
 
 
@@ -712,11 +739,21 @@ def audit(fig, size=None):
     if size is not None and size > PNG_LIMIT:
         out.append("PNG %d bytes > %d" % (size, PNG_LIMIT))
     rnd = fig.canvas.get_renderer()
-    title = (fig._suptitle.get_text() if fig._suptitle is not None else "")[:40]
+    full = fig._suptitle.get_text() if fig._suptitle is not None else ""
+    title = full[:40]
+    if SIGNED_MONEY.search(full) and not MADE_WORDS.search(full):
+        out.append("%s: the headline shows money made without saying so (MADE_WORDS)" % title)
+    if getattr(fig, "_kals_bot", False) and not BANK_WORDS.search(full):
+        out.append("%s: a bot's picture must open with its pot now ('bank $x', base.bot_headline)" % title)
     for i, ax in enumerate(fig.axes):
         if not ax.get_visible() or (getattr(ax, "_kals_y", None) or {}).get("secondary"):
             continue                                    # a right-hand axis is checked with its panel
-        name = "%s | panel %d (%s)" % (title, i, (ax.get_title(loc="left") or ax.get_title())[:40])
+        ptitle = " ".join(t for t in (ax.get_title(loc="left"), ax.get_title()) if t)
+        name = "%s | panel %d (%s)" % (title, i, ptitle[:40])
+        yi = getattr(ax, "_kals_y", None) or {}
+        if ((SIGNED_MONEY.search(ptitle) or (yi.get("unit") == "$" and yi.get("of") == "pnl"))
+                and not MADE_WORDS.search(ptitle)):
+            out.append("%s: a panel of money made must say so in its title (MADE_WORDS)" % name)
         axes_list = [(ax, ax)] + [(c, ax) for c in getattr(ax, "child_axes", [])]
         for a, host in axes_list:
             for which in ("x", "y"):

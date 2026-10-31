@@ -175,3 +175,17 @@ calls `set_xlim` / `set_ylim` / `set_*ticks*` / locators / formatters itself: `p
 (run by `tgcharts.py --selftest`) scans the sources for that and checks every picture the tests draw (base.audit: 4-7
 ticks, the data fill 60% of each axis, no overlapping tick labels, under 300 KB). A golden replay with
 `KALS_CHART_STRICT=1` set raises on any broken rule, so the fixture's real pictures are checked the same way.
+
+**Money words (10-31, v-tg-money-words).** Money MADE is said as made: a headline or panel title with a signed amount
+(`+$x` / `-$x`), and every panel whose dollar axis is money made (`money_axis(kind="pnl")`), says "made" / "lost" /
+"profit" / "loss" in words (`base.made(v)` gives `made +$18.40` / `lost -$5.00`). A bot's own picture opens with what its
+pot holds now, through `base.bot_headline` (`Pin bot · bank $2,461.68 · made +$1,406.27 all time · +$0.23 today`), so a
+deposit is seen to land. base.audit checks both on every picture (MADE_WORDS, BANK_WORDS); test_layout_rules.py
+test_money_words / test_bot_pictures_open_with_their_bank. Text pages: `bs_headline` says `Pin bot made +$5.31 today`.
+
+**Settings a bot changes by itself (10-31, v-tg-settings-now).** A bot that resizes itself declares the records it writes
+then in `Records.resize` (+ `resize_as_start`); every reader of its settings goes through `botdata.logs.settings_now`
+(the start record with its newest self-changes laid over). botdata/tests/test_settings_now.py checks every live
+script's self-change kinds are declared and scans bots/ and botdata/ for a start-record read without them (a deliberate
+one says `# start-only: <why>`). A % of a bank counts a deposit or withdrawal only from when it landed
+(`botdata.pots.span_base`; several days: each day's % chained).

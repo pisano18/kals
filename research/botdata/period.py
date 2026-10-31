@@ -55,26 +55,10 @@ def days_in(first, last, today=None):
 
 
 def span_pot(pctx, sub, first, last):
-    """pot_for's 'start' rule over first..last for pot `sub` (a sub, a tuple of subs, None = all pots): what it held at
-    midnight ET starting `first` + money moved in during the span. None when it cannot be worked out."""
-    led = pctx["led"]
-    subs = _tables.SUBS if sub is None else (sub if isinstance(sub, tuple) else (sub,))
-    now_v = settled = 0.0
-    for s in subs:
-        p = _pots._pv(pctx, s, sub)
-        if p["now"] is None or not p["complete"]:
-            return None
-        now_v += p["now"]
-        settled += sum(v for d, v in p["days"].items() if d and d >= first)
-    t0, t1 = day_start(first), day_start(shift_day(last, 1))
-    cut = pctx.get("as_of")
-    if cut is not None and t0 > cut:
-        return None
-    start = now_v - settled - _pots.flows(led, sub, t0, cut)
-    if start < -_pots.MIN_POT:
-        return None
-    pot = max(0.0, start) + max(0.0, _pots.flows(led, sub, t0, t1))
-    return pot if pot >= _pots.MIN_POT else None
+    """pot_for's 'start' rule over first..last for pot `sub` (a sub, a tuple of subs, None = all pots): botdata.pots.
+    span_base (what it held at midnight ET starting `first` + money moved in or out during the span, each move for the
+    share of the span after it landed, v-tg-twr). None when it cannot be worked out."""
+    return _pots.span_base(pctx, sub, first, shift_day(last, 1))[0]
 
 
 def _pot_key(bs, name):

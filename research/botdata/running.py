@@ -110,13 +110,16 @@ def running(name, rows, ok, now):
         else:
             pid = out["pid"]
             if pid is not None and b.logs.start_rule == "pid_then_live":
-                start = _logs.last_record(log, ("start",), lambda r: r.get("pid") == pid)
+                start = _logs.last_record(log, ("start",), lambda r: r.get("pid") == pid)   # start-only: which run
             if start is None:
-                start = _logs.last_record(log, ("start",), lambda r: r.get("live") is not False)
+                start = _logs.last_record(log, ("start",), lambda r: r.get("live") is not False)   # start-only: which run
     if out["started_utc"] is None and start and start.get("t"):
         out["started_utc"] = str(start["t"])[:19] + "Z"
     out["started_et"] = et_clock(_epoch(out["started_utc"])) if out["started_utc"] else None
-    out["settings"], out["settings_text"] = b.settings(_SettingsIn(start, out["command"], _read_json))
+    # v-tg-settings-now (2026-10-31): its settings NOW -- the start record with every self-change since laid over it
+    # (Records.resize: pin autosize / loss_cap, ladder rescale, FX resize); the start itself still dates the run
+    now_start = _logs.settings_now(log, start, b.records.resize, b.records.resize_as_start)
+    out["settings"], out["settings_text"] = b.settings(_SettingsIn(now_start, out["command"], _read_json))
     if out["settings"].get("variant_mismatch"):
         out["problems"].append("variant: " + out["settings"]["variant_mismatch"])
     # halted since its start?

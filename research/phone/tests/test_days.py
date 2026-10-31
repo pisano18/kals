@@ -80,7 +80,7 @@ def test_lines_present():
     ph.versions_path = VERSIONS
     with patched(*_patches(all_bots())):
         s = str(new_reply("phone.commands.days", ph, "/days"))
-    for want in ("All bots last 7 days", "Last 7 days, every bot", "Last 7 days, by bot", "Pin bot since v-pin-test"):
+    for want in ("All bots made", "Last 7 days, every bot", "Last 7 days, by bot", "Pin bot since v-pin-test"):
         assert want in s, want
     with patched(*_patches(None)), quiet():
         s = str(new_reply("phone.commands.days", ph, "/days"))

@@ -407,59 +407,69 @@ def test_planted_world():
         # all time as a % of the money put in. Worked by hand from the planted books:
         #   now: main $1,000 crypto pool + $25 in pool 0 (today's deposit) + open bets 29.10 + 0.06 fee
         #        + 19.60 = $1,073.76; ladder 15.10 + 0.98 = $16.08; forecaster $24.00; all $1,113.84
+        #   v-tg-twr (2026-10-31): a move counts in a window's base for the share of the window after it landed
+        #   (the window so far ends at the read, 12:30 PM ET = 16:30Z; today began 04:00Z, 12.5 h before), and a
+        #   window of several days chains its days (each day's % of what its pot held that day).
         #   main TODAY: settled today -14.56 (pin -10.12, race -4.44); moved in since midnight ET +25.00
-        #     deposit - 5.00 to the forecaster = +20 -> start 1073.76 + 14.56 - 20 = 1068.32, + 20 moved
-        #     in during the day = 1088.32. pin -10.12 / 1088.32 = -0.93%; race -4.44 / 1088.32 = -0.41%
-        #   forecaster TODAY: 24 + 2.4723 - 5 = 21.4723 at the start, + 5 = 26.4723 -> -9.34%
+        #     deposit (13:00Z: 3.5 of 12.5 h left = 0.28) - 5.00 to the forecaster (14:00Z: 0.20) -> start 1073.76
+        #     + 14.56 - 20 = 1068.32, + 25 x 0.28 - 5 x 0.20 = +6.00 -> 1074.32. pin -10.12 / 1074.32 = -0.94%;
+        #     race -4.44 / 1074.32 = -0.41%
+        #   forecaster TODAY: 24 + 2.4723 - 5 = 21.4723 at the start, + 5 x 0.20 = 22.4723 -> -11.00%
         #   ladder TODAY: 16.08 - 0.042 = 16.038 -> +0.26%
-        #   all pots TODAY: 1113.84 + 16.9903 - 25 = 1105.8303, + 25 = 1130.8303 -> -16.9903 = -1.50%
+        #   all pots TODAY: 1113.84 + 16.9903 - 25 = 1105.8303, + 25 x 0.28 = 1112.8303 -> -16.9903 = -1.53%
         #   main YESTERDAY (Sep 29): settled since -18.51; moved in since +22 (t3 +2 at 12:19 AM ET, +25,
-        #     -5) -> start 1070.27, + t3's 2 inside the day = 1072.27; pin +0.56 -> +0.05%, other -0.42%
-        #   forecaster YESTERDAY: 24 + 1.9251 - 3 = 22.9251 (the -2 inside the day adds nothing) -> +2.39%
-        #   main 7 DAYS: settled since Sep 24 -18.33; moved since -54 (withdrawal -40, -16, -20, +2, +25,
-        #     -5) -> 1146.09; pin -9.38 -> -0.82%. ladder 7 DAYS: 16.08 - 0.082 - 16 = -0.002 -> 0 at the
-        #     start (it did not exist), + the $16 moved in = 16.00 -> +0.51%. MONTH: main 1145.13 -> -0.74%
+        #     -5) -> start 1070.27, + t3's 2 x (24 h - 19 min 2 s) / 24 h = 1.9736 -> 1072.24; pin +0.56 -> +0.05%,
+        #     other -0.42%
+        #   forecaster YESTERDAY: 24 + 1.9251 - 3 = 22.9251, - the 2 it sent back at 12:19 AM x 0.98678 = 20.9515
+        #     -> +0.5472 = +2.61%
+        #   main 7 DAYS, days chained: -0.87% (an implied base of $1,072.38); MONTH -0.79% ($1,063.68). ladder
+        #     7 DAYS: 0 at the start (it did not exist), the $16 moved in on its first day -> +0.51%. forecaster
+        #     7 DAYS: -8.68% chained ($22.19), not -1.93 / 25.93 (its $20 counted as if there all week). All pots
+        #     have no day list here: span_base's weighted rule, -1.80% of $1,117.75
         #   ALL TIME, money put in: all 1000 + 25 - 40 = 985 (the PENDING $500 is not in); main 985 - 16
         #     - 20 + 2 - 5 = 946; ladder 16; forecaster 23. pin -17.94/946 = -1.90%, forecaster -8.37%,
         #     all -28.7331/985 = -2.92%
         rm, fm, lm, tt = race["money"], fc["money"], lad["money"], a["total"]
-        ck(P(pm["today"], 1088.32, -0.93) and P(rm["today"], 1088.32, -0.41),
-           "TODAY pin -0.93%% and race -0.41%% of the SAME main pot ($1,088.32 = cash in BOTH pools + open "
-           "bets at cost - today's settled + today's deposit, net of the $5 moved out): %s / %s"
+        ck(P(pm["today"], 1074.32, -0.94) and P(rm["today"], 1074.32, -0.41),
+           "TODAY pin -0.94%% and race -0.41%% of the SAME main pot ($1,074.32 = cash in BOTH pools + open "
+           "bets at cost - today's settled + today's deposit and the $5 moved out, each for its share of the day): "
+           "%s / %s"
            % ((pm["today"]["pot"], pm["today"]["pot_pct"]), (rm["today"]["pot"], rm["today"]["pot_pct"])))
-        ck(P(fm["today"], 26.4723, -9.34) and P(lm["today"], 16.038, 0.26),
-           "TODAY forecaster -9.34%% of $26.47 (incl. the $5 moved in at 10 AM); ladder +0.26%% of $16.04: %s / %s"
+        ck(P(fm["today"], 22.4723, -11.0) and P(lm["today"], 16.038, 0.26),
+           "TODAY forecaster -11.0%% of $22.47 (the $5 moved in at 10 AM for the 20%% of the day after it); ladder "
+           "+0.26%% of $16.04: %s / %s"
            % ((fm["today"]["pot"], fm["today"]["pot_pct"]), (lm["today"]["pot"], lm["today"]["pot_pct"])))
-        ck(P(tt["today"], 1130.83, -1.50) and tt["today"]["pot_of"] == "all pots",
-           "TODAY all pots -1.50%% of $1,130.83 -- subaccount transfers cancel, the deposit does not: %s"
+        ck(P(tt["today"], 1112.83, -1.53) and tt["today"]["pot_of"] == "all pots",
+           "TODAY all pots -1.53%% of $1,112.83 -- subaccount transfers cancel, the deposit does not: %s"
            % ((tt["today"]["pot"], tt["today"]["pot_pct"]),))
-        ck(P(pm["yesterday"], 1072.27, 0.05) and P(a["other"]["yesterday"], 1072.27, -0.42)
-           and P(fm["yesterday"], 22.9251, 2.39) and P(lm["yesterday"], 15.998, 0.25)
+        ck(P(pm["yesterday"], 1072.24, 0.05) and P(a["other"]["yesterday"], 1072.24, -0.42)
+           and P(fm["yesterday"], 20.95, 2.61) and P(lm["yesterday"], 15.998, 0.25)
            and P(tt["yesterday"], 1109.1931, -0.30),
-           "YESTERDAY: a past window is worked back from now through today's markets and moves too; only the "
-           "money moved IN during that day is added (main +$2 back from the forecaster)")
-        ck(P(pm["last_7_days"], 1146.09, -0.82) and P(lm["last_7_days"], 16.00, 0.5125)
-           and P(fm["last_7_days"], 25.9251, -7.43) and P(tt["last_7_days"], 1149.0131, -1.76)
-           and P(pm["this_month"], 1145.13, -0.74),
-           "7 DAYS and MONTH: the withdrawal and the money moved out shrink nothing after the start; a pot "
-           "that did not exist at the start (ladder, $0) is a % of the money moved into it, never of $0")
+           "YESTERDAY: a past window is worked back from now through today's markets and moves too; a move inside "
+           "that day counts for its share of it (main +$2 back from the forecaster, the forecaster -$2)")
+        ck(P(pm["last_7_days"], 1072.38, -0.87) and P(lm["last_7_days"], 16.00, 0.51)
+           and P(fm["last_7_days"], 22.19, -8.68) and P(tt["last_7_days"], 1117.75, -1.80)
+           and P(pm["this_month"], 1063.68, -0.79),
+           "7 DAYS and MONTH: days chained, each day's % of what its pot held that day, so a deposit or a withdrawal "
+           "counts only from when it landed; a pot that did not exist at the start (ladder, $0) is a % of the money "
+           "moved into it, never of $0")
         ck(P(pm["all_time"], 946.0, -1.90, "money_in") and P(rm["all_time"], 946.0, 100 * -4.44 / 946, "money_in")
            and P(fm["all_time"], 23.0, -8.37, "money_in") and P(lm["all_time"], 16.0, 0.5125, "money_in")
            and P(tt["all_time"], 985.0, -2.92, "money_in"),
            "ALL TIME is of the money put in: deposits after fees - withdrawals ($985, the pending $500 left out); "
            "main = that - what moved to the bot pots ($946); a subaccount = what moved into it, net ($16, $23)")
-        ck(tt["today"]["by_bot_pot_pct"] == {"pin": -0.93, "race": -0.41, "forecaster": -9.34, "ladder": 0.26,
+        ck(tt["today"]["by_bot_pot_pct"] == {"pin": -0.94, "race": -0.41, "forecaster": -11.0, "ladder": 0.26,
                                             "weather": None, "fx": None, "jumpband": None, "other": None},
            "the /bots breakdown carries each bot's own %% of its own pot: %s" % tt["today"]["by_bot_pot_pct"])
         _pt = bs._bot_text(pin)
-        ck("Today: -$10.12 on $109.50 in (-9.2%) = -0.93% of its bank ($1,088.32), 2 won, 1 lost" in _pt
+        ck("Today: -$10.12 on $109.50 in (-9.2%) = -0.94% of its bank ($1,074.32), 2 won, 1 lost" in _pt
            and "All time: -$17.94 on $" in _pt and "= -1.9% on money put in ($946.00)" in _pt
            and "the pot is the whole main account, shared with the coin race" in _pt,
            "the phone text: '= X% of its bank ($)' on every window, all time 'on money put in', and pin "
            "says the main pot is shared")
         _st = bs.text_summary("all", now=NOW + 1, getter=fake, procs=PROCS)
-        ck("Today: -$16.99 on $" in _st and "= -1.5% of all pots ($1,130.83)" in _st
-           and "pin -$10.12 (-0.93%) | race -$4.44 (-0.41%) | forecaster -$2.47 (-9.3%) | earlier +$0.04"
+        ck("Today: -$16.99 on $" in _st and "= -1.5% of all pots ($1,112.83)" in _st
+           and "pin -$10.12 (-0.94%) | race -$4.44 (-0.41%) | forecaster -$2.47 (-11.0%) | earlier +$0.04"
            in _st and "ladder" not in _st.split("Running:")[1],
            "/bots-style text: the all-pots % and each bot's own % in the breakdown; the ladder (stopped by its stop file in "
            "this world) is not listed, its money is on the one 'earlier' line (v-tg-active)")

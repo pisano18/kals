@@ -71,7 +71,9 @@ BOT = Bot(
     pots=(Pot("2", 2, what="forecaster", short="forecaster"),),
     script="forecaster_live.py", is_live=live_flag("--live"), stop_file="forecaster-live.stop",
     logs=Logs(path="forecaster-live-orders.jsonl"),
-    records=Records(fills=("live_fill",), fill_qty="n", halts=("halt", "day_stop", "run_stop")),
+    records=Records(fills=("live_fill",), fill_qty="n", halts=("halt", "day_stop", "run_stop"),
+                    # v-tg-settings-now: it rescales from its pot by itself
+                    resize=("rescale",), resize_as_start=lambda r: {"rails": r.get("rails"), "pot": r.get("pot")}),
     settings=settings,
     version=VersionRule(part=lambda n: "forecaster" in n or n == "v-crash-guard",
                         text=lambda vname, low: "forecaster" in low),

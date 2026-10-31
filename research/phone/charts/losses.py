@@ -10,7 +10,7 @@ import pindesk
 from pindesk import Ledger
 from botdata import series
 from phone.charts.base import (AVG30, BOT_COLOUR, BOT_SHORT, DOWN, GREY, GRID, INK, INK2, SURF, UP, category_axis,
-                               et_short, etdt, fig_new, headline, money_axis, note, pct_axis, png, time_axis, usd)
+                               et_short, etdt, fig_new, headline, made, money_axis, note, pct_axis, png, time_axis, usd)
 
 LONG_DAYS = series.LONG_DAYS
 LOSS_WEEKS = 8                          # /losses: the weekly bars
@@ -98,7 +98,7 @@ def chart_losses(ctx):
     category_axis(ax, [(lambda d: d.strftime("%b ") + str(d.day))(_dt.date.fromisoformat(w))
                        + ("\nso far" if k == len(weeks) - 1 else "") for k, w in enumerate(weeks)], axis="x",
                   pad=0.6)
-    ax.set_title("Each week (Mon-Sun ET): won by every bot, up; lost, down, by bot")
+    ax.set_title("Each week (Mon-Sun ET): money made by every bot, up; lost, down, by bot")
     ax.legend(loc="upper center", fontsize=8.5, ncol=4, frameon=True, facecolor=SURF, edgecolor="none", framealpha=0.92,
               columnspacing=1.0, handlelength=1.2)
 
@@ -177,7 +177,7 @@ def chart_losses_main(ctx):
         note(ax, X[i], Y[i], "%s %s %s" % (coins, et_short(lc[i][0], "%m/%d"), usd(Y[i])), dx=6 if left else -6,
              dy=4 + 13 * r, ha="left" if left else "right", size=8.5, weight="normal")
     money_axis(ax, Y)
-    ax.set_title("Each losing close, dollars")
+    ax.set_title("Each losing close: dollars lost")
     ax = axs[1]
     px = [x for x, p in zip(X, P) if p is not None]
     pv = [p for p in P if p is not None]
@@ -186,7 +186,7 @@ def chart_losses_main(ctx):
     pct_axis(ax, pv)
     ax.set_title("The same loss as % of the bank at that moment")
     time_axis(axs[-1], xs=X)
-    headline(fig, "%d losing closes of %d (%.1f%%) · worst %s" % (s["lost"], s["closes"], s["loss_rate"] or 0.0, usd(min(Y))))
+    headline(fig, "%d losing closes of %d (%.1f%%) · worst lost %s" % (s["lost"], s["closes"], s["loss_rate"] or 0.0, usd(min(Y))))
     cap = ("Every losing close, all time (Kalshi's books, main account; one close = every market settling at that "
            "quarter-hour, as /losses counts them). Bottom: the loss as % of the bank then (pindesk's bank_at).")
     return png(fig), cap

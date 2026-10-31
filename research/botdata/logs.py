@@ -103,5 +103,40 @@ def last_record(path, kinds, pred=None, max_bytes=64 << 20, chunk=1 << 20):
     return found
 
 
+# ---- a running bot's settings NOW (v-tg-settings-now, 2026-10-31) ------------------------------------------------
+# The operator, after a $1,000 deposit resized the pin bot by itself (162 -> 279 contracts, loss abort -$268 -> -$459):
+# "Why aren't some charts showing the updated pricing on pin ... Shouldn't it happen automatically?" /pin still said
+# 'hourly KXBTCD: 1 contract a market' and every page read the bot's START record. THE RULE: a setting a running bot
+# changes by itself (its Records.resize kinds: pin autosize / loss_cap, ladder and forecaster rescale, FX resize) is
+# read from its newest such record after the start, never from the start record or the launch args alone. Every
+# reader goes through settings_now (botdata/tests/test_settings_now.py enforces it).
+_META = ("t", "kind", "ev", "pid", "argv")
+
+
+def settings_now(path, start, kinds, as_start=None):
+    """`start` (a start record) with every later self-change record of `kinds` laid over it, oldest first, so the
+    newest wins. `as_start(r)` turns one change record into the start record's field names (None = its own fields
+    minus t/kind/ev/pid/argv). Adds 'changed_t' / 'changed_kind' (the newest change) when any applied. `start` back
+    unchanged when there is no log, no start time, or no kinds."""
+    if not start or not kinds or not path:
+        return start
+    t0 = _t_of(start)
+    if t0 is None:
+        return start
+    got = []
+    for k in kinds:
+        r = last_record(path, (k,), lambda x, _t0=t0: (_t_of(x) or 0.0) >= _t0)
+        if r is not None:
+            got.append(r)
+    if not got:
+        return start
+    out = dict(start)
+    for r in sorted(got, key=lambda x: _t_of(x) or 0.0):
+        fields = as_start(r) if as_start is not None else {k: v for k, v in r.items() if k not in _META}
+        out.update({k: v for k, v in (fields or {}).items() if v is not None})
+        out["changed_t"], out["changed_kind"] = r.get("t"), r.get("kind") or r.get("ev")
+    return out
+
+
 def pin_logs():
     return sorted(glob.glob(os.path.join(_paths.RESULTS, _tables.SPEC["pin"]["log_glob"])))

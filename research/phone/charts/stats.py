@@ -4,7 +4,7 @@ v-tg-rebuild step 8 (2026-10-30): moved verbatim out of tgcharts.py (chart_stats
 """
 from botdata import series
 from phone.charts.base import (AVG30, BOT_COLOUR, BOT_ORDER, BOT_SHORT, GREY, INK, INK2, SURF, WINDOW_DAYS, etdt,
-                               fig_new, headline, legend, mark_empty, mark_last, money_axis, note, pct_axis, pct_of_axis,
+                               fig_new, headline, made, legend, mark_empty, mark_last, money_axis, note, pct_axis, pct_of_axis,
                                pctx, png, time_axis, ups_downs, usd)
 from phone.charts.days import chart_stats_main
 
@@ -86,7 +86,7 @@ def chart_stats(ctx):
     ax.scatter(xs, nets, s=16, color=INK, edgecolor=SURF, linewidth=0.8, zorder=5, label="net, every bot")
     money_axis(ax, up + dn + nets, room_top=0.24)       # headroom: the key, two rows
     note(ax, xs[-1], nets[-1], usd(nets[-1]), dy=8 if nets[-1] >= 0 else -8, ha="right", dx=4)
-    ax.set_title("$ each ET day, by bot: gains up, losses down (dot = the day's net)")
+    ax.set_title("Money made each ET day, by bot: gains up, losses down (dot = the day's net)")
     ax.legend(loc="upper left", fontsize=8.5, ncol=4, frameon=True, facecolor=SURF, edgecolor="none", framealpha=0.92,
               columnspacing=1.0, handlelength=1.2)
 
@@ -146,7 +146,7 @@ def chart_stats(ctx):
     dep = bs.pot_for(pctx_, None, "all_time")[0] if not missing else None
     pct_of_axis(ax, dep, "%% of the %s put in" % usd(dep, False) if dep else "")
     bign = ["the " + BOT_SHORT.get(b, b).lower() for b in big]
-    ax.set_title("Running total: every bot together (dark)%s" % (
+    ax.set_title("Money made, running total: every bot together (dark)%s" % (
         (" and " + (", ".join(bign[:-1]) + " and " if len(bign) > 1 else "") + bign[-1]) if bign else ""))
     h, lab = ax.get_legend_handles_labels()
     ax.legend(h[-1:] + h[:-1], lab[-1:] + lab[:-1], loc="upper left", fontsize=9, frameon=True,
@@ -155,11 +155,11 @@ def chart_stats(ctx):
         ax = axs[3]
         vals = lines(ax, small)
         money_axis(ax, vals, room_top=0.36)                      # headroom: the key
-        ax.set_title("Running total of the other bots, on their own scale")
+        ax.set_title("Money made by the other bots, running total, on their own scale")
         ax.legend(loc="upper left", fontsize=8.5, ncol=2, frameon=True, facecolor=SURF, edgecolor="none",
                   framealpha=0.92, columnspacing=1.0, handlelength=1.4)
     time_axis(axs[-1], xs[0], xs[-1], pad_days=0.6)
-    headline(fig, "Every bot, all time %s%s" % (usd(total), (" (%s on the %s put in)" % (pctx(total / dep, 1), usd(dep, False)))
+    headline(fig, "Every bot %s all time%s" % (made(total), (" (%s on the %s put in)" % (pctx(total / dep, 1), usd(dep, False)))
                                                 if dep else ""))
     cap = ("/stats: every bot, every pot (Kalshi's books through botstats), one colour a bot; the last %d days drawn, "
            "the totals count every day since %s. Top: each ET day's money by bot, gains up and losses down; the dark "

@@ -8,7 +8,7 @@ botdata.clock's copy of pinphone's.
 from pindesk import Ledger, et_day, et_day_start
 from botdata import series
 from botdata.clock import prev_day
-from phone.charts.base import (AVG30, BLUE, MUTED, ORANGE, WINDOW_DAYS, annotate_change, etdt, fig_new, headline,
+from phone.charts.base import (AVG30, BLUE, MUTED, ORANGE, WINDOW_DAYS, annotate_change, etdt, fig_new, headline, made,
                                legend, mark_last, money_axis, note, pct_axis, pct_of_axis, pctx, png, time_axis,
                                ups_downs, usd, value_axis)
 
@@ -49,7 +49,7 @@ def chart_days(ctx, src):
                 d_ = bs.shift_day(d_, 1)
             dep = bs.pot_for(pctx_, None, "all_time")[0]
             tot = sum(per.values())
-            head = "Every bot, all time %s%s" % (usd(tot), (" (%s on the %s put in)" % (pctx(tot / dep, 2), usd(dep, False)))
+            head = "Every bot %s all time%s" % (made(tot), (" (%s on the %s put in)" % (pctx(tot / dep, 2), usd(dep, False)))
                                                 if dep else "")
             src_words = "Kalshi's books, every pot (every bot), every ET day"
             pct_words = "% of all pots each day (what they held when that ET day began)"
@@ -62,7 +62,7 @@ def chart_days(ctx, src):
                 return None
             s = Ledger.summary(led.settled)
             dep = led.deposited()
-            head = "All time %s%s" % (usd(s["net"]), (" (%s on the %s put in)" % (pctx(s["net"] / dep, 2), usd(dep, False))) if dep else "")
+            head = "%s all time%s" % (made(s["net"]).capitalize(), (" (%s on the %s put in)" % (pctx(s["net"] / dep, 2), usd(dep, False))) if dep else "")
             src_words = "Kalshi's books, main account (%s), every ET day it traded" % ctx.words_main()
     else:
         fl = ctx.first_live_day
@@ -85,7 +85,7 @@ def chart_days(ctx, src):
         for d in days:
             st = ctx.window_stats(by[d], {}) if by.get(d) else None
             winrate.append((d, st["win_c"] if st else None, st["breakeven_c"] if st else None))
-        head = "Lifetime %s%s" % (usd(life["net"]), (" (%s on %s risked)" % (pctx(life["net"] / life["risked"], 2),
+        head = "%s in its lifetime%s" % (made(life["net"]).capitalize(), (" (%s on %s risked)" % (pctx(life["net"] / life["risked"], 2),
                                                                          usd(life["risked"], False))) if life["risked"] else "")
         src_words = "Kalshi's books, main account, since %s (the /stats source)" % fl
     cum, runs = 0.0, []
@@ -141,7 +141,7 @@ def chart_days(ctx, src):
                         label="%d-day average, to yesterday (%s a day)" % (min(LONG_DAYS, n_back(prev_day(today), LONG_DAYS)), usd(l30n)))
         legend(axs[0])
     money_axis(axs[0], nets + [a for a in an + a30n if a is not None], room_top=0.12)
-    axs[0].set_title("$ each ET day")
+    axs[0].set_title("Money made each ET day")
     pc = [(100.0 * v / b) if b else 0.0 for v, b in zip(nets, b0s)]
     bars_by_day(axs[1], days, pc, lambda v: "%+.2f%%" % v)
     if lap is not None:
@@ -161,7 +161,7 @@ def chart_days(ctx, src):
     mark_last(ax, xs[-1], run[-1], usd(run[-1]))
     annotate_change(ax, xs, [run[0] - nets[0]] + run[1:], base=dep or False)
     pct_of_axis(ax, dep, "%% of the %s put in" % usd(dep, False) if dep else "")
-    ax.set_title("Running total")
+    ax.set_title("Money made, running total")
     if winrate is not None:
         ax = axs[3]
         wx = [x for x, (_d, w, _b) in zip(xs, winrate) if w is not None]

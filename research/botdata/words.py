@@ -24,6 +24,8 @@ def pot_words(w, whose="its bank"):
     base = usd(w["pot"]).lstrip("+")
     if w.get("pot_kind") == "money_in":
         return "%s on money put in (%s)" % (pot_pct_txt(w["pot_pct"]), base)
+    if w.get("pot_rule") == "days chained":         # v-tg-twr: no one base -- each day's % of that day's pot, chained
+        return "%s of %s (day by day)" % (pot_pct_txt(w["pot_pct"]), whose)
     return "%s of %s (%s)" % (pot_pct_txt(w["pot_pct"]), whose, base)
 
 
@@ -58,8 +60,10 @@ def _pot_note(m):
         return None
     if any(w.get("pot_pct") is not None for w in ws):
         shared = m.get("pot_shared_with") or []
-        return ("%% of its bank = of what the pot held when the window began (cash + open bets, + any money "
-                "moved in during it); all time = of the money put in%s." % (
+        # v-tg-twr (2026-10-31): a deposit or withdrawal inside a window counts only from when it landed
+        return ("%% of its bank = of what the pot held when the window began (cash + open bets); money moved in or "
+                "out during it counts only from when it landed (several days: each day's %% chained); all time = of "
+                "the money put in%s." % (
                     " -- the pot is the whole main account, shared with the %s" % " and the ".join(
                         _tables.SPEC[b]["label"].lower() for b in shared) if shared else ""))
     why = next((w.get("pot_why") for w in ws if w.get("pot_why")), None)

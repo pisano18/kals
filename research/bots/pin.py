@@ -22,7 +22,9 @@ def settings_pin(start, cl, sizef):
     if start:
         for k in ("size", "price_ceiling", "tau_max", "early_tau_max", "early_frac", "early_min_price",
                   "early_max_price", "hedge_belief", "loss_abort", "loss_cap", "max_positions",
-                  "ladder_series", "late_tau", "late_mult", "bank_brake", "code_sha"):
+                  "ladder_series", "late_tau", "late_mult", "bank_brake", "code_sha",
+                  # v-tg-settings-now: what its newest autosize / loss_cap record laid over the start (resize_as_start)
+                  "series_size", "max_run_stake", "bank_at_sizing"):
             if k in start:
                 s[k] = start[k]
     if cl:
@@ -59,13 +61,28 @@ def settings_pin(start, cl, sizef):
     if stops:
         bits.append("halts after " + " or ".join(stops))
     if s.get("ladder_series"):
-        bits.append("hourly %s: %g contract a market" % ("/".join(s["ladder_series"]), s.get("series_size") or 1))
+        n_ = s.get("series_size") or 1
+        bits.append("hourly %s: %g contract%s a market" % ("/".join(s["ladder_series"]), n_, "" if n_ == 1 else "s"))
     return s, "; ".join(bits)
 
 
 def settings(si):
-    """botstats.running's pin branch: its newest log's first record + results/pinrun-live-size.json."""
+    """botstats.running's pin branch: its newest log's first record, with its newest autosize / loss_cap laid over it
+    (botdata.logs.settings_now, before this hook) + results/pinrun-live-size.json."""
     return settings_pin(si.start, si.cmdline, si.read_json("pinrun-live-size.json"))
+
+
+def resize_as_start(r):
+    """v-tg-settings-now (2026-10-31): one of pinrun's self-change records as start-record fields. pinrun writes 'new'
+    for the SIZE in an autosize record and for the LOSS CAP in a loss_cap record; both carry the loss abort."""
+    import re
+    if (r.get("kind") or r.get("ev")) == "autosize":
+        m = re.search(r"bank \$([\d.]+)", str(r.get("why") or ""))
+        return {"size": r.get("new"), "loss_abort": r.get("loss_abort"), "loss_cap": r.get("loss_cap"),
+                "series_size": r.get("series_size"), "max_run_stake": r.get("max_run_stake"),
+                "bank_at_sizing": float(m.group(1)) if m else r.get("loss_cap_base")}
+    return {"loss_cap": r.get("new"), "loss_abort": r.get("loss_abort"), "size": r.get("size"),
+            "bank_at_sizing": r.get("bank")}
 
 
 def activity(k, r, out, why, st):
@@ -116,7 +133,7 @@ def stop_gauges(wi):
     if not logs:
         return []
     path = logs[-1]
-    lim = wi.last_record(path, ("loss_cap", "autosize")) or wi.last_record(path, ("start",)) or {}
+    lim = wi.last_record(path, ("loss_cap", "autosize", "start")) or {}         # the newest of the three
     line = _num(lim.get("loss_abort"))
     if line is None or line >= 0:
         return []
@@ -184,7 +201,8 @@ BOT = Bot(
     script="pinrun.py", is_live=live_flag("--live"), stop_file="pinrun-live.stop",
     logs=Logs(glob="pinrun-live-*.jsonl", start_rule="first_line"),
     records=Records(fills=("order", "hedge"), fill_qty="filled", fill_side="want", hedge="hedge",
-                    halts=("halt", "entries_stopped", "pause")),
+                    halts=("halt", "entries_stopped", "pause"),
+                    resize=("autosize", "loss_cap"), resize_as_start=resize_as_start),
     settings=settings,
     # botstats.version_of: the pin bot's is every heading no other bot claims -- except a combined one naming the
     # clean-room / penny / jump band / weather words, or a single one naming the clean-room bots

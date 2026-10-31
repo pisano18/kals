@@ -74,7 +74,7 @@ def stop_gauges(wi):
     ds = _num(((r0 or {}).get("rails") or {}).get("day_stop"))
     if ds is None or ds >= 0:
         return []
-    st = wi.last_record(path, ("start",)) or r0
+    st = wi.last_record(path, ("start",)) or r0     # start-only: the run's start time (day_pnl counts from it)
     t0 = wi.epoch(st.get("t")) or 0.0
     s = wi.last_record(path, ("live_settle",)) or {}
     stt = wi.epoch(s.get("t"))
@@ -122,7 +122,9 @@ BOT = Bot(
     pots=(Pot("1", 2, what="penny ladder", short="ladder"),),
     script="ladder_live.py", is_live=live_flag("--live"), stop_file="ladder-live.stop",
     logs=Logs(path="ladder-live-orders.jsonl"),
-    records=Records(fills=("live_fill",), fill_qty="delta", halts=("day_stop",)),
+    records=Records(fills=("live_fill",), fill_qty="delta", halts=("day_stop",),
+                    # v-tg-settings-now: it resizes its rails from its pot by itself (ladder_live AutoSize)
+                    resize=("rescale",), resize_as_start=lambda r: {"rails": r.get("rails"), "pot": r.get("pot")}),
     settings=settings,
     # An entry naming two clean-room bots (v-keepalive-cleanroom) is infrastructure, not either
     # bot's version; `v-ladder7` is pin's hourly ladder table, not the penny ladder.

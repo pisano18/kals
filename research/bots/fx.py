@@ -57,6 +57,16 @@ def settings(si):
     return settings_fx(si.start)
 
 
+# v-tg-settings-now (2026-10-31): fxtake_live resizes from its whole bank by itself (FxTaker.maybe_resize), writing a
+# 'resize' record with the new size and the caps that scale with it
+RESIZE = ("resize",)
+
+
+def resize_as_start(r):
+    return {k: r.get(k) for k in ("size", "bank", "pool_cash", "bank_per_contract", "max_held", "day_stop",
+                                  "stop_line")}
+
+
 def activity(k, r, out, why, st):
     """botstats.activity's fx branch (verbatim)."""
     import pinledger
@@ -79,8 +89,10 @@ def activity(k, r, out, why, st):
 def size_words(si):
     """/funds: the FX taker's size now, for account si.sub -- one start record, a pot per account."""
     import os
+    from botdata.logs import settings_now
     n = si.sub
-    r = si.last_record(os.path.join(si.results, "fxtake-live-orders.jsonl"), ("start",))
+    path = os.path.join(si.results, "fxtake-live-orders.jsonl")
+    r = settings_now(path, si.last_record(path, ("start",)), RESIZE, resize_as_start)    # v-tg-settings-now
     size = si.num((r or {}).get("size"))
     if size is None:
         return None
@@ -90,10 +102,9 @@ def size_words(si):
         one = one_sub(r)
         if one is not None and n is not None and str(n) != one:
             return None                                          # this account is no longer one of its pots
-        src, at = r, "its start"
-        rz = si.last_record(os.path.join(si.results, "fxtake-live-orders.jsonl"), ("resize",))
-        if rz and (si.epoch(rz.get("t")) or 0) >= (si.epoch(r.get("t")) or 0) and si.num(rz.get("size")) is not None:
-            src, at, size = rz, "its last resize", si.num(rz["size"])    # resized since it started
+        src, at = (r, "its start")
+        if r.get("changed_t"):                                   # resized since it started (v-tg-settings-now)
+            src, at = {"t": r["changed_t"], "bank": r.get("bank"), "pool_cash": r.get("pool_cash")}, "its last resize"
         cash = src.get("pool_cash") or {}
         parts = " + ".join("%s %s" % ("currencies" if str(p) == "0" else "commodities", si.usd2(si.num(v)))
                            for p, v in sorted(cash.items()) if si.num(v) is not None)
@@ -116,8 +127,10 @@ def stop_gauges(wi):
     stop_line_since: its start's line_pnl + this run's run_pnl; warned $5 and $2.50 before it) and the day stop (its
     day_pnl; warned at 60% and 80% of it)."""
     import os
+    from botdata.logs import settings_now
     path = os.path.join(wi.results, "fxtake-live-orders.jsonl")
-    st = wi.last_record(path, ("start",))
+    # v-fx-onepot: the stop line and the day stop scale with the size; v-tg-settings-now: its newest resize carries them
+    st = settings_now(path, wi.last_record(path, ("start",)), RESIZE, resize_as_start)
     if not st:
         return []
     t0 = wi.epoch(st.get("t")) or 0.0
@@ -127,10 +140,6 @@ def stop_gauges(wi):
         r, rt = {"run_pnl": 0.0, "day_pnl": 0.0}, t0
     run = _num(r.get("run_pnl")) or 0.0
     out = []
-    # v-fx-onepot: the stop line and the day stop scale with the size; a resize since the start carries the new ones
-    rz = wi.last_record(path, ("resize",), lambda x: (wi.epoch(x.get("t")) or 0.0) >= t0) or {}
-    if rz:
-        st = dict(st, stop_line=rz.get("stop_line", st.get("stop_line")), day_stop=rz.get("day_stop", st.get("day_stop")))
     line, base = _num(st.get("stop_line")), _num(st.get("line_pnl"))
     if line is not None and base is not None:
         since = str(st.get("stop_line_since") or "")
@@ -157,6 +166,7 @@ def books(wi, upto):
     settled after it adds its whole payout (its cost had left the cash the start read)."""
     import os
     path = os.path.join(wi.results, "fxtake-live-orders.jsonl")
+    # start-only: the book's origin is the cash its start read (start.pool_cash) and how its pools map to subaccounts
     st = wi.last_record(path, ("start",), lambda r: (wi.epoch(r.get("t")) or 0) <= upto)
     t0 = wi.epoch((st or {}).get("t"))
     if not st or t0 is None or not st.get("subs") or not st.get("pool_cash"):
@@ -217,7 +227,8 @@ BOT = Bot(
               what="FX taker: the 5 currency pairs (penny test, 2026-10-25)", short="fx pairs", part="currencies")),
     script="fxtake_live.py", is_live=live_flag("--live"), stop_file="fxtake-live.stop",
     logs=Logs(path="fxtake-live-orders.jsonl"),
-    records=Records(fills=("fill",), fill_qty="n", halts=("halt", "day_stop"),
+    records=Records(fills=("fill",), fill_qty="n", halts=("halt", "day_stop"), resize=RESIZE,
+                    resize_as_start=resize_as_start,
                     # the FX taker's (fxtake_live.decide)
                     refusal_words=((r"^unfunded_pool$", "no cash in that market's pool"),
                                    (r"^per_close$", "6 already this quarter-hour"), (r"^held$", "its money cap already in play"))),

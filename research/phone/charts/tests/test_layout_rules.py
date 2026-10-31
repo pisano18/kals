@@ -118,6 +118,7 @@ def test_edge_data():
             ax = axs[1]                                 # money made, like a bot's running total, with a far stop line
             R = [y - Y[0] for y in Y]
             ax.step(X, R, where="post", color=BLUE, marker="o" if len(X) < 3 else None)
+            ax.set_title("Money made, running total")      # the money-words rule (base.MADE_WORDS)
             lim = money_axis(ax, R, xs=X, refs=[ref(min(R) - 10 * (max(R) - min(R) + 1), "stop", optional=True)])
             time_axis(ax, X[0], X[-1])
             annotate_change(ax, X, R, base=False, extra=[r["label"] for r in lim["far"]])
@@ -216,5 +217,60 @@ def test_every_kind_keeps_the_rules():
        % (", ".join(drawn), ("\n      " + "\n      ".join(found)) if found else ""))
 
 
+def test_money_words():
+    """v-tg-money-words (2026-10-31): the operator read /pin's '+$1,406.27' running total as its bank ("it says pin is
+    still in the 1000s" after a $1,000 deposit). Money made is SAID as made; a bot's picture opens with its pot now."""
+    X = [_dt.datetime(2026, 10, 30, h) for h in range(1, 9)]
+    R = [0.0, 1.0, 3.0, 2.0, 5.0, 7.0, 6.0, 9.0]
+
+    def pic(head, title, bot=False, bank=None):
+        def draw():
+            fig, (ax,) = fig_new(1, 3.0)
+            ax.plot(X, R)
+            money_axis(ax, R, xs=X)
+            time_axis(ax, X[0], X[-1])
+            ax.set_title(title)
+            if bot:
+                base.bot_headline(fig, "Pin bot", bank, 1406.27, 0.23, 118.2)
+            else:
+                headline(fig, head)
+            png(fig)
+        return _audited(draw)
+    bad_head = pic("Pin bot: all time +$1,406.27 · today +$0.23", "Money made, running total")
+    bad_panel = pic("Pin bot made +$9 today", "Running total, market by market")
+    good = pic("Pin bot made +$9 today", "Money made, running total")
+    bot_ok = pic("", "Money made, running total", bot=True, bank=2461.68)
+    bot_unread = pic("", "Money made, running total", bot=True, bank=None)
+    ck(any("headline shows money made" in p for p in bad_head) and any("panel of money made" in p for p in bad_panel)
+       and not good and not bot_ok and any("pot now" in p for p in bot_unread),
+       "the money-words rule: a signed amount in a headline, and a money-made panel, say 'made'/'lost'; a bot's "
+       "picture opens with 'bank $x' (base.bot_headline): %r" % (bad_head + bad_panel + good + bot_ok + bot_unread))
+    ck(base.made(1406.27) == "made +$1,406.27" and base.made(-5) == "lost -$5.00" and base.made(0) == "made $0.00",
+       "base.made: %r %r %r" % (base.made(1406.27), base.made(-5), base.made(0)))
+    with open(os.path.join(CHART_DIR, "bot.py"), encoding="utf-8") as f:
+        src = f.read()
+    ck("bot_headline(fig" in src and not re.search(r"(?<!bot_)headline\(fig", src),
+       "a bot's picture (bot.py) titles itself only through base.bot_headline (its pot now, then money made)")
+
+
+def test_bot_pictures_open_with_their_bank():
+    seen = []
+    with planted_botstats(fx=True) as (_BS, _c, _procs, _td, ctx3):
+        old = base.headline
+
+        def spy(fig, text):
+            seen.append(text)
+            return old(fig, text)
+        base.headline = spy
+        try:
+            for k in ("bot:pin", "bot:fx", "bot:ladder", "bot:jumpband"):
+                build(k, ctx3)
+        finally:
+            base.headline = old
+    ck(seen and all(base.BANK_WORDS.search(t) and (" made " in t or " lost " in t) and len(t) <= 80 for t in seen),
+       "every bot picture drawn opens with its bank now and says money made: %r" % seen)
+
+
 TESTS = [test_source_scan, test_nice_steps_and_labels, test_edge_data, test_balance_zoom_and_pnl_zero,
-         test_the_check_catches_the_old_pictures, test_every_kind_keeps_the_rules]
+         test_the_check_catches_the_old_pictures, test_every_kind_keeps_the_rules, test_money_words,
+         test_bot_pictures_open_with_their_bank]

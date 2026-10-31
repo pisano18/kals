@@ -8,7 +8,7 @@ chart_market). /hedges' markets come from the ChartCtx (ctx.main_account_markets
 from pindesk import Ledger, et_day, et_day_start
 from botdata import series
 from phone.charts.base import (BLUE, BOT_COLOUR, GREY, INK, INK2, MUTED, SURF, annotate_change, etdt, fig_new,
-                               headline, legend, mark_last, money_axis, note, png, time_axis,
+                               headline, legend, made, mark_last, money_axis, note, png, time_axis,
                                usd, value_axis)
 
 
@@ -45,9 +45,9 @@ def chart_hedges(ctx):
     money_axis(ax, [x["net"] for x in ho])
     if ho:
         legend(ax)
-    ax.set_title("Each hedged bet: what the whole market netted")
+    ax.set_title("Each hedged bet: what the whole market made or lost")
     time_axis(axs[-1], xs=[etdt(m["close"]) for m in hm] + [etdt(x["t"]) for x in ho])
-    headline(fig, "Pin bot insurance: %s all time on %d hedged markets" % (usd(tot), len(hm)))
+    headline(fig, "Pin bot insurance: %s all time on %d hedged markets" % (made(tot), len(hm)))
     cap = ("The pin bot's insurance. Top: each hedged market's other side, on its own (pinphone.markets_from's "
            "hedge_pnl, Kalshi's books, main account), added up. Bottom: every executed hedge (the pin bot's records) "
            "and its market's net, by verdict.")
@@ -81,7 +81,7 @@ def chart_status(ctx):
     # the dotted lines' key goes in the same box as the change (one box, never two fighting for a corner)
     annotate_change(ax, X, Y, ends=True, extra=["dotted: money moved in or out (left out of the line)"] if mv else ())
     ax.set_title("Main account (%s), hour by hour, last 7 days, trading only" % ctx.words_main())
-    headline(fig, "Bank %s · trading, last 7 days %s" % (usd(Y[-1], False), usd(Y[-1] - Y[0])))
+    headline(fig, "Bank %s · trading %s in the last 7 days" % (usd(Y[-1], False), made(Y[-1] - Y[0])))
     cap = ("The main account's bank (" + ctx.words_main() + ") over the last 7 days, " + series.NEUTRAL_NOTE + ": the "
            "bank now (the pin bot's last bank read plus every settlement since -- pindesk's bank_at, the figure /status "
            "shows) minus the trading after each hour, so only trading moves the line -- a deposit, withdrawal or "

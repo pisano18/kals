@@ -5,7 +5,7 @@ botdata.series, the ctx is a ChartCtx.
 """
 from pindesk import Ledger, et_day, et_day_start
 from botdata import series
-from phone.charts.base import (AVG30, DOWN, BLUE, GREY, INK, ORANGE, SURF, BOT_SHORT, etdt, fig_new, headline, legend,
+from phone.charts.base import (AVG30, DOWN, BLUE, GREY, INK, ORANGE, SURF, BOT_SHORT, etdt, fig_new, headline, made, legend,
                                mark_last, money_axis, pct_of_axis, pctx, place_notes, png, time_axis, usd, wrap)
 
 AVG_DAYS, LONG_DAYS = series.AVG_DAYS, series.LONG_DAYS
@@ -102,11 +102,11 @@ def chart_day(ctx, which):
     for _d, _t, v, b in ms:
         each[b] = each.get(b, 0.0) + v
     by_bot = " · ".join("%s %s" % (BOT_SHORT.get(b, b), usd(v)) for b, v in sorted(each.items(), key=lambda kv: kv[1]))
-    ax.set_title("Every bot, running total market by market (ET)\n%s" % wrap("By bot: " + by_bot, 78))
+    ax.set_title("Money made by every bot, running total market by market (ET)\n%s" % wrap("By bot: " + by_bot, 78))
     legend(ax)
     place_notes(ax, [(etdt(d0 + s), c, "%s %s" % (BOT_SHORT.get(b, b), usd(v))) for s, c, v, b in named])
     r = (net / b0) if b0 else None
-    headline(fig, "%s %s%s · %d of %d markets won" % (label, usd(net), (" (%s of all pots)" % pctx(r, 2)) if r is not None else "",
+    headline(fig, "%s %s%s · %d of %d markets won" % (label, made(net), (" (%s of all pots)" % pctx(r, 2)) if r is not None else "",
                                                     won, len(ms)))
     cap = ("%s: every bot's money market by market (every pot, Kalshi's books; a paused or retired bot's markets are "
            "'earlier bots'; a market counts on the ET day it closed). By bot: %s. Red dots: a losing market, named by its bot. Orange "
@@ -166,10 +166,10 @@ def chart_day_main(ctx, which):
     time_axis(ax, d0, d0 + 86400, clock=True)
     mark_last(ax, X[-1], Y[-1], usd(Y[-1]), color=BLUE)
     pct_of_axis(ax, b0, "%% of the %s bank at midnight ET" % usd(b0, False) if b0 else "")
-    ax.set_title("Running total, close by close (ET)")
+    ax.set_title("Money made, running total, close by close (ET)")
     legend(ax)
     r = (s["net"] / b0) if b0 else None
-    headline(fig, "%s %s%s · %d of %d closes won" % (label, usd(s["net"]), (" (%s of the bank)" % pctx(r, 2)) if r is not None else "",
+    headline(fig, "%s %s%s · %d of %d closes won" % (label, made(s["net"]), (" (%s of the bank)" % pctx(r, 2)) if r is not None else "",
                                                    s["won"], s["closes"]))
     cap = ("%s: the day's money close by close, Kalshi's books, main account (%s). Orange dashes: the "
            "average day of the %d days before, on the same clock; slate dash-dots: of the %d days before. Right axis: "

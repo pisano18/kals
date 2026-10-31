@@ -27,6 +27,49 @@ def _int(x):
         return None
 
 
+def flow_items(led, sub):
+    """[(epoch or None, $)] of every move INTO pot `sub` (negative = out), by flows()' rules (a tuple of pots: theirs
+    together; None = the whole account, where transfers between pots are not moves)."""
+    if isinstance(sub, tuple):
+        return [x for s in sub for x in flow_items(led, s)]
+    out = []
+    if sub in (None, "0"):
+        for r in led.get("deposits") or []:
+            if pinxfer.is_done(r):
+                out.append((pinxfer.when(r), pinxfer.net_cents(r) / 100.0))
+        for r in led.get("withdrawals") or []:
+            if pinxfer.is_done(r):
+                out.append((pinxfer.when(r), -abs(pinxfer.net_cents(r)) / 100.0))
+    if sub is not None:
+        for r in led.get("transfers") or []:
+            if not xfer_in_pot(r, sub):
+                continue
+            a = (_num(r.get("amount_cents")) or 0.0) / 100.0
+            t = _int(r.get("created_ts"))
+            if str(r.get("to_subaccount")) == sub:
+                out.append((t, a))
+            if str(r.get("from_subaccount")) == sub:
+                out.append((t, -a))
+    return out
+
+
+# v-tg-twr (2026-10-31): a deposit counts in a window's base only for the part of the window after it arrived. The
+# operator deposited $1,000 at 10:50 PM ET on 10-30 and the pin bot's day read +5.2% of $2,340 for money made on the
+# ~$1,340 it had all day (+9%), its week +9.0% of $2,292 instead of about +16%; at the 11-10 trial read (in % of the
+# bank) every window holding the deposit would have looked half as good. Modified Dietz, the standard money-weighted
+# base: the pot when the window began + each move x the share of the window still to run when it landed (a withdrawal
+# the same, negative). Before: the start + EVERY deposit in full, withdrawals not at all.
+def flows_weighted(led, sub, t0, t1):
+    """Sum of each move into pot `sub` in [t0, t1) x (t1 - its time) / (t1 - t0). t1 None (no read time known): every
+    move from t0 on counts in full, the rule before v-tg-twr."""
+    if t1 is None:
+        return flows(led, sub, t0, None)
+    if t1 <= t0:
+        return 0.0
+    span = float(t1 - t0)
+    return sum(a * (t1 - t) / span for t, a in flow_items(led, sub) if t is not None and t0 <= t < t1)
+
+
 def flows(led, sub, t0=None, t1=None):
     """Net dollars moved INTO pot `sub` ('0', '1', '2'; None = the whole account) at or after epoch t0
     and before t1 (None = unbounded; both None = all time, undated records included). Deposits
@@ -135,12 +178,14 @@ def pot_context(c, today):
     """What every pot percentage in one report needs, worked out once: per pot its value now (or why
     not) and its settled money by ET close day -- EVERY market in the pot, whichever bot's -- plus the
     account's books."""
-    ctx = {"today": today, "led": c.get("ledgers") or {}, "subs": {}, "as_of": None, "stale_why": None}
+    ctx = {"today": today, "led": c.get("ledgers") or {}, "subs": {}, "as_of": None, "stale_why": None,
+           "t_read": None}
     cur = {sub: _pot_now(c, sub) for sub in _tables.SUBS}
     # A failed read: every pot from the last pass where ALL of them read (one moment, so the pots still add up),
     # with only the markets settled by then -- each window's start is worked back from that moment.
     g = c.get("good") or {}
     last = max([float(((c.get("subs") or {}).get(s) or {}).get("tried") or 0.0) for s in _tables.SUBS])
+    ctx["t_read"] = last or None                         # v-tg-twr: the moment 'now' was read (a window's end so far)
     if any(v is None for v, _w in cur.values()) and isinstance(g.get("pots"), dict) \
             and all(s in g["pots"] for s in _tables.SUBS) and g.get("t") and 0.0 <= last - float(g["t"]) <= _kalshi.GOOD_MAX_S:
         ctx["as_of"] = float(g["t"])
@@ -179,9 +224,47 @@ def _pv(ctx, s, sub):
     return p if sub is None else (p.get("own") or p)
 
 
+def span_base(ctx, sub, first, end=None):
+    """(dollars, why): THE base of a percentage over ET days `first` .. before `end` (None = up to now) for pot `sub`
+    (a sub, a tuple of subs, None = all pots): what the pot held at midnight ET starting `first` (worked back from the
+    pot now, the markets settled since and the money moved since), + every move into or out of it during the span,
+    each counted for the share of the span still to run when it landed (v-tg-twr, flows_weighted). The window
+    (pot_for), the single day (day_pot) and the period (period.span_pot) bases all come from here."""
+    led = ctx["led"]
+    subs = _tables.SUBS if sub is None else (sub if isinstance(sub, tuple) else (sub,))
+    now_v = settled = 0.0
+    for s in subs:
+        p = _pv(ctx, s, sub)
+        if p["now"] is None:
+            return None, (("%s: %s" % (_tables.SUB_NAME[s], p["why"])) if sub is None else p["why"])
+        if not p["complete"]:
+            return None, "the %s's history is still loading" % _tables.SUB_NAME[s]
+        now_v += p["now"]
+        settled += sum(v for d, v in p["days"].items() if d and d >= first)
+    t0 = day_start(first)
+    cut = ctx.get("as_of")
+    if cut is not None and t0 > cut:
+        return None, "Kalshi has not answered a full read since before this window began (%s)" % ctx.get("stale_why")
+    start = now_v - settled - flows(led, sub, t0, cut)
+    if start < -MIN_POT:
+        return None, "it works back to %s at the start, so a read was out of step" % usd(start)
+    ends = [t for t in (day_start(end) if end else None, cut if cut is not None else ctx.get("t_read")) if t is not None]
+    t1 = min(ends) if ends else None
+    if start < MIN_POT:
+        # an empty pot when the span began: its span starts when its first money landed (Modified Dietz would count
+        # the empty hours before it and overstate the % -- the jump band's first $50 at 1:38 AM ET on 10-30)
+        ins = sorted(t for t, a in flow_items(led, sub) if t is not None and a > 0 and t >= t0 and (t1 is None or t < t1))
+        t0 = ins[0] if ins else t0
+    pot = max(0.0, start) + flows_weighted(led, sub, t0, t1)
+    if pot < MIN_POT:
+        return None, "the pot held under $1 then"
+    return pot, None
+
+
 def pot_for(ctx, sub, key):
     """(dollars, kind, why): the base of window `key`'s percentage for pot `sub` (None = all pots).
-    kind 'start': what the pot held when the window began, + money moved into it during the window;
+    kind 'start': span_base -- what the pot held when the window began, + money moved into or out of it during the
+    window, each move for the share of the window after it landed (v-tg-twr);
     kind 'money_in': all time -- the net money put in."""
     led = ctx["led"]
     subs = _tables.SUBS if sub is None else (sub if isinstance(sub, tuple) else (sub,))
@@ -197,24 +280,8 @@ def pot_for(ctx, sub, key):
             return None, kind, "no money put in (%s)" % usd(v)
         return v, kind, None
     first, end = _money.window_span(key, ctx["today"])
-    now_v = settled = 0.0
-    for s in subs:
-        p = _pv(ctx, s, sub)
-        if p["now"] is None:
-            return None, kind, (("%s: %s" % (_tables.SUB_NAME[s], p["why"])) if sub is None else p["why"])
-        now_v += p["now"]
-        settled += sum(v for d, v in p["days"].items() if d and d >= first)
-    t0 = day_start(first)
-    cut = ctx.get("as_of")
-    if cut is not None and t0 > cut:
-        return None, kind, "Kalshi has not answered a full read since before this window began (%s)" % ctx.get("stale_why")
-    start = now_v - settled - flows(led, sub, t0, cut)
-    if start < -MIN_POT:
-        return None, kind, "it works back to %s at the start, so a read was out of step" % usd(start)
-    pot = max(0.0, start) + max(0.0, flows(led, sub, t0, day_start(end) if end else None))
-    if pot < MIN_POT:
-        return None, kind, "the pot held under $1 then"
-    return pot, kind, None
+    pot, why = span_base(ctx, sub, first, end)
+    return pot, kind, why
 
 
 def attach_pots(block, ctx, sub):
@@ -231,34 +298,42 @@ def attach_pots(block, ctx, sub):
         w["pot_as_of"] = ctx.get("as_of") if pot is not None and kind == "start" else None
     # 2026-10-22: each of the 7 days as a % of what the pot held THAT day (+ money moved in that day), so an
     # average day is not divided by a later deposit (the ladder's $550 on 10-22 made its week read 0.14%/day)
+    by_day = {}
     for d in (block.get("days_7") or []) + (block.get("days_30") or []):
         pot = day_pot(ctx, sub, d["day"])
         d["pot"] = None if pot is None else round(pot, 2)
         d["pot_pct"] = round(100.0 * d["money"] / pot, 2) if pot is not None else None
+        by_day[d["day"]] = (d["money"], pot)
+    # v-tg-twr (2026-10-31): a window of several days is its days chained -- (1 + each day's money / that day's pot)
+    # multiplied, less 1 -- so a deposit only ever counts from the day it landed, and inside that day for its share
+    # (day_pot). Its 'pot' is then the base that % implies (money / %). A day with money and no pot, or a day not in
+    # the lists, keeps the window on span_base's rule above.
+    for k in ("last_7_days", "last_30_days", "this_month"):
+        w = block.get(k)
+        first = _money.window_span(k, ctx["today"])[0]
+        if not w or not w.get("markets") or w.get("pot_kind") != "start" or not first:
+            continue
+        growth, d, ok = 1.0, first, True
+        while d <= ctx["today"]:
+            m, pot = by_day.get(d, (None, None))
+            if m is None or (abs(m) > 1e-9 and not pot):
+                ok = False
+                break
+            growth *= 1.0 + (m / pot if abs(m) > 1e-9 else 0.0)
+            d = shift_day(d, 1)
+        twr = growth - 1.0
+        if ok and abs(twr) > 1e-9 and abs(w["money"]) > 1e-9:
+            w["pot"] = round(w["money"] / twr, 2)
+            w["pot_pct"] = round(100.0 * twr, 2)
+            w["pot_rule"] = "days chained"
     return block
 
 
 def day_pot(ctx, sub, day):
-    """pot_for's 'start' rule for the single ET day `day`: what pot `sub` (None = all) held at midnight ET starting
-    it + money moved in during it. None when it cannot be worked out."""
-    led = ctx["led"]
-    subs = _tables.SUBS if sub is None else (sub if isinstance(sub, tuple) else (sub,))
-    now_v = settled = 0.0
-    for s in subs:
-        p = _pv(ctx, s, sub)
-        if p["now"] is None or not p["complete"]:
-            return None
-        now_v += p["now"]
-        settled += sum(v for d, v in p["days"].items() if d and d >= day)
-    t0, t1 = day_start(day), day_start(shift_day(day, 1))
-    cut = ctx.get("as_of")
-    if cut is not None and t0 > cut:
-        return None
-    start = now_v - settled - flows(led, sub, t0, cut)
-    if start < -MIN_POT:
-        return None
-    pot = max(0.0, start) + max(0.0, flows(led, sub, t0, t1))
-    return pot if pot >= MIN_POT else None
+    """pot_for's 'start' rule for the single ET day `day` (span_base over that day): what pot `sub` (None = all) held at
+    midnight ET starting it + money moved in or out during it, each move for the share of the day after it landed
+    (v-tg-twr). None when it cannot be worked out."""
+    return span_base(ctx, sub, day, shift_day(day, 1))[0]
 
 
 def pot_check(ctx):

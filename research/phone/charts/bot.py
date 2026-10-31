@@ -10,7 +10,8 @@ grouped by event, botdata.series.race_rows): drawn for the bot whose unit is a l
 import bots
 from botdata import series
 from phone.charts.base import (AVG30, AXIS, BLUE, BOT_COLOUR, DOWN, GREY, MUTED, ORANGE, ROLL, SURF, WINDOW_DAYS,
-                               annotate_change, clock_axis, etdt, fig_new, free_corner, headline, mark_empty, mark_last,
+                               annotate_change, bot_headline, clock_axis, etdt, fig_new, free_corner, mark_empty,
+                               mark_last,
                                money_axis, note, pct_axis, pct_of_axis, pctx, png, ref, roll, time_axis, usd,
                                value_axis)
 
@@ -72,7 +73,7 @@ def draw_pace(ax, pc, now_h, goal=None, stops=(), base=None):
                      refs=refs, room_top=0.32)
     clock_axis(ax)
     if dollars:
-        ax.set_title("Today's pace in dollars, by ET clock (its bank could not be read for the %)")
+        ax.set_title("Money made today in dollars, by ET clock (its bank could not be read for the %)")
     else:
         ax.set_title("Today's pace, % of its bank, by ET clock (dotted line = now)")
     ax.legend(loc="best", frameon=True, facecolor=SURF, edgecolor="none", framealpha=0.92)
@@ -133,7 +134,7 @@ def chart_bot(ctx, name):
         ax.legend(loc=free_corner(ax), frameon=True, facecolor=SURF, edgecolor="none", framealpha=0.92)
     pct_of_axis(ax, base, (("%% of the %s's %s put in" % (bs.SUB_NAME[sub], usd(base, False))) if len(subs) == 1 else
                            ("%% of the %s put into %s" % (usd(base, False), bs.sub_name(sub)))) if base else "")
-    ax.set_title("Running total, market by market (Kalshi's books, %s)" % bs.sub_name(sub))
+    ax.set_title("Money made, running total, market by market (Kalshi's books, %s)" % bs.sub_name(sub))
     ax = axs[1]
     # a rolling rate is drawn only where its window is full (n markets / races behind it)
     wy = []
@@ -174,9 +175,10 @@ def chart_bot(ctx, name):
         mark_empty(ax, "a win rate needs %d %s; it has %d so far" % (n, "races" if unit == "leg" else "markets", have))
     time_axis(axs[-1], X0[0], X0[-1])
     at, td = blk.get("all_time") or {}, blk.get("today") or {}
-    headline(fig, "%s: all time %s%s · today %s" % (
-        label, usd(at.get("money")), (" (%+.1f%% of its bank)" % at["pot_pct"]) if at.get("pot_pct") is not None else "",
-        usd(td.get("money") or 0.0)))
+    # v-tg-money-words (2026-10-31): its pot NOW first (what Kalshi holds there: cash + open bets), then money made
+    from botdata import pots as _pots
+    nows = [_pots._pv(pctx_, s_, sub)["now"] for s_ in subs]
+    bot_headline(fig, label, None if any(v is None for v in nows) else sum(nows), at.get("money"), td.get("money"))
     cap = ("%s: today's pace against yesterday and its average day of the last %d and %d days (slate dash-dots, "
            "drawn once it has more days than the %d), every settled %s from Kalshi's books (botstats, %s), its running total and its win rate "
            "over time (the last %d days drawn; the total counts all). Right axis: the same dollars as %% of the money put "

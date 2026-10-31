@@ -628,7 +628,7 @@ def bs_money_table(windows, whose="of bank"):
     Money, its return on what the bets cost, and its share of the pot when the window began (the same
     numbers bs_window_line words); '-' where the pot is unknown, never a guessed base."""
     bs = _bs()
-    rows, base = [("", "Money", "Return", whose)], None
+    rows, base = [("", "Made", "Return", whose)], None
     for k in BS_WINDOWS:
         w = windows.get(k)
         lab = _wlabel(k, w)
@@ -659,7 +659,7 @@ def bs_days_table(days, unit="market"):
     """botstats' days_7 rows -> a small table with a text bar a day (light shade = a losing day)."""
     mx = max([abs(d["money"]) for d in days if d.get("markets")] or [0])
     bs = _bs()
-    rows = [("Day", "Money", "Return", "of bank", "Legs" if unit == "leg" else "Mkts", "Lost", "")]
+    rows = [("Day", "Made", "Return", "of bank", "Legs" if unit == "leg" else "Mkts", "Lost", "")]
     for d in days:
         if not d.get("markets"):
             rows.append((d["label"], "nothing settled"))
@@ -685,7 +685,7 @@ def bs_money_html(m, unit="market", goal=None):
     (with the goal, for the ladder), the 7-day table."""
     if not m["ok"]:
         return elines(bs_money_lines(m, unit, usd))           # the COULD NOT READ line, said once
-    L = ["💰 <b>Money</b> <i>(%s, read %s; a %s counts on the ET day it closed)</i>"
+    L = ["💰 <b>Money made</b> <i>(%s, read %s; a %s counts on the ET day it closed)</i>"
          % (esc(m["source"]), esc(m["as_of_et"] or "?"), esc(unit))]
     if not m["complete"]:
         L.append("⚠️ HISTORY STILL LOADING: all time and this month are partial.")
@@ -809,8 +809,10 @@ def bots_avg_table(a):
 
 
 def bs_headline(w, whose="of its bank", who="", goal=None, when="today"):
-    """'🟢 Pin bot today +$5.31 (+2.6% on $202.56 staked · +0.40% of its bank)' -- bs_window_line's own
-    figures; nothing settled and unread are said. `when` names the window ('yesterday', 'last 7 days')."""
+    """'🟢 Pin bot made +$5.31 today (+2.6% on $202.56 staked · +0.40% of its bank)' -- bs_window_line's own
+    figures; nothing settled and unread are said. `when` names the window ('yesterday', 'last 7 days').
+    v-tg-money-words (2026-10-31): money made is SAID as made ('made' / 'lost'), never a bare signed amount the
+    operator can read as the bank."""
     bs = _bs()
     lab = ("%s %s" % (who, when)) if who else when[:1].upper() + when[1:]
     if w is None:
@@ -822,9 +824,10 @@ def bs_headline(w, whose="of its bank", who="", goal=None, when="today"):
         share = " · %s %s" % (bs.pot_pct_txt(w["pot_pct"]), whose)
         if goal is not None:
             share += " (goal %s)" % bs.pot_pct_txt(goal).lstrip("+")
-    return "%s <b>%s %s</b> (<b>%s</b> on %s staked%s)" % (
-        dot(w["money"]), esc(lab), esc(usd(w["money"])), esc(bs.pct(w["return_pct"])), esc(_cash(w.get("put_in"))),
-        esc(share))
+    made = ("lost " if w["money"] < -0.004 else "made ") + usd(w["money"])
+    said = ("%s %s %s" % (who, made, when)) if who else "%s %s" % (when[:1].upper() + when[1:], made)
+    return "%s <b>%s</b> (<b>%s</b> on %s staked%s)" % (
+        dot(w["money"]), esc(said), esc(bs.pct(w["return_pct"])), esc(_cash(w.get("put_in"))), esc(share))
 
 
 def bots_window_table(a, key, span="day"):
@@ -840,7 +843,7 @@ def bots_window_table(a, key, span="day"):
     def cells(name, w):
         return (name, usd(w["money"]), bs.pot_pct_txt(w["pot_pct"]) if w.get("pot_pct") is not None else "-",
                 bs.pct(w["return_pct"]) if w.get("return_pct") is not None else "-", "%d/%d" % (w["lost"], w["markets"]))
-    rows = [("Bot", "Money", "of bank", "Return", "Lost")]
+    rows = [("Bot", "Made", "of bank", "Return", "Lost")]
     for nm, m in _shown_parts(a):                     # v-tg-active: the active bots, 'earlier', 'other'
         w = m.get(key) if m.get("ok") else None
         if w and w["markets"]:
@@ -972,7 +975,7 @@ def bs_all_html(a):
                or (nm not in ("other", "earlier") and not _bot_parked(a["bots"].get(nm)))]
         mx = max([abs(v) for nm, v in got if bm7.get(nm)] or [0])
         pin_, pp_ = _shown_by(a, t7.get("by_bot_put_in") or {}), _shown_by(a, t7.get("by_bot_pot_pct") or {}, "none")
-        rows = [("Bot", "Money", "Return", "of bank", "")]
+        rows = [("Bot", "Made", "Return", "of bank", "")]
         for nm, v in got:
             if not bm7.get(nm):
                 rows.append((nm, "none"))
@@ -1025,7 +1028,7 @@ def bs_all_html(a):
     days = [d for d in a["total_days_7"] if not (firsts and d["day"] < min(firsts))]
     if anything and days:
         mx = max([abs(d["money"]) for d in days if d["markets"]] or [0])
-        rows = [("Day", "Money", "of pots", "Return", "Lost", "")]
+        rows = [("Day", "Made", "of pots", "Return", "Lost", "")]
         for d in days:
             rows.append((d["label"], "nothing settled") if not d["markets"] else
                         (d["label"], usd(d["money"]),

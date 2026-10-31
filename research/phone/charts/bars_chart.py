@@ -20,7 +20,7 @@ def bars_tests(d, B):
         if f.get("verdict") in ("TOO EARLY", "EXTEND") and f.get("arm_running"):
             extra = len((f.get("h2h") or {}).get("arm_extra_losers") or [])
             tests.append(("Fresh-offer test (%s) · day %.1f of %d · %s" % (f["arm"], f["days"], f["window_days"], f["verdict"]), [
-                crit("Net of live's fresh fills", f["net"], "$",
+                crit("Money made by live's fresh fills", f["net"], "$",
                      [(B.FRESH_DEPLOY_NET, "deploy at or under"), (B.FRESH_KILL_NET, "kill at or over")],
                      (None, B.FRESH_DEPLOY_NET), (B.FRESH_KILL_NET, None)),
                 crit("Fresh fills that lost", f["losers"], "",
