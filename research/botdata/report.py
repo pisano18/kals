@@ -9,7 +9,9 @@ import collections
 import threading
 import time
 
+import bots as _reg
 from botdata import activity as _activity
+from botdata import hedgeplay as _hedgeplay
 from botdata import kalshi as _kalshi
 from botdata import money as _money
 from botdata import pots as _pots
@@ -36,7 +38,7 @@ def _money_block(c, name, today, ctx=None):
     tok = _kalshi.version(c)
     if tok is None or not (ctx is None or ctx is _pots.remembered_context(c, today)):
         return _money_block_raw(c, name, today, ctx)
-    k = (tok, name, today)
+    k = (tok, name, today, _hedgeplay.version() if _hedges_of(name) else None)
     with _BLOCKS_LOCK:
         hit = _BLOCKS.get(k)
         if hit is not None:
@@ -48,6 +50,15 @@ def _money_block(c, name, today, ctx=None):
             while len(_BLOCKS) > _BLOCKS_MAX:
                 _BLOCKS.popitem(last=False)
     return _block_copy(hit)
+
+
+def _hedges_of(name):
+    """v-hedge-split (2026-11-01): True for a bot whose own records hold hedges (the registry's Records.hedge: the pin
+    bot). Its markets are split by botdata/hedgeplay.py; every other bot's stay exactly as they were."""
+    try:
+        return name in _tables.SPEC and _reg.get(name).records.hedge is not None
+    except Exception:                                   # noqa: BLE001 -- 'other', an unknown name: never split
+        return False
 
 
 def _block_copy(b):
@@ -71,7 +82,15 @@ def _money_block_raw(c, name, today, ctx=None):
         base["days_7"], base["days_30"], base["all_days"], base["markets"] = [], [], [], []
         base["error"] = base["error"] or "Kalshi has not been read yet"
         return base
-    ms = [_money.market(s) for sb, y in xs for s in (y.get("rows") or {}).values() if _tables.owner(s.get("ticker"), sb) == name]
+    rows = [s for sb, y in xs for s in (y.get("rows") or {}).values() if _tables.owner(s.get("ticker"), sb) == name]
+    ms = [_money.market(s) for s in rows]
+    if _hedges_of(name):                               # v-hedge-split: the bet / the hedge / the buys after a flip
+        hx = _hedgeplay.current()
+        if hx:
+            for s, m in zip(rows, ms):
+                h = hx.get(s.get("ticker"))
+                if h:
+                    _hedgeplay.tag(m, _hedgeplay.split_row(s, h))
     ms.sort(key=lambda m: (m["t"] or 0), reverse=True)
     base.update(_money.windows(ms, today))
     base["markets"] = ms
@@ -136,6 +155,15 @@ def _balance_block(c, name):
             "by_sub": {s: v for (s, _y), v in zip(xs, vals)} if len(xs) > 1 else None,
             "shared_with": shared, "note": note, "as_of_et": et_clock(x.get("bal_t")),
             "error": next((y.get("bal_err") for _, y in xs if y.get("bal_err")), None)}
+
+
+def _hedge_keys(out, parts):
+    """v-hedge-split (2026-11-01): a total's hedge_costs (added) and hedges (the one bot that hedges: the pin bot; if
+    ever two, the first's) from the parts that carry them; nothing is added when none does."""
+    hp = [x for x in parts if x and "hedge_costs" in x]
+    if hp:
+        out["hedge_costs"] = sum(x["hedge_costs"] for x in hp)
+        out["hedges"] = hp[0]["hedges"]
 
 
 def _bot_from(c, name, now, rows, ok, ctx=None):
@@ -253,6 +281,7 @@ def all_bots(now=None, getter=None, procs=None):
                     "by_bot_markets": {b: x["markets"] for b, x in got},
                     "by_bot_pot_pct": {b: x.get("pot_pct") for b, x in got},
                     "partial": bool(missing), "missing": missing}
+        _hedge_keys(total[w], [x for _, x in got])        # v-hedge-split: only when a bot's window holds them
         _pots.attach_pots({w: total[w]}, ctx, None)
         if missing:                                  # money that leaves a pot out is no base for a share
             total[w].update(pot_pct=None, pot_why="these totals leave out %s" % ", ".join(missing))
@@ -274,6 +303,7 @@ def all_bots(now=None, getter=None, procs=None):
                        "pot_pct": round(100.0 * mo / pot, 2) if pot else None,
                        "by_bot": {b: x["money"] for b, x in by.items()},
                        "by_bot_pot_pct": {b: x.get("pot_pct") for b, x in by.items()}})
+        _hedge_keys(days_7[-1], list(by.values()))
     # the LONG_DAYS full days before today, every bot together (avg_day's rule: a day before the first market on ANY
     # pot's books is left out); each day's % is of what all the pots held when it began (day_pot, the days_7 base)
     firsts = [m.get("first_day") for _b, m in parts if m.get("first_day")]

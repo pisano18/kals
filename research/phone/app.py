@@ -103,6 +103,7 @@ import threading
 import time
 import traceback
 
+from botdata import hedgeplay as _hedgeplay
 from botdata import paths as _paths
 from botdata import procs as _procs
 from phone import alerts as _alerts
@@ -133,6 +134,9 @@ class Phone:
         self.cfg_path = cfg_path
         self.tg = transport
         self.ledger = ledger or Ledger()
+        # v-hedge-split (2026-11-01): every money block and market list splits the pin bot's hedged markets into the
+        # bet, the hedge and the buys after a flip, from this ledger's hedge records (botdata/hedgeplay.py)
+        _hedgeplay.set_source(lambda L=self.ledger: L.hedges)
         self.health_fn = health_fn or (lambda: pindesk.health(self.ledger))
         self.now = now_fn or time.time
         self.offset = None

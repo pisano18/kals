@@ -24,6 +24,7 @@ if _RESEARCH not in sys.path:
     sys.path.insert(0, _RESEARCH)
 from pindesk import Ledger, et_day, et_day_start                     # noqa: E402
 from botdata.clock import prev_day                                   # noqa: E402,F401  (tgcharts.prev_day, verbatim)
+from botdata import hedgeplay as _hedgeplay                          # noqa: E402
 import bots                                                          # noqa: E402
 
 # ---- the 7-day average (operator 10-23: "The 7 day average should be on the other charts too where possible.
@@ -152,7 +153,18 @@ def all_day_markets(bs, now, getter=None, procs=None):
     """Every bot's settled markets from botstats (the /bots source, Kalshi's books, every pot):
     (bs, pot context, [(ET close day, settled epoch, $, bot)] by time, [pots that could not be read])."""
     bs, _c, _prows, _ok, pctx_, ms, missing = all_markets(bs, now, getter, procs)
-    return bs, pctx_, [(m["day"], m["t"], m["money"], name) for name, m in ms], missing
+    return bs, pctx_, [DayRow((m["day"], m["t"], m["money"], name), m.get("kind")) for name, m in ms], missing
+
+
+class DayRow(tuple):
+    """all_day_markets' row: (ET close day, settled epoch, $, bot) -- unpacked as a 4-tuple everywhere -- that also
+    carries .kind, the market's botdata/hedgeplay kind (v-hedge-split, 2026-11-01: 'hedge_cost' = the bet won, its
+    hedge cost more than it made; None = not split), so a picture can tell a hedge cost from a loss."""
+
+    def __new__(cls, t, kind=None):
+        r = super().__new__(cls, t)
+        r.kind = kind
+        return r
 
 
 def all_losses(bs, now, getter=None, procs=None, week_days=7):
@@ -175,7 +187,7 @@ def all_losses(bs, now, getter=None, procs=None, week_days=7):
         subs = bs.bot_subs(name)
         key = subs if len(subs) > 1 else subs[0]
         ms = blk.get("markets") or []
-        lost = [m for m in ms if m["money"] < -0.004]
+        lost = [m for m in ms if _hedgeplay.is_loss(m)]     # v-hedge-split: a bet that WON is not a loss
         won_days = {}
         for m in ms:
             if m["money"] > 0.004 and m["day"]:
@@ -184,6 +196,16 @@ def all_losses(bs, now, getter=None, procs=None, week_days=7):
                      "money_lost": round(sum(m["money"] for m in lost), 4),
                      "worst": min((m["money"] for m in lost), default=None),
                      "won_days": won_days}                  # ET day -> $ its winning markets made (the chart)
+        hz = _hedgeplay.tally(ms)
+        if hz is not None:                                  # v-hedge-split: the hedge area (the pin bot only)
+            hc = [m for m in ms if _hedgeplay.is_hedge_cost(m)]
+            hcd = {}
+            for m in hc:
+                if m["day"]:
+                    hcd[m["day"]] = hcd.get(m["day"], 0.0) + m["money"]
+            per[name].update(hedge_costs=len(hc), hedge_costs_7d=sum(1 for m in hc if m["day"] in week),
+                             hedges=hz, hedges_7d=_hedgeplay.tally([m for m in ms if m["day"] in week]),
+                             hedge_cost_days=hcd)       # ET day -> $ its hedge costs lost (the chart's own segment)
         for m in lost:
             if (key, m["day"]) not in pots:
                 pots[(key, m["day"])] = bs.day_pot(pctx_, key, m["day"]) if m["day"] else None
@@ -202,6 +224,14 @@ def all_losses(bs, now, getter=None, procs=None, week_days=7):
                 q["worst"] = p["worst"]
             for d, v in p["won_days"].items():
                 q["won_days"][d] = q["won_days"].get(d, 0.0) + v
+            for k in ("hedge_costs", "hedge_costs_7d"):
+                if k in p:
+                    q[k] = q.get(k, 0) + p[k]
+            for k in ("hedges", "hedges_7d"):
+                if p.get(k) is not None and q.get(k) is None:
+                    q[k] = p[k]
+            for d, v in (p.get("hedge_cost_days") or {}).items():
+                q.setdefault("hedge_cost_days", {})[d] = q.get("hedge_cost_days", {}).get(d, 0.0) + v
         per = {n: q for n, q in merged.items() if n != "earlier" or q["settled"]}
         for r in out:
             r["bot"] = folded.get(r["bot"], r["bot"])

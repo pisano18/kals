@@ -96,13 +96,16 @@ def render(d, ctx):
             b0 = d["banks"][lab]
             ob = ret(st["net"], b0, 2 if b0 and abs(st["net"] / b0) < 0.01 else 1) or "-"
         rows.append((lab, usd(st["net"]), ret(st["net"], st["risked"], 1) or "-", ob,
-                     P.pct1(st["won"], st["markets"]), st["losses"]))
+                     P.pct1(st["won"], st["markets"]),
+                     ("%d+%dh" % (st["losses"], st["hedge_costs"])) if st.get("hedge_costs") else st["losses"]))
     L.append("")
     L.append("💰 <b>By window</b>")
     L.append(pre(table(rows)))
     L.append(i_("Return = on what the bets cost (fees in) · of bank = of the main account's bank when the window "
-                "began%s · Won = markets won · Lost = markets that lost" % (
-                    (" (* Life: of the %s put into it)" % dollars(life_in)) if life_in else "")))
+                "began%s · Won = markets won · Lost = markets that lost%s" % (
+                    (" (* Life: of the %s put into it)" % dollars(life_in)) if life_in else "",
+                    " (1+4h = 1 lost, 4 hedge costs: the bet won, its hedge cost more than it made)"
+                    if any(st.get("hedge_costs") for _t, st, _n, _l, _s in sts) else "")))
     if life["breakeven_d"] is not None and life["win_n"] is not None:
         L.append("🎯 Lifetime: won <b>%s%%</b> of markets (break-even needs %s%%) · contracts paid %s%% vs "
                  "break-even %s%%: <b>%+.1f pts</b>" % (

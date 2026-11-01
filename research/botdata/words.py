@@ -8,6 +8,7 @@ import re
 
 import bots as _reg
 import pinday
+from botdata import hedgeplay as _hedgeplay
 from botdata import money as _money
 from botdata import report as _report
 from botdata import status as _status
@@ -48,9 +49,9 @@ def _wline(w, name, whose="its bank"):
     if not w["markets"]:
         return "%s: nothing settled" % name
     pw = pot_words(w, whose)
-    return "%s: %s on %s in (%s)%s, %d won, %d lost" % (
+    return "%s: %s on %s in (%s)%s, %d won, %s" % (
         name, usd(w["money"]), usd(w["put_in"]).lstrip("+"), pct(w["return_pct"]),
-        (" = " + pw) if pw else "", w["won"], w["lost"])
+        (" = " + pw) if pw else "", w["won"], _hedgeplay.lost_words(w["lost"], w.get("hedge_costs", 0)))
 
 
 def _pot_note(m):

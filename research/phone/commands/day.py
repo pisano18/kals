@@ -9,6 +9,7 @@ words, with Phone._staked) are shared with /status and /days.
 """
 import traceback
 
+from botdata import hedgeplay as _hedgeplay
 from botdata.fmt import dollars, usd                  # == pinphone.dollars / usd
 from phone.command import Command, declare
 from phone.html import Html, details, esc, i_, spark
@@ -73,11 +74,16 @@ def day_lines(d, label, pp):
                                        (" " + esc(what)) if r is not None and what else "")]
     if s["closes"]:
         staked_ = d["staked"]
-        L.append("<b>%d of %d</b> closes won (<b>%s</b>), %d lost (%.1f%%) · %s%s" % (
+        L.append("<b>%d of %d</b> closes won (<b>%s</b>), %d lost (%.1f%%)%s · %s%s" % (
             s["won"], s["closes"], pp.pct_of(s["won"], s["closes"], 1), s["lost"], s["loss_rate"],
+            # v-hedge-split (2026-11-01): a close whose bets all won but whose hedge cost more is counted on its own
+            (", %d hedge cost%s (the bet won)" % (s["hedge_costs"], "" if s["hedge_costs"] == 1 else "s"))
+            if s.get("hedge_costs") else "",
             esc(_nof(s["markets"], "bet")),
             (" · <b>%s</b> on the %s staked" % (esc(ret(s["net"], staked_, 2)), esc(dollars(staked_))))
             if staked_ else ""))
+        if s.get("hedges"):
+            L.append(esc(_hedgeplay.hedge_line(s["hedges"])))
     else:
         L.append("No settled bets.")
     if day:
@@ -181,6 +187,8 @@ def top_lines(t, day, label):
     tbl = bots_window_table(a, key)
     if tbl:
         L += ["", "📊 <b>By bot</b>"] + tbl
+    if w.get("hedges"):                    # v-hedge-split (2026-11-01): the hedge area, beside the losses it explains
+        L.append(esc(_hedgeplay.hedge_line(w["hedges"])))
     avg, n = all_bots_avg_before(a, day)
     base = w.get("pot")
 

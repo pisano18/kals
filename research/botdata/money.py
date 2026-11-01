@@ -9,6 +9,7 @@ import time
 
 import pinday
 import pinledger
+from botdata import hedgeplay as _hedgeplay
 from botdata import tables as _tables
 from botdata.clock import ampm as _ampm, day_label, et_day, shift_day, utc_epoch as _epoch
 
@@ -87,7 +88,10 @@ def _market(s):
 def window(ms, label, days=None):
     """Totals over the markets `ms` (already filtered). Worst/best are single markets."""
     won = [m for m in ms if m["money"] > 0.004]
-    lost = [m for m in ms if m["money"] < -0.004]
+    # v-hedge-split (2026-11-01): a market whose BET won but whose hedge cost more is not a loss -- it is counted on its
+    # own (hedge_costs) and the hedges' story is told beside it (hedges); botdata/hedgeplay.py is the one rule
+    lost = [m for m in ms if _hedgeplay.is_loss(m)]
+    hcost = [m for m in ms if _hedgeplay.is_hedge_cost(m)]
     money = sum(m["money"] for m in ms)
     put_in = sum(m["put_in"] for m in ms)
     by_day = {}
@@ -96,8 +100,8 @@ def window(ms, label, days=None):
 
     def pick(m):
         return None if m is None else {k: m[k] for k in ("ticker", "what", "day", "side", "contracts", "money")}
-    return {"label": label, "days": days, "markets": len(ms), "won": len(won), "lost": len(lost),
-            "flat": len(ms) - len(won) - len(lost), "hedged": sum(1 for m in ms if m["side"] == "both"),
+    out = {"label": label, "days": days, "markets": len(ms), "won": len(won), "lost": len(lost),
+            "flat": len(ms) - len(won) - len(lost) - len(hcost), "hedged": sum(1 for m in ms if m["side"] == "both"),
             "money": round(money, 4), "put_in": round(put_in, 4),
             "fees": round(sum(m["fees"] for m in ms), 4),
             "return_pct": (round(100.0 * money / put_in, 2) if put_in > 0 else None),
@@ -106,6 +110,16 @@ def window(ms, label, days=None):
             "active_days": len(by_day),
             "days_up": sum(1 for v in by_day.values() if v > 0.004),
             "days_down": sum(1 for v in by_day.values() if v < -0.004)}
+    hedges = _hedgeplay.tally(ms)
+    if hedges is not None:                       # only a window holding a split market gets these keys
+        out["hedge_costs"] = len(hcost)
+        out["hedges"] = hedges
+    return out
+
+
+def _day_extra(w):
+    """The per-day rows' hedge keys (only when that day held a split market)."""
+    return {k: w[k] for k in ("hedge_costs", "hedges") if k in w}
 
 
 LONG_DAYS = 30                  # the long average day (2026-10-29): the 30 full ET days before today
@@ -172,7 +186,8 @@ def windows(ms, today):
         w = window([m for m in ms if m["day"] == d], day_label(d), [d])
         out["days_7"].append({"day": d, "label": day_label(d), "markets": w["markets"], "won": w["won"],
                               "lost": w["lost"], "money": w["money"], "put_in": w["put_in"],
-                              "return_pct": w["return_pct"], "before_first": first is None or d < first})
+                              "return_pct": w["return_pct"], "before_first": first is None or d < first,
+                              **_day_extra(w)})
     # 2026-10-29, the operator: "For bots with 7 day average can we also add a lifetime or month average whichever is
     # better". A 30-day one (ET days), not lifetime: the rules and bet sizes changed a lot since August, so a lifetime
     # average describes old versions. The LONG_DAYS FULL ET days before today, newest first (today, still running,
@@ -195,7 +210,8 @@ def windows(ms, today):
     for d in reversed(days):
         w = window([m for m in ms if m["day"] == d], day_label(d), [d])
         out["all_days"].append({"day": d, "markets": w["markets"], "won": w["won"], "lost": w["lost"],
-                                "money": w["money"], "put_in": w["put_in"], "return_pct": w["return_pct"]})
+                                "money": w["money"], "put_in": w["put_in"], "return_pct": w["return_pct"],
+                                **_day_extra(w)})
     return out
 
 

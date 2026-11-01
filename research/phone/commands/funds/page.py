@@ -9,10 +9,18 @@ import time
 
 import bots as _bots
 import pinday
+from botdata import hedgeplay as _hedgeplay
 from botdata.fmt import nof as _nof, pct_of, usd                 # pct_of: botdata.fmt's since step 12
 from phone.html import MAX_LEN, Html, details, elines, esc, i_, pre, table
 from phone.commands.funds.read import (FUNDS_BOOKS, FUNDS_DAYS, FUNDS_SHOW_DAYS, FUNDS_WHAT, _bs, _pool_name,  # noqa: F401
                                        _usd2, funds_books, funds_days, funds_what)
+
+
+def _hc_words(c):
+    """v-hedge-split (2026-11-01): ', 4 hedge costs' when a cell counted markets whose bet won but whose hedge cost
+    more than it made (botdata/hedgeplay.py), else ''."""
+    n = c.get("hc", 0)
+    return (", %d hedge cost%s" % (n, "" if n == 1 else "s")) if n else ""
 
 
 def _funds_hist_lines(n, res, today, show, held, active=None):
@@ -27,7 +35,7 @@ def _funds_hist_lines(n, res, today, show, held, active=None):
         return ["  past %d ET days: COULD NOT READ (%s)" % (FUNDS_DAYS, res.get("err"))]
 
     def cw(c, extra=""):
-        return "%s (%d of %d lost%s)" % (bs.usd(c["money"]), c["lost"], c["n"], extra)
+        return "%s (%d of %d lost%s%s)" % (bs.usd(c["money"]), c["lost"], c["n"], _hc_words(c), extra)
 
     def money_w(x, other_names=""):
         if n != 0 or not x["all"]["n"]:
@@ -147,7 +155,7 @@ def _funds_days_html(n, res, today, show, held, active=None):
         x = shown[i]
         if x["read"] and x["all"]["n"]:
             rows.append((_funds_day_label(x["day"], today), usd(x["all"]["money"]),
-                         "%d/%d" % (x["all"]["lost"], x["all"]["n"])))
+                         _hedgeplay.lost_cell(x["all"]["lost"], x["all"].get("hc", 0), x["all"]["n"])))
             i += 1
             continue
         j = i
@@ -163,8 +171,8 @@ def _funds_days_html(n, res, today, show, held, active=None):
     L = []
     if len(rows) > 1:                       # no day rows when the page had to leave them out to fit
         L.append(pre(table(rows)))
-    total = "%s: <b>%s</b> (%d of %d lost)" % (esc(span), esc(usd(tot["all"]["money"])), tot["all"]["lost"],
-                                               tot["all"]["n"])
+    total = "%s: <b>%s</b> (%d of %d lost%s)" % (esc(span), esc(usd(tot["all"]["money"])), tot["all"]["lost"],
+                                                 tot["all"]["n"], esc(_hc_words(tot["all"])))
     if held is None:
         L.append("%s; %% not shown: what it holds now was not read whole" % total)
     elif held < 1.0:
@@ -175,8 +183,8 @@ def _funds_days_html(n, res, today, show, held, active=None):
     if n == 0 and tot["all"]["n"]:
         names = ", ".join(("%s hourly" % o[2:-1]) if o in bs.PIN_HOURLY else o for o in h["other_series"])
         L.append("Split: " + " · ".join(
-            "%s <b>%s</b> (%d of %d lost%s)" % (esc(w), esc(usd(tot[k]["money"])), tot[k]["lost"], tot[k]["n"],
-                                                esc("; " + names) if k == "other" and names else "")
+            "%s <b>%s</b> (%d of %d lost%s%s)" % (esc(w), esc(usd(tot[k]["money"])), tot[k]["lost"], tot[k]["n"],
+                                                  esc(_hc_words(tot[k])), esc("; " + names) if k == "other" and names else "")
             for k, w in funds_books(active) if tot[k]["n"]))
         # the day lines only: the total, its % and the NOT READ list are said above
         L.append(details(elines([x.strip() for x in _funds_hist_lines(n, res, today, show, held, active)[1:]

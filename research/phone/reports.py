@@ -9,6 +9,7 @@ botstats read (the /bots source: Kalshi's books, every pot).
 import time
 
 import bots as _bots
+from botdata import hedgeplay as _hedgeplay
 from botdata import period as _period
 from botdata.fmt import pot_pct_txt, usd
 from phone.html import Html, esc, i_, pre, table
@@ -62,6 +63,11 @@ def titles(d):
         p["first"])[:3])
 
 
+def _lost_n(b):
+    """A report's Lost cell: '5', or '1+4h' when hedge costs (the bet won, v-hedge-split) are split out."""
+    return ("%d+%dh" % (b["lost"], b["hedge_costs"])) if b.get("hedge_costs") else "%d" % b["lost"]
+
+
 def report_html(d):
     """The report as the phone shows it."""
     t, p = d["this"], d["prev"]
@@ -91,11 +97,12 @@ def report_html(d):
         for k in keys:
             b, pb = t["by_bot"].get(k), p["by_bot"].get(k)
             rows.append((short(k), usd(b["money"]) if b else "-", _pp(b["pot_pct"]) if b else "-",
-                         usd(pb["money"]) if pb else "-", ("%d" % b["lost"]) if b else "-"))
-        rows.append(("All bots", usd(t["money"]), _pp(t["pot_pct"]), usd(p["money"]), "%d" % t["lost"]))
+                         usd(pb["money"]) if pb else "-", _lost_n(b) if b else "-"))
+        rows.append(("All bots", usd(t["money"]), _pp(t["pot_pct"]), usd(p["money"]), _lost_n(t)))
         out.append(pre(table(rows)))
-        out.append(i_("%% pot: of what the pot held when %s began, plus money moved in since. Lost: markets lost."
-                      % ("the week" if d["kind"] == "week" else "the month")))
+        out.append(i_("%% pot: of what the pot held when %s began, plus money moved in since. Lost: markets lost.%s"
+                      % ("the week" if d["kind"] == "week" else "the month",
+                         " 1+4h = 1 lost, 4 hedge costs (the bet won)." if t.get("hedge_costs") else "")))
     if t["best"]:
         out.append("📈 Best day <b>%s %s</b> · 📉 worst day <b>%s %s</b> (of %d day%s with a market)" % (
             esc(day_words(t["best"][0])), esc(usd(t["best"][1])), esc(day_words(t["worst_day"][0])),
@@ -108,6 +115,8 @@ def report_html(d):
             esc(short(w["bot"])), esc(w["what"]), esc(day_words(w["day"])), esc(usd(w["money"]))))
     elif t["markets"]:
         out.append("🟢 No market lost.")
+    if t.get("hedges"):                    # v-hedge-split (2026-11-01): the hedge area, beside the losses
+        out.append(esc(_hedgeplay.hedge_line(t["hedges"])))
     if d["missing"]:
         out.append(i_("Not counted (their pots could not be read now): %s." % ", ".join(short(k) for k in d["missing"])))
     out.append(i_("/week · /month (add 'last' for the one before) · /days for day by day"))

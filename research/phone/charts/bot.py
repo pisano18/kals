@@ -8,8 +8,9 @@ settles in (Bot.unit: the race's 'leg'; was `"leg" if name == "race"`). The race
 grouped by event, botdata.series.race_rows): drawn for the bot whose unit is a leg.
 """
 import bots
+from botdata import hedgeplay as _hedgeplay
 from botdata import series
-from phone.charts.base import (AVG30, AXIS, BLUE, BOT_COLOUR, DOWN, GREY, MUTED, ORANGE, ROLL, SURF, WINDOW_DAYS,
+from phone.charts.base import (AVG30, AXIS, BLUE, BOT_COLOUR, DOWN, GREY, INK2, MUTED, ORANGE, ROLL, SURF, WINDOW_DAYS,
                                annotate_change, bot_headline, clock_axis, etdt, fig_new, free_corner, mark_empty,
                                mark_last,
                                money_axis, note, pct_axis, pct_of_axis, pctx, png, ref, roll, time_axis, usd,
@@ -121,8 +122,12 @@ def chart_bot(ctx, name):
     # written on it is the change over what is drawn
     X0, R0 = [X[0]] + X, [R[0] - W[0]["money"]] + R
     ax.step(X0, R0, where="post", color=col, lw=2.0, zorder=3, marker="o" if len(X) < 3 else None, ms=4)
-    lx = [x for x, m in zip(X, W) if m["money"] < -0.004]
-    ly = [y for y, m in zip(R, W) if m["money"] < -0.004]
+    # v-hedge-split (2026-11-01): a losing market is one whose BET lost (botdata/hedgeplay.py); a bet that won whose
+    # hedge cost a little more is its own marker
+    lx = [x for x, m in zip(X, W) if _hedgeplay.is_loss(m)]
+    ly = [y for y, m in zip(R, W) if _hedgeplay.is_loss(m)]
+    hx = [x for x, m in zip(X, W) if _hedgeplay.is_hedge_cost(m)]
+    hy = [y for y, m in zip(R, W) if _hedgeplay.is_hedge_cost(m)]
     base, _k, _why = bs.pot_for(pctx_, sub, "all_time")
     refs = [ref(R[-1] - dist, "%s: %s below now" % (g.what, usd(dist, False)), color=DOWN, ls=":", optional=True)
             for g, dist in stops if not _is_day(g)]
@@ -131,6 +136,10 @@ def chart_bot(ctx, name):
     annotate_change(ax, X0, R0, base=base or False, extra=[r["label"] for r in lim["far"]], lows=False)
     if lx:
         ax.scatter(lx, ly, s=22, color=DOWN, edgecolor=SURF, linewidth=1.0, zorder=4, label="a losing %s" % unit)
+    if hx:
+        ax.scatter(hx, hy, s=20, marker="D", color=SURF, edgecolor=INK2, linewidth=1.2, zorder=4,
+                   label="the bet won, its hedge cost more (not a loss)")
+    if lx or hx:
         ax.legend(loc=free_corner(ax), frameon=True, facecolor=SURF, edgecolor="none", framealpha=0.92)
     pct_of_axis(ax, base, (("%% of the %s's %s put in" % (bs.SUB_NAME[sub], usd(base, False))) if len(subs) == 1 else
                            ("%% of the %s put into %s" % (usd(base, False), bs.sub_name(sub)))) if base else "")

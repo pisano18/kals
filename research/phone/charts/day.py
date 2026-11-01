@@ -5,7 +5,7 @@ botdata.series, the ctx is a ChartCtx.
 """
 from pindesk import Ledger, et_day, et_day_start
 from botdata import series
-from phone.charts.base import (AVG30, DOWN, BLUE, GREY, INK, ORANGE, SURF, BOT_SHORT, etdt, fig_new, headline, made, legend,
+from phone.charts.base import (AVG30, DOWN, BLUE, GREY, INK, INK2, ORANGE, SURF, BOT_SHORT, etdt, fig_new, headline, made, legend,
                                mark_last, money_axis, pct_of_axis, pctx, place_notes, png, time_axis, usd, wrap)
 
 AVG_DAYS, LONG_DAYS = series.AVG_DAYS, series.LONG_DAYS
@@ -28,15 +28,18 @@ def chart_day(ctx, which):
     def curve(d):
         t0 = bs.day_start(d)
         t1 = bs.day_start(bs.shift_day(d, 1))
-        pts, cum, lost = [], 0.0, []
-        for dd, t, v, b in rows:
+        pts, cum, lost, hcost = [], 0.0, [], []
+        for r in rows:
+            dd, t, v, b = r
             if dd == d:
                 cum += v
                 pts.append((min(max(t, t0), t1) - t0, cum))
                 if v < -0.004:
-                    lost.append((min(max(t, t0), t1) - t0, cum, v, b))
-        return pts, lost
-    pts, lost = curve(day)
+                    # v-hedge-split (2026-11-01): a bet that WON whose hedge cost more is drawn apart, never as a loss
+                    (hcost if getattr(r, "kind", None) == "hedge_cost" else lost).append(
+                        (min(max(t, t0), t1) - t0, cum, v, b))
+        return pts, lost, hcost
+    pts, lost, hcost = curve(day)
     if not pts:
         return None
     ms = [r for r in rows if r[0] == day]
@@ -50,7 +53,7 @@ def chart_day(ctx, which):
     X = [etdt(d0)] + [etdt(d0 + s) for s, _c in pts] + [etdt(max(end, d0 + pts[-1][0]))]
     Y = [0.0] + [c for _s, c in pts] + [pts[-1][1]]
     if day == today:
-        ypts, _yl = curve(bs.shift_day(day, -1))
+        ypts, _yl, _yh = curve(bs.shift_day(day, -1))
         if ypts:
             ax.step([etdt(d0)] + [etdt(d0 + s) for s, _c in ypts] + [etdt(d0 + 86400)],
                     [0.0] + [c for _s, c in ypts] + [ypts[-1][1]], where="post", color=GREY, lw=1.6,
@@ -90,6 +93,10 @@ def chart_day(ctx, which):
                    edgecolor=SURF, linewidth=1.5, zorder=5,
                    label="a losing market, named by bot" if len(named) == len(lost)
                    else "a losing market (the %d biggest named)" % len(named))
+    if hcost:
+        ax.scatter([etdt(d0 + s) for s, _c, _v, _b in hcost], [c for _s, c, _v, _b in hcost], s=40, marker="D",
+                   color=SURF, edgecolor=INK2, linewidth=1.6, zorder=5,
+                   label="the bet won, its hedge cost a little more (%d, not a loss)" % len(hcost))
     ys = [y for ln in ax.get_lines() for y in ln.get_ydata()]
     lo_all, hi_all = min(ys + [0.0]), max(ys + [0.0])
     low = min([c for _s, c, _v, _b in named] or [hi_all])
@@ -109,10 +116,11 @@ def chart_day(ctx, which):
     headline(fig, "%s %s%s · %d of %d markets won" % (label, made(net), (" (%s of all pots)" % pctx(r, 2)) if r is not None else "",
                                                     won, len(ms)))
     cap = ("%s: every bot's money market by market (every pot, Kalshi's books; a paused or retired bot's markets are "
-           "'earlier bots'; a market counts on the ET day it closed). By bot: %s. Red dots: a losing market, named by its bot. Orange "
+           "'earlier bots'; a market counts on the ET day it closed). By bot: %s. Red dots: a losing market, named by its bot.%s Orange "
            "dashes: the average day of the %d days before, on the same clock; slate dash-dots: of the %d days before. "
            "Right axis: the same dollars as %% of all pots at the start of the ET day.%s" % (
-               label, by_bot, AVG_DAYS, LONG_DAYS, (" PARTIAL: leaves out %s (Kalshi could not be read)." % ", ".join(missing)) if missing else ""))
+               label, by_bot, " Hollow diamonds: a bet that won whose hedge cost a little more than it made (not a loss)."
+               if hcost else "", AVG_DAYS, LONG_DAYS, (" PARTIAL: leaves out %s (Kalshi could not be read)." % ", ".join(missing)) if missing else ""))
     return png(fig), cap
 
 
@@ -158,10 +166,15 @@ def chart_day_main(ctx, which):
         ax.plot([etdt(d0 + g) for g, _v in avg], [v for _g, v in avg], color=col, lw=1.8 if col == ORANGE else 1.6,
                 ls=ls, label=alab, zorder=2)
     ax.step(X, Y, where="post", color=BLUE, lw=2.2, label="%s %s" % (label, usd(s["net"])), zorder=3)
-    lost = [(k, c) for k, c, v in pts if v < 0]
+    kinds = Ledger.close_kinds(rows)          # v-hedge-split: a close whose bets all won is a hedge cost, not a loss
+    lost = [(k, c) for k, c, v in pts if v < 0 and kinds.get(k) != "hedge_cost"]
+    hcl = [(k, c) for k, c, v in pts if v < 0 and kinds.get(k) == "hedge_cost"]
     if lost:
         ax.scatter([etdt(k) for k, _c in lost], [c for _k, c in lost], s=46, color=DOWN, edgecolor=SURF,
                    linewidth=1.5, zorder=5, label="a losing close")
+    if hcl:
+        ax.scatter([etdt(k) for k, _c in hcl], [c for _k, c in hcl], s=40, marker="D", color=SURF, edgecolor=INK2,
+                   linewidth=1.6, zorder=5, label="the bets won, a hedge cost a little more (not a loss)")
     money_axis(ax, [y for ln in ax.get_lines() for y in ln.get_ydata()], room_top=0.1)
     time_axis(ax, d0, d0 + 86400, clock=True)
     mark_last(ax, X[-1], Y[-1], usd(Y[-1]), color=BLUE)

@@ -87,6 +87,7 @@ import pinlab                                                        # noqa: E40
 import pinsupply                                                     # noqa: E402
 from botdata import clock as _clock                                  # noqa: E402
 from botdata import dirlist as _dirlist                              # noqa: E402
+from botdata import hedgeplay as _hedgeplay                          # noqa: E402
 
 REPO = os.path.dirname(HERE)
 RESULTS = os.path.join(REPO, "results")
@@ -281,6 +282,9 @@ class Ledger:
             if sg.get("tk") and sg.get("want") in ("yes", "no"):
                 _log_side.setdefault(sg["tk"], sg["want"])
         out = []
+        # v-hedge-split (2026-11-01): the bet / the hedge / the buys after a flip of every hedged market, from this
+        # ledger's own hedge records (botdata/hedgeplay.py): row["kind"] and row["play"]; a market not split has none
+        hx = _hedgeplay.index(self.hedges) if self.hedges else {}
         for s in rows.values():
             tk = s.get("ticker") or ""
             st = s.get("settled_time") or ""
@@ -312,6 +316,8 @@ class Ledger:
                     "KXGOLD15M", "KXWTI15M", "KXSILVER15M",
                     "KXCOPPER15M", "KXNATGAS15M") else "crypto",
             })
+            if hx.get(tk):
+                _hedgeplay.tag(out[-1], _hedgeplay.split_row(s, hx[tk]))
         out.sort(key=lambda s: s["t"] or 0)
         self.settled = out
         return True
@@ -411,7 +417,10 @@ class Ledger:
                                 "belief": r.get("belief"), "n": r.get("n"),
                                 "price": r.get("price"), "status": r.get("status"),
                                 "side": r.get("side"), "entry": r.get("entry"),
-                                "tau": r.get("tau"), "file": f})
+                                "tau": r.get("tau"), "file": f,
+                                # v-hedge-split (2026-11-01): what fired it ('belief' / 'jump', on the alarm),
+                                # so the phone can say which hedge earned what (botdata/hedgeplay.py)
+                                "trigger": r.get("trigger"), "jump_sd": r.get("jump_sd")})
         elif k == "autosize":
             self.autosize.append({"t": t, "size": r.get("new"), "bank": _bank_from_why(r.get("why")),
                                   "file": f})
@@ -451,20 +460,48 @@ class Ledger:
         return out
 
     @staticmethod
+    def close_kinds(settled):
+        """{close key: 'won' | 'lost' | 'hedge_cost'} (v-hedge-split, 2026-11-01). A losing close is a HEDGE COST when
+        no market in it lost its bet and at least one is a bet that won whose hedge cost more than it made
+        (botdata/hedgeplay.py); any other losing close is lost, exactly as before."""
+        by = {}
+        for s in settled:
+            key = s["close"] if s["close"] is not None else s["t"]
+            by.setdefault(key, []).append(s)
+        out = {}
+        for key, legs in by.items():
+            net = sum(x["pnl"] for x in legs)
+            if net >= 0:
+                out[key] = "won"
+            elif (not any(_hedgeplay.is_loss(x, "pnl", 0.0) for x in legs)
+                  and any(_hedgeplay.is_hedge_cost(x, "pnl", 0.0) for x in legs)):
+                out[key] = "hedge_cost"
+            else:
+                out[key] = "lost"
+        return out
+
+    @staticmethod
     def summary(settled):
         closes = Ledger.by_close(settled)
+        kinds = Ledger.close_kinds(settled)
         won = sum(1 for v in closes.values() if v >= 0)
-        lost = len(closes) - won
+        hcost = sum(1 for k in closes if kinds.get(k) == "hedge_cost")
+        lost = len(closes) - won - hcost
         net = sum(closes.values())
         worst = min(closes.values()) if closes else 0.0
         best = max(closes.values()) if closes else 0.0
         wins = [v for v in closes.values() if v >= 0]
-        losses = [v for v in closes.values() if v < 0]
-        return {"closes": len(closes), "won": won, "lost": lost, "net": net,
-                "worst": worst, "best": best, "markets": len(settled),
-                "loss_rate": (100.0 * lost / len(closes)) if closes else None,
-                "avg_win": (sum(wins) / len(wins)) if wins else None,
-                "avg_loss": (sum(losses) / len(losses)) if losses else None}
+        losses = [v for k, v in closes.items() if v < 0 and kinds.get(k) != "hedge_cost"]
+        out = {"closes": len(closes), "won": won, "lost": lost, "net": net,
+               "worst": worst, "best": best, "markets": len(settled),
+               "loss_rate": (100.0 * lost / len(closes)) if closes else None,
+               "avg_win": (sum(wins) / len(wins)) if wins else None,
+               "avg_loss": (sum(losses) / len(losses)) if losses else None,
+               "hedge_costs": hcost}
+        hz = _hedgeplay.tally(settled)
+        if hz is not None:
+            out["hedges"] = hz
+        return out
 
     def settled_on(self, day):
         return [s for s in self.settled if s["t"] and et_day(s["close"] or s["t"]) == day]
@@ -1020,9 +1057,14 @@ def story_day(ledger, d, now=None):
         up = None
     lines = ["%s (Eastern day)" % d, ""]
     lines.append("MONEY: %s, which is %s of the $%.2f the bank held when the day started." % (money(s["net"]), pct((s["net"] / b0) if b0 else None), b0 or 0))
-    lines.append("BETS: %d closes (%d contracts bought over %d fills), %d won, %d lost. %s" % (
+    lines.append("BETS: %d closes (%d contracts bought over %d fills), %d won, %d lost%s. %s" % (
         s["closes"], fs["contracts"], fs["fills"], s["won"], s["lost"],
+        # v-hedge-split (2026-11-01): a close whose bets all won but whose hedge cost more is not a lost close
+        (", %d hedge cost%s (the bet won)" % (s["hedge_costs"], "" if s["hedge_costs"] == 1 else "s"))
+        if s.get("hedge_costs") else "",
         ("The worst close cost %s." % money(s["worst"])) if s["lost"] else "No losing close."))
+    if s.get("hedges"):
+        lines.append("HEDGES: " + _hedgeplay.hedge_line(s["hedges"], emoji=False)[len("Hedges: "):] + ".")
     lines.append("SELLERS: of %d quarter-hours watched, %d had somebody selling. %d orders were sent; %d filled; %d were lost races."
                  % (len(cl), wo, fs["orders"], fs["fills"], fs["zero"]))
     if fs["share"] is not None:

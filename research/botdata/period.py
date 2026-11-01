@@ -13,6 +13,7 @@ Every market is Kalshi's (botstats' cache, the /bots source); a hidden bot is co
 """
 import datetime
 
+from botdata import hedgeplay as _hedgeplay
 from botdata import pots as _pots
 from botdata import series as _series
 from botdata import tables as _tables
@@ -77,7 +78,12 @@ def span(markets, pctx, first, last, bs):
         b["money"] += m["money"]
         b["markets"] += 1
         days[m["day"]] = days.get(m["day"], 0.0) + m["money"]
-        if m["money"] < -0.004:
+        if _hedgeplay.is_hedge_cost(m):                 # v-hedge-split: the bet won; the hedge cost more than it made
+            b["hedge_costs"] = b.get("hedge_costs", 0) + 1
+            b.setdefault("_split", []).append(m)
+        elif m.get("play"):
+            b.setdefault("_split", []).append(m)
+        if _hedgeplay.is_loss(m):
             b["lost"] += 1
             b["money_lost"] += m["money"]
             if b["worst"] is None or m["money"] < b["worst"]["money"]:
@@ -85,6 +91,11 @@ def span(markets, pctx, first, last, bs):
             if worst is None or m["money"] < worst[1]["money"]:
                 worst = (key, m)
     total = sum(b["money"] for b in by.values())
+    for b in by.values():
+        sp = b.pop("_split", None)
+        if sp:
+            b["hedges"] = _hedgeplay.tally(sp)
+            b.setdefault("hedge_costs", 0)
     for key, b in by.items():
         b["money"] = round(b["money"], 4)
         b["money_lost"] = round(b["money_lost"], 4)
@@ -95,6 +106,9 @@ def span(markets, pctx, first, last, bs):
     ds = sorted(days.items())
     return {"first": first, "last": last, "by_bot": by, "money": round(total, 4),
             "markets": sum(b["markets"] for b in by.values()), "lost": sum(b["lost"] for b in by.values()),
+            **({"hedge_costs": sum(b.get("hedge_costs", 0) for b in by.values()),
+                "hedges": next(b["hedges"] for b in by.values() if b.get("hedges"))}
+               if any(b.get("hedges") for b in by.values()) else {}),
             "money_lost": round(sum(b["money_lost"] for b in by.values()), 4),
             "pot": None if allpot is None else round(allpot, 2),
             "pot_pct": round(100.0 * total / allpot, 2) if allpot and by else None,

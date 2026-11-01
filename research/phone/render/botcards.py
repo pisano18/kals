@@ -13,6 +13,7 @@ import time
 
 import bots as _bots
 import pinday
+from botdata import hedgeplay as _hedgeplay
 from botdata.fmt import _f, cnt as _cnt, dollars, dot, ret, usd   # dot, ret: one copy since step 12
 from phone.html import details, elines, esc, hbar, i_, norm_money, pre, table
 from pindesk import coin
@@ -139,9 +140,9 @@ def bs_window_line(w, label, unit="market", fmt=None, whose="its bank"):
     if not w["markets"]:
         return "%s: nothing settled yet" % label
     pw = _bs().pot_words(w, whose)
-    return "%s: %s on %s put in (%s)%s; %s, %s won, %s lost" % (
+    return "%s: %s on %s put in (%s)%s; %s, %s won, %s" % (
         label, fmt(w["money"]), _cash(w["put_in"]), _bs().pct(w["return_pct"]), (" = " + pw) if pw else "",
-        _nof(w["markets"], unit), _cnt(w["won"]), _cnt(w["lost"]))
+        _nof(w["markets"], unit), _cnt(w["won"]), _hedgeplay.lost_words(w["lost"], w.get("hedge_costs", 0)))
 
 
 def _roi_tail(w):
@@ -244,13 +245,19 @@ def bs_money_lines(m, unit="market", fmt=None):
         L.append("Fees all time: %s (already inside the money above)." % _cash(at["fees"]))
     if at and at["hedged"]:
         L.append("Bought both sides (hedged): %s all time." % _nof(at["hedged"], unit))
+    # v-hedge-split (2026-11-01): what the hedges did, today / 7 days / all time (botdata/hedgeplay.py)
+    for k, name in (("today", "today"), ("last_7_days", "last 7 days"), ("all_time", "all time")):
+        w = m.get(k)
+        if w and w.get("hedges"):
+            L.append("Hedges %s: %s." % (name, _hedgeplay.hedge_line(w["hedges"], emoji=False)[len("Hedges: "):]))
     d7 = [d for d in m["days_7"] if not d["before_first"]]
     if d7:
         L.append("By day:")
         for d in d7:
             L.append("  %s: %s" % (d["label"], "nothing settled" if not d["markets"] else
-                                   "%s%s, %s (%d won, %d lost)" % (fmt(d["money"]), _roi_tail(d),
-                                                                   _nof(d["markets"], unit), d["won"], d["lost"])))
+                                   "%s%s, %s (%d won, %s)" % (fmt(d["money"]), _roi_tail(d),
+                                                               _nof(d["markets"], unit), d["won"],
+                                                               _hedgeplay.lost_words(d["lost"], d.get("hedge_costs", 0)))))
     return L
 
 
@@ -667,8 +674,11 @@ def bs_days_table(days, unit="market"):
         rp = d.get("return_pct")
         r = bs.pct(rp) if rp is not None else (ret(d["money"], d.get("put_in")) or "-")
         pp = d.get("pot_pct")
+        lost = d.get("lost", "")
+        if d.get("hedge_costs"):                    # v-hedge-split: '1+4h' = 1 lost, 4 hedge costs (the bet won)
+            lost = "%d+%dh" % (d["lost"], d["hedge_costs"])
         rows.append((d["label"], usd(d["money"]), r, bs.pot_pct_txt(pp) if pp is not None else "-",
-                     d["markets"], d.get("lost", ""), hbar(d["money"], mx, 5)))
+                     d["markets"], lost, hbar(d["money"], mx, 5)))
     return table(rows, "lrrrrrl")
 
 
@@ -852,7 +862,8 @@ def bots_window_table(a, key, span="day"):
 
     def cells(name, w):
         return (name, usd(w["money"]), bs.pot_pct_txt(w["pot_pct"]) if w.get("pot_pct") is not None else "-",
-                bs.pct(w["return_pct"]) if w.get("return_pct") is not None else "-", "%d/%d" % (w["lost"], w["markets"]))
+                bs.pct(w["return_pct"]) if w.get("return_pct") is not None else "-",
+                _hedgeplay.lost_cell(w["lost"], w.get("hedge_costs", 0), w["markets"]))
     rows = [("Bot", "Made", "of bank", "Return", "Lost")]
     for nm, m in _shown_parts(a):                     # v-tg-active: the active bots, 'earlier', 'other'
         w = m.get(key) if m.get("ok") else None
@@ -861,8 +872,11 @@ def bots_window_table(a, key, span="day"):
     rows.append(cells("ALL", tot))
     return [pre(table(rows, "lrrrr")),
             i_("of bank = share of that bot's pot when the %s began (%sALL = every pot) · Return = on what the bets "
-               "cost · Lost = markets lost / settled" % (span, ("%s share the main account; " % main_shared(_active_of(a)))
-                                                         if main_sharers(_active_of(a)) else ""))]
+               "cost · Lost = markets lost / settled%s" % (span, ("%s share the main account; " % main_shared(_active_of(a)))
+                                                         if main_sharers(_active_of(a)) else "",
+                                                         # v-hedge-split: the key of a '1+4h/114' cell
+                                                         " · 1+4h = 1 lost, 4 hedge costs (the bet won; its hedge "
+                                                         "cost more than it made)" if tot.get("hedge_costs") else ""))]
 
 
 def _day_long(day):
@@ -1046,7 +1060,8 @@ def bs_all_html(a):
             rows.append((d["label"], "nothing settled") if not d["markets"] else
                         (d["label"], usd(d["money"]),
                          bs.pot_pct_txt(d["pot_pct"]) if d.get("pot_pct") is not None else "-",
-                         ret(d["money"], d.get("put_in")) or "-", "%d/%d" % (d.get("lost", 0), d["markets"]),
+                         ret(d["money"], d.get("put_in")) or "-",
+                         _hedgeplay.lost_cell(d.get("lost", 0), d.get("hedge_costs", 0), d["markets"]),
                          hbar(d["money"], mx, 4)))
         L.append("")
         L.append("📅 <b>By day</b> (all pots; of pots = share of all the pots when that day began)")

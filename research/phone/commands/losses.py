@@ -9,6 +9,7 @@ every pot), asked exactly as the old method asked it (the dict context with the 
 import traceback
 
 import bots as _bots
+from botdata import hedgeplay as _hedgeplay
 from botdata.fmt import cnt as _cnt                    # == pinphone._cnt
 from botdata.fmt import usd                            # == pinphone.usd
 from phone.command import Command, declare
@@ -56,6 +57,11 @@ def render(data, ctx):
         what = r["what"][5:] if r["bot"] in ("race", "earlier") and r["what"].startswith("race ") else r["what"]
         held = ("hedged x%s" % _cnt(r["contracts"])) if r["side"] == "both" else \
             ("%s x%s" % (r["side"].upper(), _cnt(r["contracts"])) if r["side"] in ("yes", "no") else "")
+        p = r.get("play")
+        if p:                       # v-hedge-split: what the bet lost and what the hedge (and a buy after the flip) got back
+            held = "bet %s x%s %s · hedge %s%s" % (
+                p["bet"]["side"].upper(), _cnt(p["bet"]["n"]), usd(p["bet"]["money"]), usd(p["hedge"]["money"]),
+                (" · after the flip %s" % usd(p["flip"]["money"])) if p["flip"] else "")
         return "<b>%s</b>%s · %s · %s" % (esc(usd(r["money"])),
                                          (" (%s)" % esc(bs.pot_pct_txt(r["pct"]))) if r["pct"] is not None else "",
                                          esc(short.get(r["bot"], r["bot"])), esc(" ".join(x for x in (what, held) if x)))
@@ -64,14 +70,30 @@ def render(data, ctx):
     for nm in tuple(bs.BOTS) + ("earlier", "other"):         # all_losses folds hidden bots into one row
         p = per.get(nm)
         if p and p["settled"]:
-            tbl.append((short.get(nm, nm), "%d/%d" % (p["lost"], p["settled"]), str(p["lost_7d"]),
+            tbl.append((short.get(nm, nm), _hedgeplay.lost_cell(p["lost"], p.get("hedge_costs", 0), p["settled"]),
+                        ("%d+%dh" % (p["lost_7d"], p["hedge_costs_7d"])) if p.get("hedge_costs_7d") else str(p["lost_7d"]),
                         "%.2f" % p["money_lost"], "%.2f" % p["worst"] if p["worst"] is not None else "-"))
     worst = min((p["worst"] for p in per.values() if p["worst"] is not None), default=None)
-    tbl.append(("ALL", "%d/%d" % (lost, settled), str(sum(p["lost_7d"] for p in per.values())),
+    hc, hc7 = sum(p.get("hedge_costs", 0) for p in per.values()), sum(p.get("hedge_costs_7d", 0) for p in per.values())
+    lost7 = sum(p["lost_7d"] for p in per.values())
+    tbl.append(("ALL", _hedgeplay.lost_cell(lost, hc, settled), ("%d+%dh" % (lost7, hc7)) if hc7 else str(lost7),
                 "%.2f" % sum(p["money_lost"] for p in per.values()), "%.2f" % worst if worst is not None else "-"))
     tail = ["", "📊 <b>By bot, all time</b>", pre(table(tbl, "lrrrr")),
             i_("Lost = markets lost / settled · 7d = lost in the last 7 days · $ lost = all its losing markets "
-               "added up · Worst = its worst single market · /losses chart: every loss, coloured by bot")]
+               "added up · Worst = its worst single market%s · /losses chart: every loss, coloured by bot"
+               % (" · 1+4h = 1 lost, 4 hedge costs (the bet won; its hedge cost more than it made, not a loss)"
+                  if hc else ""))]
+    # v-hedge-split (2026-11-01): the hedge area -- how many times the hedge fired and what it did, so a hedge cost is
+    # still tracked (operator 11-01: "add a seperate area ... so it's still tracked and appreciated")
+    hz = [(nm, p) for nm, p in per.items() if p.get("hedges")]
+    if hz:
+        tail += ["", "🛡️ <b>Hedges</b> (%s)" % esc(", ".join(short.get(nm, nm) for nm, _p in hz))]
+        for nm, p in hz:
+            if p.get("hedges_7d"):
+                tail.append("Last 7 days: " + esc(_hedgeplay.hedge_line(p["hedges_7d"], emoji=False)[len("Hedges: "):]))
+            tail.append("All time: " + esc(_hedgeplay.hedge_line(p["hedges"], emoji=False)[len("Hedges: "):]))
+        tail.append(i_("needed = the bet lost and the hedge paid some back · not needed = the bet won and the hedge "
+                       "cost a little · /hedges for every one"))
     n = min(ctx.pp.LOSSES_SHOWN, len(rows))
     while True:
         out = ["🔴 <b>%s losing markets</b> of %s settled, every bot (%.1f%%) · %d in the last 7 days" % (
@@ -99,7 +121,10 @@ def render_main(d, ctx):
     if d is None:
         return Html("No losing closes.")
     rows, s = d
-    out = ["🔴 <b>%d losing closes</b> of %d all time (%.1f%%)" % (s["lost"], s["closes"], s["loss_rate"]),
+    out = ["🔴 <b>%d losing closes</b> of %d all time (%.1f%%)%s" % (
+               s["lost"], s["closes"], s["loss_rate"],
+               (" · %d hedge cost%s (the bet won)" % (s["hedge_costs"], "" if s["hedge_costs"] == 1 else "s"))
+               if s.get("hedge_costs") else ""),
            i_("the last %d, newest first · %% = of the bank just before it (Kalshi's books, main account: pin + "
               "race)" % len(rows))]
     for close, net, legs, b0 in rows:

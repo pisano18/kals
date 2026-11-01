@@ -40,6 +40,7 @@ from pindesk import (Ledger, et_day, et_day_start, et_str, et_now_str, coin, clo
 import pinflat                                                       # noqa: E402
 
 CONFIG = r"C:\kals\telegram.json"
+from botdata import hedgeplay as _hedgeplay                          # noqa: E402
 from botdata import paths as _paths                                  # noqa: E402
 # v-tg-rebuild step 2 (2026-10-30): RESULTS from the one place (botdata/paths.py) -- the same <repo>\results string
 # pindesk.RESULTS is; tests and the golden harness still patch pinphone.RESULTS as before
@@ -351,7 +352,7 @@ def markets_from(rows, sides=None):
     src = next((p for p, hit in list(_RAW.items()) if hit[1] is rows), None)
     if src is None:
         return markets_from_rows(rows, sides)
-    key = (src, _RAW[src][0], id(rows), len(rows), tuple(sorted(sides.items())))
+    key = (src, _RAW[src][0], id(rows), len(rows), tuple(sorted(sides.items())), _hedgeplay.version())
     if _MKT["key"] != key:
         out = markets_from_rows(rows, sides)
         _MKT.update(key=key, out=out)
@@ -433,6 +434,16 @@ def markets_from_rows(rows, sides=None):
             hn, hc = (nn, nc) if side == "yes" else (yn, yc)
             vh = (1.0 - v) if side == "yes" else v
             m["hedge_pnl"] = hn * vh - hc
+    # v-hedge-split (2026-11-01): the bet / the hedge / the buys after a flip, from the pin bot's hedge records
+    # (botdata/hedgeplay.py; nothing is split without them). A record whose hedge side is the entry side is a
+    # contradiction and splits nothing.
+    hx = _hedgeplay.current()
+    if hx:
+        for m in out.values():
+            h = hx.get(m["tk"])
+            if h and m["hedged"] and m["side"] in ("yes", "no") and h["side"] != m["side"]:
+                _hedgeplay.tag(m, _hedgeplay.split(m["yes_n"], m["no_n"], m["yes_cost"], m["no_cost"], m["fee"],
+                                                   m["value"], h))
     return out
 
 
@@ -476,7 +487,14 @@ def window_stats(ms, taus):
           "contracts": sum(m["n"] for m in ms), "risked": sum(m["paid"] for m in ms),
           "net": sum(m["pnl"] for m in ms), "fees": sum(m["fee"] for m in ms)}
     won = [m for m in ms if m["won"]]
-    lost = [m for m in ms if not m["won"]]
+    # v-hedge-split (2026-11-01): a market whose bet WON but whose hedge cost more than it made is not a loss: it is
+    # counted on its own (hedge_costs) and the hedges' story is st["hedges"] (botdata/hedgeplay.py). Money and every
+    # money-based figure (break-even, payout per contract, per $100) are unchanged.
+    lost = [m for m in ms if _hedgeplay.is_loss(m, "pnl", 0.0)]
+    hcost = [m for m in ms if _hedgeplay.is_hedge_cost(m, "pnl", 0.0)]
+    st["hedge_costs"] = len(hcost)
+    st["hedge_cost_total"] = sum(m["pnl"] for m in hcost)
+    st["hedges"] = _hedgeplay.tally(ms)
     st["won"] = len(won)
     st["won_risked"] = sum(m["paid"] for m in won)
     days = {}
@@ -523,6 +541,12 @@ def window_stats(ms, taus):
     return st
 
 
+def _hc_note(st):
+    """v-hedge-split: ' (+4 hedge costs, $-2.42: the bet won)' after a window's loss count, else ''."""
+    n = st.get("hedge_costs") or 0
+    return (" (+%d hedge cost%s %s)" % (n, "" if n == 1 else "s", money(st["hedge_cost_total"]))) if n else ""
+
+
 def stats_block(title, st, ndays=None):
     if not st["markets"]:
         return "%s\nNothing settled." % title
@@ -552,12 +576,12 @@ def stats_block(title, st, ndays=None):
         h = "%d hedged, their hedge legs netted %s" % (st["hedged_losses"], money(st["recovered"]))
         if st["hedged_wins"]:
             h += "; hedge legs on won mkts netted %s" % money(st["wasted"])
-        L.append("Losses %d: %s, avg %s, worst %s (%s, %s %s); %s."
-                 % (st["losses"], money(st["lost_total"]), money(st["lost_total"] / st["losses"]),
+        L.append("Losses %d%s: %s, avg %s, worst %s (%s, %s %s); %s."
+                 % (st["losses"], _hc_note(st), money(st["lost_total"]), money(st["lost_total"] / st["losses"]),
                     money(st["largest_loss"]), BOT_WORD.get(main_bot_of(wm["tk"]), "?"), _leg_name(wm["tk"]),
                     _md(wm["day"]), h))
     else:
-        L.append("No losses.")
+        L.append("No losses%s." % _hc_note(st))
     tm = st["timing"]
     known = tm["late"][0] + tm["early"][0]
     if known:

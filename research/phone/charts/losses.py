@@ -64,6 +64,14 @@ def chart_losses(ctx):
         if k is not None:
             lost[r["bot"]][k] += r["money"]
             nlost[k] += 1
+    # v-hedge-split (2026-11-01): what the hedges cost on bets that WON (not losses, botdata/hedgeplay.py) is its own
+    # segment under the losses, so won + lost + hedge costs is still every dollar of the week
+    hcost = [0.0] * len(weeks)
+    for b in order:
+        for d, v in (per[b].get("hedge_cost_days") or {}).items():
+            k = wi.get(week_of(d))
+            if k is not None:
+                hcost[k] += v
     fig, axs = fig_new(2, 9.4, ratios=[1.15, 1.0])
     ax = axs[0]
     xs = list(range(len(weeks)))
@@ -75,9 +83,14 @@ def chart_losses(ctx):
         ax.bar(xs, lost[b], width=0.62, bottom=base, color=BOT_COLOUR.get(b, GREY), zorder=3,
                label=BOT_SHORT.get(b, b))
         base = [x + y for x, y in zip(base, lost[b])]
+    lost_tot = list(base)
+    if any(v < -0.004 for v in hcost):
+        ax.bar(xs, hcost, width=0.62, bottom=base, color=SURF, edgecolor=INK2, hatch="////", linewidth=0.8, zorder=3,
+               label="hedge costs (the bet won)")
+        base = [x + y for x, y in zip(base, hcost)]
     for k in xs:
         if nlost[k]:
-            ax.annotate("%s\n%d lost" % (usd(base[k]), nlost[k]), (k, base[k]), xytext=(0, -3),
+            ax.annotate("%s\n%d lost" % (usd(lost_tot[k]), nlost[k]), (k, base[k]), xytext=(0, -3),
                         textcoords="offset points", ha="center", va="top", fontsize=8.5, color=DOWN, fontweight="bold",
                         zorder=6, bbox=dict(facecolor=SURF, edgecolor="none", pad=1.5))   # over the 30-day line
         if won[k] > 0.005:
@@ -186,7 +199,10 @@ def chart_losses_main(ctx):
     pct_axis(ax, pv)
     ax.set_title("The same loss as % of the bank at that moment")
     time_axis(axs[-1], xs=X)
-    headline(fig, "%d losing closes of %d (%.1f%%) · worst lost %s" % (s["lost"], s["closes"], s["loss_rate"] or 0.0, usd(min(Y))))
+    headline(fig, "%d losing closes of %d (%.1f%%)%s · worst lost %s" % (
+        s["lost"], s["closes"], s["loss_rate"] or 0.0,
+        (" · %d hedge cost%s" % (s["hedge_costs"], "" if s["hedge_costs"] == 1 else "s")) if s.get("hedge_costs") else "",
+        usd(min(Y))))
     cap = ("Every losing close, all time (Kalshi's books, main account; one close = every market settling at that "
            "quarter-hour, as /losses counts them). Bottom: the loss as % of the bank then (pindesk's bank_at).")
     return png(fig), cap

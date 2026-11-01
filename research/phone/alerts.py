@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 import pindesk
+from botdata import hedgeplay as _hedgeplay
 from botdata.fmt import usd                       # == pinphone.usd
 from phone import quiet as _quiet
 from phone.html import Html, details, esc, norm_money
@@ -108,19 +109,47 @@ def alert_loss_text(ledger, close, net, legs, pp):
     b0 = ledger.bank_at(close - 1) if close else None
     whose = [pp.BOT_WORD.get(pp.main_bot_of(l_["tk"]), "?") for l_ in legs]
     who = list(dict.fromkeys(whose))
-    L = ["🔴 <b>LOSS %s%s</b> · %s (main account) · the quarter-hour closing %s ET on %s" % (
-        esc(usd(net)), (" (%s of the bank)" % esc(pct(net / b0))) if b0 else "", esc(" + ".join(who) or "?"),
-        esc(et_str(close)), esc(et_str(close, "%b %d")))]
+    hedge_only = is_hedge_cost_close(legs)
+    if hedge_only:
+        L = ["🛡️ <b>HEDGE COST %s%s</b> · the bet won · %s (main account) · the quarter-hour closing %s ET on %s" % (
+            esc(usd(net)), (" (%s of the bank)" % esc(pct(net / b0))) if b0 else "", esc(" + ".join(who) or "?"),
+            esc(et_str(close)), esc(et_str(close, "%b %d")))]
+    else:
+        L = ["🔴 <b>LOSS %s%s</b> · %s (main account) · the quarter-hour closing %s ET on %s" % (
+            esc(usd(net)), (" (%s of the bank)" % esc(pct(net / b0))) if b0 else "", esc(" + ".join(who) or "?"),
+            esc(et_str(close)), esc(et_str(close, "%b %d")))]
     for l_, w in zip(legs, whose):
+        if l_.get("play"):
+            # v-hedge-split (2026-11-01): a hedged market is its bet, its hedge and any buy after the flip, each with
+            # its own money, then what the hedge did (10-31 16:45 printed NEAR as one leg "NO at 62.5c, 194.48
+            # contracts" and hid the 97 YES bet that lost $93.11)
+            lines = _hedgeplay.play_lines(l_["play"])
+            L.append("• %s<b>%s</b> %s" % ((esc(w) + " · ") if len(who) > 1 else "", esc(pp._mkt_short(l_["tk"])),
+                                          esc(lines[0])))
+            L += ["   %s" % esc(x) for x in lines[1:-1]]
+            L.append("   <b>%s</b>" % esc(lines[-1]))
+            continue
         n = ledger.contracts_for(l_["tk"]) or pp._f(l_.get("n"))   # a coin-race leg is not in the pin bot's orders
         L.append("• %s<b>%s</b> %s at %.1fc, %g contracts → settled %s: <b>%s</b>" % (
             (esc(w) + " · ") if len(who) > 1 else "", esc(pp._mkt_short(l_["tk"])), esc(str(l_["want"]).upper()),
             100 * float(l_["cost"] or 0), n, esc(str(l_["result"]).upper()), esc(usd(l_["pnl"]))))
     L.append("")
-    L.append("<b>WHY IT HURTS:</b> <i>a win here makes 2c to 4c a contract; a loss costs most of the 96c-98c "
-             "paid. So one losing close wipes out many winning ones.</i>")
-    L.append("<i>/losses for the list, /today for the day.</i>")
+    if hedge_only:
+        L.append("<i>Not a loss: every bet here won. A hedge fired (insurance against a late flip) and was not needed; "
+                 "it cost a little more than the bet made. /hedges for every hedge and what it did.</i>")
+    else:
+        L.append("<b>WHY IT HURTS:</b> <i>a win here makes 2c to 4c a contract; a loss costs most of the 96c-98c "
+                 "paid. So one losing close wipes out many winning ones.</i>")
+        L.append("<i>/losses for the list, /today for the day, /hedges for what the hedges did.</i>"
+                 if any(l_.get("play") for l_ in legs) else "<i>/losses for the list, /today for the day.</i>")
     return Html("\n".join(L))
+
+
+def is_hedge_cost_close(legs):
+    """v-hedge-split (2026-11-01): a losing close where no market lost its bet and at least one is a bet that won whose
+    hedge cost more than it made (botdata/hedgeplay.py) -- a HEDGE COST alert, not a LOSS, and never urgent."""
+    return (not any(_hedgeplay.is_loss(l_, "pnl", 0.0) for l_ in legs)
+            and any(_hedgeplay.is_hedge_cost(l_, "pnl", 0.0) for l_ in legs))
 
 
 def alert_daily_text(ledger, d, now):
@@ -235,11 +264,14 @@ def tick(ctx, st=None, all_bots_day=None):
         st.seen_losses = keys
         for close, net, legs in new:
             if not run.muted:
+                hedge_only = is_hedge_cost_close(legs)
                 msg = fmt_or_plain(lambda: alert_loss_text(ctx.ledger, close, net, legs, pp),
-                                   lambda: "LOSS " + story_loss(ctx.ledger, close, net, legs))
-                # urgent: over $50, or over 3% of the bank before it (asked only while it is quiet)
-                send(msg, urgent=lambda close=close, net=net: _quiet.loss_is_urgent(
-                    net, ctx.ledger.bank_at(close - 1) if close else None))
+                                   lambda: ("HEDGE COST (the bet won) " if hedge_only else "LOSS ")
+                                   + story_loss(ctx.ledger, close, net, legs))
+                # urgent: over $50, or over 3% of the bank before it (asked only while it is quiet); a hedge cost
+                # (every bet won, v-hedge-split) is never urgent
+                send(msg, urgent=False if hedge_only else (lambda close=close, net=net: _quiet.loss_is_urgent(
+                    net, ctx.ledger.bank_at(close - 1) if close else None)))
     if (now - et_day_start(today)) >= DAILY_AT_S and st.last_daily != today and not run.muted:
         st.last_daily = today
         yday = et_day(now - 86400)

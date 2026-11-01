@@ -18,6 +18,7 @@ import traceback
 import bots as _bots
 import pinday
 import pinledger
+from botdata import hedgeplay as _hedgeplay
 from botdata import paths as _paths
 from botdata.fmt import _f
 from botdata.paths import read_json                                # noqa: F401  (step 12: was a copy)
@@ -390,7 +391,8 @@ def funds_days(res, today, days=FUNDS_DAYS, sub=None):
     never another's; its rows' count, error and oldest are part of the key."""
     rows = res.get("rows") if isinstance(res, dict) else None
     key = (id(res), len(rows) if isinstance(rows, list) else None, res.get("err") if isinstance(res, dict) else None,
-           res.get("oldest") if isinstance(res, dict) else None, today, days, sub)
+           res.get("oldest") if isinstance(res, dict) else None, today, days, sub,
+           _hedgeplay.version() if str(sub) == "0" else None)
     hit = _DAYS_SEEN.get(key)
     if hit is None or hit[0] is not res:
         hit = (res, funds_days_of(res, today, days, sub))
@@ -398,6 +400,11 @@ def funds_days(res, today, days=FUNDS_DAYS, sub=None):
         while len(_DAYS_SEEN) > 64:
             _DAYS_SEEN.popitem(last=False)
     return copy.deepcopy(hit[1])
+
+
+def tk_of(rows):
+    """The ticker of a market's settlement rows."""
+    return rows[0].get("ticker") if rows else None
 
 
 def funds_days_of(res, today, days=FUNDS_DAYS, sub=None):
@@ -431,16 +438,26 @@ def funds_days_of(res, today, days=FUNDS_DAYS, sub=None):
             if d is None:
                 e = bs._epoch(s.get("settled_time"))
                 d = pinday.et_day_of_epoch(e) if e is not None else None
-            mk[tk] = [d, funds_book(tk), 0.0]
+            mk[tk] = [d, funds_book(tk), 0.0, []]
         mk[tk][2] += pinledger.pnl(s)
+        mk[tk][3].append(s)
+    # v-hedge-split (2026-11-01): the main account's hedged pin markets are split by the pin bot's own records
+    # (botdata/hedgeplay.py) -- a bet that won whose hedge cost more is a hedge cost ('hc'), not a loss. Only the main
+    # account: the jump band trades the same tickers from subaccount 3 and the pin bot's hedges are not its.
+    hx = _hedgeplay.current() if str(sub) == "0" else {}
     by = {d: cells() for d in want}
-    for d, book, v in mk.values():
+    for d, book, v, rows in mk.values():
         if d in by:
+            m = {"money": v}
+            if hx.get(tk_of(rows)) and len(rows) == 1:
+                _hedgeplay.tag(m, _hedgeplay.split_row(rows[0], hx[tk_of(rows)]))
             for k in ("all", book):
                 c = by[d][k]
                 c["money"] += v
                 c["n"] += 1
-                c["lost"] += 1 if v < -0.004 else 0
+                c["lost"] += 1 if _hedgeplay.is_loss(m) else 0
+                if _hedgeplay.is_hedge_cost(m):     # only a cell that holds one gets the key
+                    c["hc"] = c.get("hc", 0) + 1
     err, oldest = res.get("err"), res.get("oldest")
     out = {"days": [], "total": cells()}
     for d in want:
@@ -450,8 +467,10 @@ def funds_days_of(res, today, days=FUNDS_DAYS, sub=None):
             for k in keys:
                 for f_ in ("money", "n", "lost"):
                     out["total"][k][f_] += by[d][k][f_]
+                if by[d][k].get("hc"):
+                    out["total"][k]["hc"] = out["total"][k].get("hc", 0) + by[d][k]["hc"]
     read_days = set(x["day"] for x in out["days"] if x["read"])
-    out["other_series"] = sorted(set(tk.split("-")[0] for tk, (d, book, _v) in mk.items()
+    out["other_series"] = sorted(set(tk.split("-")[0] for tk, (d, book, _v, _r) in mk.items()
                                      if book == "other" and d in read_days))
     out["left_out"] = {"money": round(left["money"], 4), "n": len(left["tk"])}
     return out

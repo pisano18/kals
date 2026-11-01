@@ -15,6 +15,7 @@ from phone.html import Html, details, esc, hbar, i_, pre, table
 from phone.log import log
 from phone.render.botcards import _bs, _nof, bots_avg_table, bots_window_table, bs_headline, main_words
 from pindesk import Ledger, et_day_start, et_str, pct
+from botdata import hedgeplay as _hedgeplay
 
 
 def main_days(ctx):
@@ -24,7 +25,7 @@ def main_days(ctx):
     for d in list(reversed(ctx.ledger.days()))[:7]:
         s_ = Ledger.summary(ctx.ledger.settled_on(d))
         b0 = ctx.ledger.bank_at(et_day_start(d))
-        out.append((d, s_["net"], (s_["net"] / b0) if b0 else None, s_["lost"], s_["closes"]))
+        out.append((d, s_["net"], (s_["net"] / b0) if b0 else None, s_["lost"], s_["closes"], s_.get("hedge_costs", 0)))
     return out
 
 
@@ -48,13 +49,15 @@ def version_line(v, pp):
     if v is None:
         return None
     ver, vs = v
-    lost = sum(1 for m in vs if m["pnl"] < -0.004)
+    lost = sum(1 for m in vs if _hedgeplay.is_loss(m, "pnl"))         # v-hedge-split: a bet that won is not lost
+    hc = sum(1 for m in vs if _hedgeplay.is_hedge_cost(m, "pnl"))
     if not vs:
         return "🏷 <b>Pin bot since %s</b> (%s ET): nothing settled since" % (
             esc(ver[0]), esc(et_str(ver[1], "%m/%d %I:%M %p")))
-    return "🏷 <b>Pin bot since %s</b> (%s ET): <b>%s</b>, %d markets, %d lost%s" % (
+    return "🏷 <b>Pin bot since %s</b> (%s ET): <b>%s</b>, %d markets, %d lost%s%s" % (
         esc(ver[0]), esc(et_str(ver[1], "%m/%d %I:%M %p")), esc(usd(sum(m["pnl"] for m in vs))), len(vs),
-        lost, (" (%s)" % pp.pct_of(lost, len(vs), 1)) if vs else "")
+        lost, (" (%s)" % pp.pct_of(lost, len(vs), 1)) if vs else "",
+        (", %d hedge cost%s (the bet won)" % (hc, "" if hc == 1 else "s")) if hc else "")
 
 
 def load(ctx):
@@ -81,9 +84,10 @@ def render(d, ctx):
         out.append(bs_headline(tot["last_7_days"], "of all pots", "All bots", when="last 7 days"))
         at = tot["all_time"]
         if at["markets"]:
-            out.append(i_("all time %s%s · %s, %d lost · every pot, Kalshi's books; ET days" % (
+            out.append(i_("all time %s%s · %s, %s · every pot, Kalshi's books; ET days" % (
                 usd(at["money"]), (" (%s on the %s put in)" % (bs.pot_pct_txt(at["pot_pct"]), dollars(at["pot"])))
-                if at.get("pot_pct") is not None and at.get("pot") else "", _nof(at["markets"], "market"), at["lost"])))
+                if at.get("pot_pct") is not None and at.get("pot") else "", _nof(at["markets"], "market"),
+                _hedgeplay.lost_words(at["lost"], at.get("hedge_costs", 0)))))
         firsts = [mm.get("first_day") for mm in [a["bots"][x]["money"] for x in bs.BOTS] + [a["other"]]
                   if mm.get("first_day")]               # every bot's books, hidden ones too: the totals' days
         days = [x for x in a["total_days_7"] if not (firsts and x["day"] < min(firsts))]
@@ -97,24 +101,29 @@ def render(d, ctx):
                 rows.append((x["label"], usd(x["money"]),
                              bs.pot_pct_txt(x["pot_pct"]) if x.get("pot_pct") is not None else "-",
                              bs.pct(x["return_pct"]) if x.get("return_pct") is not None else "-",
-                             "%d/%d" % (x["lost"], x["markets"]), hbar(x["money"], mx, 4)))
+                             _hedgeplay.lost_cell(x["lost"], x.get("hedge_costs", 0), x["markets"]),
+                             hbar(x["money"], mx, 4)))
+            hc7 = any(x.get("hedge_costs") for x in days)
             out += ["", "📅 <b>Last 7 days, every bot</b>", pre(table(rows, "lrrrrl")),
                     i_("of pots = share of all the pots when that day began · Return = on what the bets cost · "
-                       "Lost = markets lost / settled")]
+                       "Lost = markets lost / settled%s" % (" · 1+4h = 1 lost, 4 hedge costs (the bet won)" if hc7 else ""))]
+            if tot["last_7_days"].get("hedges"):         # v-hedge-split: the hedge area for the week
+                out.append(esc(_hedgeplay.hedge_line(tot["last_7_days"]["hedges"])) + " · last 7 days")
         tbl = bots_window_table(a, "last_7_days", "7 days")
         if tbl:
             out += ["", "📊 <b>Last 7 days, by bot</b>"] + tbl
         out += bots_avg_table(a)
-        det = ["%s: <b>%s</b> (%s of the bank) · %d of %d closes lost" % (
-            esc(bs.day_label(x)), esc(usd(v)), esc(pct(r)), lost, closes) for x, v, r, lost, closes in main]
+        det = ["%s: <b>%s</b> (%s of the bank) · %d of %d closes lost%s" % (
+            esc(bs.day_label(x)), esc(usd(v)), esc(pct(r)), lost, closes,
+            (", %d hedge cost%s" % (hc, "" if hc == 1 else "s")) if hc else "") for x, v, r, lost, closes, hc in main]
         if det:
             mw = main_words(a.get("active"))
             out += ["", details(det, "🏦 %s (main account), day by day -- tap" % (mw[:1].upper() + mw[1:]))]
     else:
         rows, vals = [("Day", "Money", "% bank", "Lost", "")], []
-        for x, v, r, lost, closes in main:
+        for x, v, r, lost, closes, hc in main:
             vals.append(v)
-            rows.append((x[5:], usd(v), pct(r), "%d/%d" % (lost, closes)))
+            rows.append((x[5:], usd(v), pct(r), _hedgeplay.lost_cell(lost, hc, closes)))
         mx = max([abs(v) for v in vals] or [0])
         rows = [rows[0]] + [r + (hbar(v, mx, 4),) for r, v in zip(rows[1:], vals)]
         at_ = day_lines(d["all_time"], "All time", ctx.pp)
