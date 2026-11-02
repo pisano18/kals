@@ -9,6 +9,10 @@ would've been without it as accurately as possible. Give a report after the end 
                             ("ws_later_skip").
   B  --hedge-jump-max 8     the jump hedge (--hedge-jump 6) fires only for one-second jumps under 8 sd; a jump of 8 sd
                             or more with pin's odds still over the 0.40 line is logged "jump_capped" instead.
+  C  --hedge-odds-mult M    (v-oddsmult, 11-02; operator: "Go. Push it yourself") when the belief line fires with 11+ s
+                            left, pin also buys (M - 1) x the position of the hedge side as a second order right after
+                            the covering hedge; each such leg is logged "hedge_extra". Scored on its OWN money: the
+                            extra contracts at the result, fee included (+ = made, - = lost).
 
 Run ONCE per tick (the scheduled task KalsPinRulesWatch, every 5 minutes, as SYSTEM). No orders, no Kalshi keys, no
 network except Telegram. Reads pin's own logs in results\ (pinrun-live-*.jsonl: the rule records, settled, hedge and
@@ -73,9 +77,10 @@ REPORTS = [   # (n, send on this ET day at 00:05, title, first day, last day)
 ]
 REPORT_AT_S = 300
 A_GATES = ("ws_later_fall", "ws_later_skip")
-RULE_NAME = {"A": "later-buy check", "B": "jump cap"}
+RULE_NAME = {"A": "later-buy check", "B": "jump cap", "C": "bigger hedge"}
 RULE_WHAT = {"A": "skip a later buy when the index is across the line and our price fell 10c+ in 5 s",
-             "B": "no jump hedge on a jump of 8 sd or more"}
+             "B": "no jump hedge on a jump of 8 sd or more",
+             "C": "extra contracts of the hedge side when pin's odds line fires with 11+ s left"}
 
 
 # ---------------------------------------------------------------------------
@@ -165,7 +170,7 @@ def pct(x, bank):
 class Logs:
     """Everything one tick needs from pin's logs."""
 
-    WANT = ('"start"', "ws_later_", '"jump_capped"', '"settled"', '"hedge"', '"order"')
+    WANT = ('"start"', "ws_later_", '"jump_capped"', '"settled"', '"hedge"', '"hedge_extra"', '"order"')
 
     def __init__(self, paths):
         self.starts, self.events, self.settled, self.hedges, self.orders = [], [], {}, {}, []
@@ -198,6 +203,8 @@ class Logs:
                     seen.add(key)
                     if (k == "refused" and r.get("gate") in A_GATES) or k == "jump_capped":
                         self.events.append(r)
+                    elif k == "hedge_extra" and r.get("status") == "executed" and (r.get("n") or 0) > 0:
+                        self.events.append(r)          # rule C: an extra leg that filled
                     elif k == "settled":
                         self.settled.setdefault(tk, []).append(r)
                     elif k == "hedge" and r.get("status") == "executed" and (r.get("n") or 0) > 0:
@@ -274,7 +281,10 @@ def score_events(L, now):
         tk = e["ticker"]
         close_s = e.get("close_s")
         res = L.result(tk)
-        if e.get("kind") == "jump_capped":
+        if e.get("kind") == "hedge_extra":
+            ev = score_C(e, res)
+            ev["ratio"] = None
+        elif e.get("kind") == "jump_capped":
             key = (tk, e.get("want"))
             if key in capped_seen:
                 continue
@@ -284,8 +294,10 @@ def score_events(L, now):
         else:
             ev = score_A(L, e, res, room_used)
             ev["ratio"] = L.fill_ratio(e.get("leg"))[0] or L.fill_ratio()[0]
-        ev.update(t=e["t"], ticker=tk, close_s=close_s, want=e.get("want"), result=res,
-                  id="%s|%s|%s|%s" % (ev["rule"], tk, e.get("want"), e["t"]))
+        want = e.get("want") or ev.get("want")
+        ev.update(t=e["t"], ticker=tk, close_s=close_s, want=want, result=res,
+                  id="%s|%s|%s|%s%s" % (ev["rule"], tk, want, e["t"],
+                                        ("|" + str(e.get("order_id"))) if e.get("kind") == "hedge_extra" else ""))
         if res is None:
             ev["status"] = "unknown" if close_s and now > float(close_s) + UNKNOWN_AFTER_S else "pending"
             ev["effect"] = None
@@ -369,6 +381,21 @@ def score_B(L, e, res):
     return ev
 
 
+def score_C(e, res):
+    """Rule C: an extra leg that filled. effect = that leg's own money at the result (fee included)."""
+    side = e.get("side")
+    want = "no" if side == "yes" else "yes"
+    n = float(e.get("n") or 0)
+    px = e.get("price")
+    ev = dict(rule="C", gate="hedge_extra", side=side, want=want, tau=e.get("tau"), n=round(n, 2),
+              px=(float(px) if px is not None else None), mult=e.get("mult"), extra_of=e.get("extra_of"),
+              base_n=e.get("base_n"), belief=e.get("belief"), effect=None)
+    if res is None or n <= 0 or px is None:
+        return ev
+    ev["effect"] = round(value([(n, float(px))], res == side), 2)
+    return ev
+
+
 # ---------------------------------------------------------------------------
 def pin_money(L, start_t, first_day, last_day):
     s = 0.0
@@ -393,6 +420,10 @@ def describe(ev):
                                                              ("%.1fc" % (ev["px"] * 100)) if ev.get("px") else "?")
         if ev.get("fall_c") is not None:
             what += " (our price had fallen %.0fc in 5 s)" % abs(float(ev["fall_c"]))
+    elif ev["rule"] == "C":
+        what = "bought %.0f EXTRA %s at about %s (%.2fx the position at the odds line)" % (
+            ev["n"] or 0, (ev.get("side") or "").capitalize(), ("%.1fc" % (ev["px"] * 100)) if ev.get("px") else "?",
+            float(ev.get("mult") or 0))
     else:
         what = "skipped a hedge of %.0f %s at about %s on a jump of %s sd" % (
             ev["n"] or 0, (ev.get("side") or "").capitalize(), ("%.1fc" % (ev["px"] * 100)) if ev.get("px") else "?",
@@ -408,6 +439,8 @@ def verdict(ev):
     x = ev["effect"]
     if abs(x) < 0.005:
         return "no money either way"
+    if ev["rule"] == "C":
+        return ("MADE %s" % usd(x, False)) if x > 0 else ("LOST %s" % usd(-x, False))
     return ("SAVED %s" % usd(x, False)) if x > 0 else ("GAVE UP %s" % usd(-x, False))
 
 
@@ -422,6 +455,10 @@ def outcome_words(ev):
             s += "; the bigger hedge that came with it would have %s %s" % (
                 "made" if ev["hedge"] >= 0 else "cost", usd(abs(ev["hedge"]), False))
         return s + "."
+    if ev["rule"] == "C":
+        return "Our bet %s, so the %.0f extra contracts %s %s." % (
+            "LOST (a flip)" if ev.get("result") == ev.get("side") else "won", ev["n"] or 0,
+            "made" if ev["effect"] >= 0 else "lost", usd(abs(ev["effect"]), False))
     won = ev.get("result") == ev.get("want")
     s = "Our bet %s, so that hedge would have %s %s" % ("won" if won else "LOST (a flip)",
                                                       "made" if ev["jump_hedge"] >= 0 else "cost",
@@ -452,19 +489,20 @@ def report_text(n, title, first_day, last_day, evs, L, start_t, bank):
     lines = ["📋 PIN RULES REPORT %d of 4 · %s" % (n, title),
              "Rules live since %s.%s" % (start_clock, " Day 1 counts from then." if first_day == "2026-11-01" else ""),
              "",
-             "Both rules: %d fires · saved %s · gave up %s · net %s%s" % (
+             "All rules: %d fires · saved or made %s · gave up or lost %s · net %s%s" % (
                  T["fires"], usd(T["saved"], False), usd(T["gave"], False), usd(T["net"]), pct(T["net"], bank)),
              "Pin real: %s · without the rules it would have been %s" % (usd(actual), usd(actual - T["net"])),
              "If the skipped orders had filled like pin's usually do: net %s" % usd(T["usual"])]
     if T["open"]:
         lines.append("%d fire%s not settled or unknown yet (not counted)." % (T["open"], "" if T["open"] == 1 else "s"))
-    for r in ("A", "B"):
+    for r in ("A", "B", "C"):
         rw = [e for e in w if e["rule"] == r]
         R = totals(rw)
         ratio = next((e["ratio"] for e in reversed(rw) if e.get("ratio") is not None), None)
-        lines += ["", "%s (%s): %d fire%s · saved %s · gave up %s · net %s" % (
-            RULE_NAME[r].capitalize(), RULE_WHAT[r], R["fires"], "" if R["fires"] == 1 else "s", usd(R["saved"], False),
-            usd(R["gave"], False), usd(R["net"])),
+        w_pos, w_neg = ("made", "lost") if r == "C" else ("saved", "gave up")
+        lines += ["", "%s (%s): %d fire%s · %s %s · %s %s · net %s" % (
+            RULE_NAME[r].capitalize(), RULE_WHAT[r], R["fires"], "" if R["fires"] == 1 else "s", w_pos,
+            usd(R["saved"], False), w_neg, usd(R["gave"], False), usd(R["net"])),
             "   usual-fill net %s%s" % (usd(R["usual"]), (" (pin fills %.0f%% of what it asks)" % (ratio * 100))
                                         if ratio is not None else "")]
         for e in rw:
@@ -491,8 +529,12 @@ def report_text(n, title, first_day, last_day, evs, L, start_t, bank):
 
 def alert_text(ev, run, bank):
     mk, what = describe(ev)
-    head = ("🛡️ PIN RULE SAVED %s" % usd(ev["effect"], False)) if ev["effect"] > 0 else \
-        ("💸 PIN RULE GAVE UP %s" % usd(-ev["effect"], False))
+    if ev["rule"] == "C":
+        head = ("💰 PIN BIGGER HEDGE MADE %s" % usd(ev["effect"], False)) if ev["effect"] > 0 else \
+            ("💸 PIN BIGGER HEDGE LOST %s" % usd(-ev["effect"], False))
+    else:
+        head = ("🛡️ PIN RULE SAVED %s" % usd(ev["effect"], False)) if ev["effect"] > 0 else \
+            ("💸 PIN RULE GAVE UP %s" % usd(-ev["effect"], False))
     return "\n".join([
         "%s%s · %s · %s" % (head, pct(ev["effect"], bank), RULE_NAME[ev["rule"]], mk),
         "It %s at %s." % (what, clock.et_clock(epoch(ev["t"]), with_day=False)),
@@ -503,11 +545,11 @@ def alert_text(ev, run, bank):
 
 def running_text(level, run, bank):
     return "\n".join([
-        "⚠️ PIN RULES NET %s%s · the two new rules have now given up more than they saved" % (usd(run["net"]),
-                                                                                           pct(run["net"], bank)),
-        "Past the %s line: %d fires · saved %s · gave up %s." % (usd(-level), run["fires"], usd(run["saved"], False),
-                                                                 usd(run["gave"], False)),
-        "Turning a rule off = restart pin without its flag (--ws-later-fall-c / --hedge-jump-max)."])
+        "⚠️ PIN RULES NET %s%s · the new pin rules have now given up or lost more than they saved or made" % (
+            usd(run["net"]), pct(run["net"], bank)),
+        "Past the %s line: %d fires · saved or made %s · gave up or lost %s." % (
+            usd(-level), run["fires"], usd(run["saved"], False), usd(run["gave"], False)),
+        "Turning a rule off = restart pin without its flag (--ws-later-fall-c / --hedge-jump-max / --hedge-odds-mult)."])
 
 
 # ---------------------------------------------------------------------------
@@ -679,7 +721,13 @@ def self_test(log_path):
                   t="2026-11-01T15:00:35Z"),
              dict(kind="jump_capped", ticker="KXTEST15M-26NOV011000-00", close_s=1793545200, want="no", n=50.0,
                   jump_sd=9.0, belief=0.85, tau=25, side="yes", ask=0.10, ask_size=80.0, ladder=[[0.10, 80.0]],
-                  limit=0.20, t="2026-11-01T14:59:35Z")]
+                  limit=0.20, t="2026-11-01T14:59:35Z"),
+             # synthetic bigger hedge (the 11-02 ZEC shape): bet No 297 @94.5c lost; the extra 297 Yes @14c won
+             dict(kind="hedge_extra", status="executed", ticker="KXTESTX15M-26NOV011015-15", side="yes", price=0.14,
+                  n=297.0, asked=297.0, extra_of=297.0, mult=2.0, base_n=297.0, tau=18, belief=0.342, trigger="belief",
+                  order_id="x-1", live=True, t="2026-11-01T15:14:42Z"),
+             dict(kind="settled", ticker="KXTESTX15M-26NOV011015-15", want="no", result="yes", cost=0.9446,
+                  pnl_c=-28163, t="2026-11-01T15:15:20Z")]
     import tempfile
     d = tempfile.mkdtemp()
     p = os.path.join(d, "pinrun-live-test.jsonl")
@@ -687,23 +735,26 @@ def self_test(log_path):
         for r in keep:
             fh.write(json.dumps(r) + "\n")
     L = Logs([p])
-    evs = {e["ticker"][:9]: e for e in score_events(L, time.time())}
-    hy_e, ne_e, fl_e = evs.get("KXHYPE15M"), evs.get("KXNEAR15M"), evs.get("KXTEST15M")
+    evs = {e["ticker"].split("-")[0]: e for e in score_events(L, time.time())}
+    hy_e, ne_e, fl_e, cx_e = evs.get("KXHYPE15M"), evs.get("KXNEAR15M"), evs.get("KXTEST15M"), evs.get("KXTESTX15M")
     print("HYPE:", json.dumps({k: hy_e.get(k) for k in ("n", "px", "buy", "hedge", "extra_hedge_n", "extra_hedge_px",
                                                        "effect", "effect_usual", "ratio")}))
     print("NEAR:", json.dumps({k: ne_e.get(k) for k in ("n", "px", "jump_hedge", "real_hedge", "effect")}))
     print("FLIP:", json.dumps({k: fl_e.get(k) for k in ("n", "px", "jump_hedge", "real_hedge", "effect")}))
+    print("EXTRA:", json.dumps({k: cx_e.get(k) for k in ("n", "px", "side", "want", "mult", "effect", "id")}))
     check("HYPE 9:15 AM later-buy refusal SAVED (buy ~-38.5, hedge back ~3)", hy_e["effect"], 33.0, 39.0)
     check("NEAR 9:30 AM jump cap SAVED the hedge cost", ne_e["effect"], 12.0, 12.5)
     check("synthetic flip: jump cap GAVE UP (60c hedge vs 10c)", fl_e["effect"], -25.6, -25.4)
+    check("synthetic bigger hedge: 297 extra Yes at 14c on a flip MADE ~$252.9", cx_e["effect"], 252.5, 253.5)
     run = totals(list(evs.values()))
-    check("running net = sum of the three", round(run["net"], 2), round(hy_e["effect"] + ne_e["effect"] +
-                                                                        fl_e["effect"], 2) - 0.001,
-          round(hy_e["effect"] + ne_e["effect"] + fl_e["effect"], 2) + 0.001)
+    tot4 = round(hy_e["effect"] + ne_e["effect"] + fl_e["effect"] + cx_e["effect"], 2)
+    check("running net = sum of the four", round(run["net"], 2), tot4 - 0.001, tot4 + 0.001)
     print()
     print(alert_text(hy_e, run, 2628.63))
     print()
     print(alert_text(fl_e, run, 2628.63))
+    print()
+    print(alert_text(cx_e, run, 2628.63))
     print()
     print(report_text(1, "end of Sun Nov 1 (day 1)", "2026-11-01", "2026-11-01", list(evs.values()), L,
                       "2026-11-01T14:00:00Z", 2628.63))

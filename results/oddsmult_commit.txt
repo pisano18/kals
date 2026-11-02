@@ -1,0 +1,6 @@
+pin_oddsmult: bigger hedge at the odds line (--hedge-odds-mult 1.25 --hedge-odds-min-tau 11) as a new build 0925r; watcher rule C
+
+v-oddsmult: when the 0.40 belief line fires with 11+ s left, pin also buys (M - 1) x the position of the hedge side as a second order right after the covering hedge (never on the jump trigger). results/patch_oddsmult.py (0925q 0f49ba3ae221 -> ca156bf45704), results/pin_oddsmult.ps1 (the deploy, same shape as pin_rules2.ps1), research/pinrules_watch.py rule C scores every hedge_extra on its own money. Self-test 1,430 checks PASS with the full live argv.
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013njQQvMJ49CoheAxAY8EZc
