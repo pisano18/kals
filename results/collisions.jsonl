@@ -618,3 +618,15 @@
 {"note": "gap-selection bias is real but bounded: a few lost hours in 376+ caps the shift in any tape-wide rate at about a point, and no live decision rests on 68.6% to that precision; worse, both recorders share the box, so an OOM or reboot blinds feed_data at the same moment and would hide the correlation you came to look for", "pair": ["F-I10", "F-O03"], "t": "2026-11-02T08:51:08Z", "verdict": "nothing"}
 {"note": "already measured and banked: LS04 took the 277 empty main-leg orders and scored the side they wanted against the real result (won 275 of 277), which is this exact filled-vs-zero-filled comparison; the decision it fed (the Ohio server) is CONFIRMED, so a continuous sigma-distance refinement would only add precision to a call already made", "pair": ["F-P02", "F-P04"], "t": "2026-11-02T08:51:08Z", "verdict": "nothing"}
 {"note": "run LS16's per-coin taker-count busy-ness against the INDEX 3-sigma miss over the 18,178-coin-close flood sample instead of our 23 live losers, which is where the power is", "pair": ["F-I02", "F-M11"], "t": "2026-11-02T08:51:08Z", "verdict": "lead"}
+{"pair": ["F-C01", "F-M06"], "t": "20261103T0847Z", "verdict": "drawn"}
+{"pair": ["F-C06", "F-I09"], "t": "20261103T0847Z", "verdict": "drawn"}
+{"pair": ["F-I07", "F-P08"], "t": "20261103T0847Z", "verdict": "drawn"}
+{"pair": ["F-O06", "F-P05"], "t": "20261103T0847Z", "verdict": "drawn"}
+{"pair": ["F-B06", "F-P01"], "t": "20261103T0847Z", "verdict": "drawn"}
+{"pair": ["F-P08", "F-P11"], "t": "20261103T0847Z", "verdict": "drawn"}
+{"note": "any regime split of the sigma multiplier inherits F-M11's no-power hour-of-day verdict; 24/7 contiguity adds no covariate", "pair": ["F-C01", "F-M06"], "t": "2026-11-03T08:51:13Z", "verdict": "nothing"}
+{"note": "a FIXED 15c dump threshold is mis-scaled across tau because sd collapses 9.7x faster than sqrt(tau): express the 2,699 refusals in sd units", "pair": ["F-C06", "F-I09"], "t": "2026-11-03T08:51:13Z", "verdict": "lead"}
+{"note": "mechanism needs a restart after ONE loss to re-run discover(); the brake needs three losing closes (F-B05), and 3 events cannot carry a conditional split", "pair": ["F-I07", "F-P08"], "t": "2026-11-03T08:51:13Z", "verdict": "nothing"}
+{"note": "F-O06 has sat ungated for 7 weeks because nobody measured what a freshness gate COSTS: share of our own filled contracts and signalled edge by book age", "pair": ["F-O06", "F-P05"], "t": "2026-11-03T08:51:13Z", "verdict": "lead"}
+{"note": "both are functions of the same single parameter; combining them is algebra, not a measurement, and the one empirical question (are losses independent) is F-P08 at n=3", "pair": ["F-B06", "F-P01"], "t": "2026-11-03T08:51:13Z", "verdict": "nothing"}
+{"note": "the sibling half is non-actionable by construction (same second, no time to act) and restates rho; the sequential half is 3 of 32", "pair": ["F-P08", "F-P11"], "t": "2026-11-03T08:51:13Z", "verdict": "nothing"}
