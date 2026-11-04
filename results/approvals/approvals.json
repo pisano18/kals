@@ -68,6 +68,28 @@
    "added_by": "Claude (assistant), for the operator",
    "date": "2026-10-31",
    "sha256": "c1ae47a92d03f7713489d8e095f75d46bef67efaed39a0818f710e828fe09acb"
+  },
+  {
+   "id": "pinrestart",
+   "title": "Pin: restart once while flat on the same build (nothing edited)",
+   "description": "Restarts the pin bot once on the build it already runs, nothing edited, through its own launcher (C:\\kals-live-0925n\\restart_bot.ps1). Why it exists: pin's two 1.5x boosts (the band boost on buys priced 95.5c to 98.1c and the last-10-seconds boost) used to switch themselves off for the rest of a run after a losing boosted leg, and only a restart put them back on. Since the 0925t build (11-04) pin runs with --boost-rail off, so that no longer happens; the phone's urgent 'PIN BAND BOOST OFF' or 'PIN LATE BOOST OFF' alert would still name this item if a trip record ever appeared. It is also the plain way to restart pin while flat (to load a launcher edit, or after a stuck run). The script refuses if no live pin is running (a dead pin is restarted by the keep-alive by itself) or if a restart is already under way. It waits until pin holds no open bet (pin is flat about 14 minutes of every 15; it gives up after 25 minutes and says so), then runs the launcher, which checks the code file, stops only the live pin process and starts it again on the same settings; pin is away for about 20 seconds. If pin buys again in the moment between the flat check and the restart, the launcher refuses and the script waits for flat again (3 tries). Every setting pin runs with today stays exactly as it is. Like every /approve item it runs once: after it has run, a new item has to be listed before the next trip can be undone this way.",
+   "stop_rule": "Nothing to stop: a restart changes no setting. A restart also resets the run's own loss-abort budget (-$535) and its attempt counters; the day loss cap is unaffected.",
+   "script": "pin_restart_flat.ps1",
+   "log": "pin_restart_flat.out",
+   "added_by": "Claude (assistant), for the operator",
+   "date": "2026-11-04",
+   "sha256": "9bd21a579f5567d9c875c8b5cd454e7ed184778c2b1c37ad96a4104330948e27"
+  },
+  {
+   "id": "jbrelaunch",
+   "title": "Jump band: relaunch the live arm at 5 contracts after it ends its 14 days (about 11-13 3:13 AM ET)",
+   "description": "Starts the jump band live bot again with the same command as its 10-30 launch: 5 contracts a buy, subaccount 3 (the $50 crypto pot in pool 2), 14 days, stop line -$25, log results\\jumpband-live.jsonl. The running arm ends itself when its 14 days are up (about 11-13 3:13 AM ET) and nothing restarts it (it is not in the boot list); this does, once, when you say so. Its record to 11-03: 43 fills from 72 orders, 5 lost, +$14.22, +7.0c a contract, about $2.95 a day. The script refuses if a live or dry-run jump band bot is running (never two live bots on one account), if results\\jumpband-live.stop exists (the bot's stop line or a human stood it down; delete that file by hand first if the relaunch is really wanted), or if the bot's own self-test fails on the server's code. The paper arm does not block it. It then launches the bot detached, waits 25 seconds and reads back the bot's first log lines. Still 5 contracts: the 10-contract step is a separate decision at the 11-13 read (bars: every live buy so far at +3c a contract or better, at most 15 lost per 100, no coin under -5c after 40 of its buys).",
+   "stop_rule": "The bot stops itself at the -$25 stop line (it writes results\\jumpband-live.stop and exits flat) and sends no new order for the rest of an ET day once that day is $15 down. Kill rule from 10-30: stop it if the first 150 live buys average under 0c a contract, or the first 200 under +3c, or any coin is under -5c after 40 of its own buys.",
+   "script": "jb_relaunch.ps1",
+   "log": "jb_relaunch.out",
+   "added_by": "Claude (assistant), for the operator",
+   "date": "2026-11-04",
+   "sha256": "01586e121a57e72782051114de853576f0e61abf180f49dfd203d7e330b093bb"
   }
  ]
 }

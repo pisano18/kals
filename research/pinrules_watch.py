@@ -39,11 +39,23 @@ ALERTS (urgent: sent even in the phone's quiet hours): one event's effect >= $10
 start), Nov 3 (Nov 2), Nov 4 (Nov 1-3), Nov 8 (Nov 1-7); each also written to results\pinrules_report_<n>.txt.
 State (every scored event, the sent flags) in results\pinrules_watch.json; a late tick sends what is due, never twice.
 
+v-fixes-alerts (2026-11-04, push 11-04; the operator: "track them thoroughly"): two more URGENT alerts from the same tick.
+  * A BOOST RAIL TRIP: a band_boost_off / late_boost_off record in pin's CURRENT run (the 1.5x band boost or the
+    last-10-s boost switched itself off for the rest of the run after a losing boosted leg). Said once per trip (state
+    key "rail_trips"), in plain words: which boost, the market, the leg that tripped it and its $, and the remedy (a
+    restart while flat: /approve pinrestart). A trip in an EARLIER run is never alerted: that restart put the boost back.
+  * A $10+ ENGAGEMENT of the tracked changes D to J (botdata.fixes, the data behind the phone's /fixes page: boost rail,
+    hedge tick, cheap jump skip, late-boost bypass fix, extra stake cap, max positions 5, extra on odds), once per
+    engagement (state key "fix_alerted"). botdata.fixes is imported inside the tick, inside a try: a failure there is
+    logged and never stops rules A/B/C.
+
   python research\pinrules_watch.py              one tick
   python research\pinrules_watch.py --dry        one tick, print instead of sending, state not saved
-  python research\pinrules_watch.py --self-test [--log PATH]   the scorer on 11-01's HYPE and NEAR + a synthetic flip
+  python research\pinrules_watch.py --self-test [--log PATH]   the scorer on 11-01's HYPE and NEAR + a synthetic flip,
+                                                 a synthetic band rail trip and a synthetic $12 engagement of change I
   python research\pinrules_watch.py --test-send  one message to the phone, labelled as a test
 """
+import calendar
 import glob
 import json
 import math
@@ -81,6 +93,13 @@ RULE_NAME = {"A": "later-buy check", "B": "jump cap", "C": "bigger hedge"}
 RULE_WHAT = {"A": "skip a later buy when the index is across the line and our price fell 10c+ in 5 s",
              "B": "no jump hedge on a jump of 8 sd or more",
              "C": "extra contracts of the hedge side when pin's odds line fires with 11+ s left"}
+# v-fixes-alerts: the two boost rails (pinrun: rec("band_boost_off" / "late_boost_off") in reconcile) and the remedy
+RAIL_WORDS = {"band_boost_off": ("band", "the 1.5x band boost (buys priced 95.5c to 98.1c)"),
+              "late_boost_off": ("late", "the 1.5x last-10-seconds boost")}
+RESTART_REMEDY = "A restart while flat puts it back on: /approve pinrestart"
+# the tracked changes D..J (botdata.fixes) and the verb each one's $ takes (+ / -)
+FIX_POS = {"D": "MADE", "E": "MADE", "F": "SAVED", "G": "SAVED", "H": "SAVED", "I": "MADE", "J": "MADE"}
+FIX_NEG = {"D": "LOST", "E": "COST", "F": "GAVE UP", "G": "GAVE UP", "H": "GAVE UP", "I": "LOST", "J": "LOST"}
 
 
 # ---------------------------------------------------------------------------
@@ -170,10 +189,12 @@ def pct(x, bank):
 class Logs:
     """Everything one tick needs from pin's logs."""
 
-    WANT = ('"start"', "ws_later_", '"jump_capped"', '"settled"', '"hedge"', '"hedge_extra"', '"order"')
+    WANT = ('"start"', "ws_later_", '"jump_capped"', '"settled"', '"hedge"', '"hedge_extra"', '"order"',
+            '"band_boost_off"', '"late_boost_off"')
 
     def __init__(self, paths):
         self.starts, self.events, self.settled, self.hedges, self.orders = [], [], {}, {}, []
+        self.trips = []                       # v-fixes-alerts: band_boost_off / late_boost_off, each with its log's path
         seen = set()
         for path in paths:
             try:
@@ -211,7 +232,11 @@ class Logs:
                         self.hedges.setdefault(tk, []).append(r)
                     elif k == "order":
                         self.orders.append(r)
+                    elif k in RAIL_WORDS:
+                        r["_path"] = path
+                        self.trips.append(r)
         self.events.sort(key=lambda r: r["t"])
+        self.trips.sort(key=lambda r: r["t"])
         for v in self.hedges.values():
             v.sort(key=lambda r: r["t"])
 
@@ -553,6 +578,89 @@ def running_text(level, run, bank):
 
 
 # ---------------------------------------------------------------------------
+# v-fixes-alerts (2026-11-04): the boost rails and the tracked changes D..J
+def trip_id(trip):
+    return "%s|%s|%s" % (trip.get("kind"), trip.get("ticker"), trip.get("t"))
+
+
+def trip_leg(L, trip):
+    """The settled leg that tripped the rail: same ticker, same cost and pnl_c (the trip record copies both), nearest in
+    time; None when that leg is not in the log."""
+    best = None
+    te = epoch(trip.get("t")) or 0.0
+    for s in L.settled.get(trip.get("ticker"), []):
+        try:
+            if abs(float(s.get("cost")) - float(trip.get("cost"))) > 5e-5:
+                continue
+            if abs(float(s.get("pnl_c") or 0) - float(trip.get("pnl_c") or 0)) > 0.02:
+                continue
+        except (TypeError, ValueError):
+            continue
+        d = abs((epoch(s.get("t")) or 0.0) - te)
+        if best is None or d < best[0]:
+            best = (d, s)
+    return best[1] if best else None
+
+
+def new_trips(L, st):
+    """band_boost_off / late_boost_off records of pin's CURRENT run (the newest start record's log) not yet alerted. A
+    trip in an earlier run is never alerted: the restart that began the current run put the boost back on."""
+    if not L.starts:
+        return []
+    cur = max(L.starts, key=lambda x: x[0] or "")[2]
+    seen = set(st.get("rail_trips") or [])
+    return [r for r in L.trips if r.get("_path") == cur and trip_id(r) not in seen]
+
+
+def rail_text(trip, L, bank):
+    which, boost = RAIL_WORDS[trip["kind"]]
+    leg = trip_leg(L, trip)
+    pnl = float(trip.get("pnl_c") or 0) / 100.0
+    side = ("a %s leg" % (leg.get("want") or "").capitalize()) if leg and leg.get("want") else "a leg"
+    at = ("bought at %.1fc" % (float(trip["cost"]) * 100)) if trip.get("cost") is not None else "bought"
+    money = ("lost %s" % usd(-pnl, False)) if pnl < 0 else ("made %s" % usd(pnl, False))
+    what = "%s %s %s%s on a market where the boost had been used" % (side, at, money, pct(pnl, bank))
+    if leg and leg.get("market_net_c") is not None:
+        what += " (the whole market net %s)" % usd(float(leg["market_net_c"]) / 100.0)
+    return "\n".join([
+        "🔕 PIN %s BOOST OFF · %s" % (which.upper(), market_label(trip["ticker"], trip.get("close_s"))),
+        "%s is off for the rest of this pin run: at %s %s, and that trips the rail." % (
+            boost[0].upper() + boost[1:], clock.et_clock(epoch(trip["t"]), with_day=False), what),
+        "Until pin restarts, those buys are at 1x instead of 1.5x. %s" % RESTART_REMEDY])
+
+
+def fix_id(c, ev):
+    return "%s|%s|%s" % (c.get("id"), ev.get("coin"), ev.get("t"))
+
+
+def new_fix_events(changes, st):
+    """(change, event) pairs of the changes D..J whose settled $ is MAJOR_USD or more either way, not yet alerted."""
+    seen = set(st.get("fix_alerted") or [])
+    out = []
+    for c in changes:
+        if c.get("id") not in FIX_POS:
+            continue
+        for ev in c.get("events") or []:
+            x = ev.get("usd")
+            if x is None or abs(x) < MAJOR_USD or fix_id(c, ev) in seen:
+                continue
+            out.append((c, ev))
+    return out
+
+
+def fix_text(c, ev, tot, bank):
+    x = ev["usd"]
+    verb = (FIX_POS if x > 0 else FIX_NEG)[c["id"]]
+    return "\n".join([
+        "%s PIN CHANGE %s %s%s · %s %s · %s" % ("💰" if x > 0 else "💸", verb, usd(abs(x), False), pct(x, bank),
+                                               c["id"], c.get("name"), ev.get("coin") or "?"),
+        "%s: %s" % (ev.get("et") or "?", ev.get("words") or ""),
+        "The change: %s." % c.get("what"),
+        "All tracked changes so far: engaged %d times · net %s%s · /fixes lists every one" % (
+            tot["engaged"], usd(tot["net_usd"]), pct(tot["net_usd"], bank))])
+
+
+# ---------------------------------------------------------------------------
 class Phone:
     def __init__(self, dry=False):
         self.dry = dry
@@ -601,7 +709,7 @@ def load_state():
         with open(STATE, encoding="utf-8") as fh:
             return json.load(fh)
     except (OSError, ValueError):
-        return {"events": {}, "alerted": [], "levels": [], "reports": {}}
+        return {"events": {}, "alerted": [], "levels": [], "reports": {}, "rail_trips": [], "fix_alerted": []}
 
 
 def save_state(st):
@@ -630,7 +738,8 @@ def tick(dry=False, now=None):
     if not st.get("start"):
         st["start"] = start_t
         log("rules start found: %s" % start_t)
-    L = Logs(pin_paths(epoch(start_t)))
+    paths = pin_paths(epoch(start_t))
+    L = Logs(paths)
     evs = [e for e in score_events(L, now) if epoch(e["t"]) >= epoch(start_t) - 1]
     phone = Phone(dry)
     bank = bank_now()
@@ -650,6 +759,25 @@ def tick(dry=False, now=None):
             if phone.send(running_text(level, run, bank), True, now):
                 st["levels"].append(level)
                 log("running alert sent at -%s" % level)
+    # v-fixes-alerts: a boost rail tripped in the current run (urgent, once per trip)
+    st.setdefault("rail_trips", [])
+    st.setdefault("fix_alerted", [])
+    for trip in new_trips(L, st):
+        if phone.send(rail_text(trip, L, bank), True, now):
+            st["rail_trips"].append(trip_id(trip))
+            log("rail alert sent: %s" % trip_id(trip))
+    # ...and a $10+ engagement of the tracked changes D..J (botdata.fixes, imported here so a failure in it is logged
+    # and never stops rules A/B/C above or the reports below)
+    try:
+        from botdata import fixes as _fixes
+        changes = _fixes.report(paths=paths, now=now)
+        tot = _fixes.totals(changes)
+        for c, ev in new_fix_events(changes, st):
+            if phone.send(fix_text(c, ev, tot, bank), True, now):
+                st["fix_alerted"].append(fix_id(c, ev))
+                log("change alert sent: %s %s" % (fix_id(c, ev), ev["usd"]))
+    except Exception:
+        log("changes D..J not scored this tick: " + traceback.format_exc().replace("\n", " | ")[-600:])
     # reports
     for n, due_day, title, d0, d1 in REPORTS:
         if st["reports"].get(str(n)):
@@ -727,7 +855,16 @@ def self_test(log_path):
                   n=297.0, asked=297.0, extra_of=297.0, mult=2.0, base_n=297.0, tau=18, belief=0.342, trigger="belief",
                   order_id="x-1", live=True, t="2026-11-01T15:14:42Z"),
              dict(kind="settled", ticker="KXTESTX15M-26NOV011015-15", want="no", result="yes", cost=0.9446,
-                  pnl_c=-28163, t="2026-11-01T15:15:20Z")]
+                  pnl_c=-28163, t="2026-11-01T15:15:20Z"),
+             # v-fixes-alerts: this log is the current run (a start record), and the HYPE 10-31 7:30 AM rail trip shape:
+             # the boosted Yes won, the 7.1c No hedge leg lost $1.59 and switched the band boost off ("any" rail)
+             dict(kind="start", t="2026-11-01T14:00:00Z", code_sha="selftest0000", pid=0, live=True),
+             dict(kind="settled", ticker="KXTESTR15M-26NOV011030-30", want="yes", result="yes", cost=0.98, pnl_c=39.08,
+                  market_net_c=None, t="2026-11-01T15:30:20Z"),
+             dict(kind="settled", ticker="KXTESTR15M-26NOV011030-30", want="no", result="yes", cost=0.071,
+                  pnl_c=-158.65, market_net_c=-119.57, t="2026-11-01T15:30:35Z"),
+             dict(kind="band_boost_off", ticker="KXTESTR15M-26NOV011030-30", close_s=calendar.timegm((2026, 11, 1, 15, 30, 0)),
+                  cost=0.071, pnl_c=-158.65, was=None, t="2026-11-01T15:30:35Z")]
     import tempfile
     d = tempfile.mkdtemp()
     p = os.path.join(d, "pinrun-live-test.jsonl")
@@ -749,6 +886,62 @@ def self_test(log_path):
     run = totals(list(evs.values()))
     tot4 = round(hy_e["effect"] + ne_e["effect"] + fl_e["effect"] + cx_e["effect"], 2)
     check("running net = sum of the four", round(run["net"], 2), tot4 - 0.001, tot4 + 0.001)
+    # v-fixes-alerts (1): the band rail trip in the current run -> one urgent alert, said once
+    st = {"rail_trips": []}
+    trips = new_trips(L, st)
+    check("rail: the band_boost_off in the current run is due once", len(trips), 1, 1)
+    rt = rail_text(trips[0], L, 2628.63) if trips else ""
+    print()
+    print(rt)
+    want_rt = ("PIN BAND BOOST OFF", "TESTR 10:30 AM market", "at 10:30 AM ET a No leg bought at 7.1c lost $1.59",
+               "(-0.06% of the bank)", "the whole market net -$1.20", "1x instead of 1.5x", "/approve pinrestart")
+    check("rail text: the boost, the market, the leg and its $, the remedy (%d phrases)" % len(want_rt),
+          sum(1 for w in want_rt if w in rt), len(want_rt), len(want_rt))
+    if trips:
+        st["rail_trips"].append(trip_id(trips[0]))
+    check("rail: alerted once, never twice", len(new_trips(L, st)), 0, 0)
+    p3 = os.path.join(d, "pinrun-live-20261102T000000Z.jsonl")      # a NEWER run (its start record alone)
+    with open(p3, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps(dict(kind="start", t="2026-11-02T00:00:00Z", code_sha="selftest0001", pid=0, live=True)) + "\n")
+    check("rail: a trip in an EARLIER run is not alerted once a newer run has started",
+          len(new_trips(Logs([p, p3]), {"rail_trips": []})), 0, 0)
+    # v-fixes-alerts (2): a synthetic new-build log where change I (max positions 5) let two buys through: one made
+    # $12.00 (alerted), one made $5.00 (under the $10 line)
+    tkI, tkI2 = "KXTESTI15M-26NOV051000-00", "KXTESTI15M-26NOV051015-15"
+    rows2 = [dict(kind="start", t="2026-11-05T13:40:00Z", code_sha="0925t0000000", pid=1, live=True, max_positions=5),
+             dict(kind="open_cap_relaxed", ticker=tkI, close_s=calendar.timegm((2026, 11, 5, 15, 0, 0)), side="no",
+                  open_positions=3, old_cap=3, leg="main", live=True, t="2026-11-05T14:59:40Z"),
+             dict(kind="order", ticker=tkI, want="no", leg="main", filled=40.0, exec_price=0.70, limit_sent=0.72,
+                  status="executed", t="2026-11-05T14:59:41Z"),
+             dict(kind="settled", ticker=tkI, want="no", result="no", cost=0.70, pnl_c=1200.0, t="2026-11-05T15:00:20Z"),
+             dict(kind="open_cap_relaxed", ticker=tkI2, close_s=calendar.timegm((2026, 11, 5, 15, 15, 0)), side="yes",
+                  open_positions=4, old_cap=3, leg="main", live=True, t="2026-11-05T15:14:40Z"),
+             dict(kind="order", ticker=tkI2, want="yes", leg="main", filled=20.0, exec_price=0.75, limit_sent=0.77,
+                  status="executed", t="2026-11-05T15:14:41Z"),
+             dict(kind="settled", ticker=tkI2, want="yes", result="yes", cost=0.75, pnl_c=500.0, t="2026-11-05T15:15:20Z")]
+    p2 = os.path.join(d, "pinrun-live-20261105T134000Z.jsonl")
+    with open(p2, "w", encoding="utf-8") as fh:
+        for r in rows2:
+            fh.write(json.dumps(r) + "\n")
+    from botdata import fixes as FX
+    ch = FX.report(paths=[p2], now=float(calendar.timegm((2026, 11, 5, 16, 0, 0))))
+    chI = next(c for c in ch if c["id"] == "I")
+    check("change I (max positions 5): engaged twice, net +$17.00", chI["net_usd"], 16.99, 17.01)
+    st2 = {"fix_alerted": []}
+    due = new_fix_events(ch, st2)
+    check("one $10+ engagement is due (the $5.00 one is under the line)", len(due), 1, 1)
+    ft = fix_text(due[0][0], due[0][1], FX.totals(ch), 2628.63) if due else ""
+    print()
+    print(ft)
+    want_ft = ("PIN CHANGE MADE $12.00 (+0.46% of the bank)", "I max positions 5", "TESTI", "Nov 5 9:59 AM ET",
+               "40 contracts filled at 70.0c", "the leg made $12.00", "up to 5 positions open at once (was 3)",
+               "engaged 2 times", "net +$17.00", "/fixes")
+    check("change text: verb and $, the change, the coin, the time, what happened, the total (%d phrases)" % len(want_ft),
+          sum(1 for w in want_ft if w in ft), len(want_ft), len(want_ft))
+    if due:
+        st2["fix_alerted"].append(fix_id(*due[0]))
+    check("change alert once, never twice", len(new_fix_events(ch, st2)), 0, 0)
+    check("no em dash in any alert text", (chr(0x2014) in rt) or (chr(0x2014) in ft), False, False)
     print()
     print(alert_text(hy_e, run, 2628.63))
     print()
