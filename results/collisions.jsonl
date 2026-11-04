@@ -630,3 +630,15 @@
 {"note": "F-O06 has sat ungated for 7 weeks because nobody measured what a freshness gate COSTS: share of our own filled contracts and signalled edge by book age", "pair": ["F-O06", "F-P05"], "t": "2026-11-03T08:51:13Z", "verdict": "lead"}
 {"note": "both are functions of the same single parameter; combining them is algebra, not a measurement, and the one empirical question (are losses independent) is F-P08 at n=3", "pair": ["F-B06", "F-P01"], "t": "2026-11-03T08:51:13Z", "verdict": "nothing"}
 {"note": "the sibling half is non-actionable by construction (same second, no time to act) and restates rho; the sequential half is 3 of 32", "pair": ["F-P08", "F-P11"], "t": "2026-11-03T08:51:13Z", "verdict": "nothing"}
+{"pair": ["F-I04", "F-P04"], "t": "20261104T0848Z", "verdict": "drawn"}
+{"pair": ["F-C04", "F-X02"], "t": "20261104T0848Z", "verdict": "drawn"}
+{"pair": ["F-C08", "F-I03"], "t": "20261104T0848Z", "verdict": "drawn"}
+{"pair": ["F-O07", "F-X06"], "t": "20261104T0848Z", "verdict": "drawn"}
+{"pair": ["F-I02", "F-M03"], "t": "20261104T0848Z", "verdict": "drawn"}
+{"pair": ["F-X03", "F-X06"], "t": "20261104T0848Z", "verdict": "drawn"}
+{"note": "partition the residual empty orders into beaten-by-another-taker vs quote-cancelled using taker_outcome_side in the round-trip ms window -- the half LS24 left open: is any speed money left", "pair": ["F-I04", "F-P04"], "t": "2026-11-04T08:50:57Z", "verdict": "lead"}
+{"note": "", "pair": ["F-C04", "F-X02"], "t": "2026-11-04T08:50:57Z", "verdict": "nothing"}
+{"note": "", "pair": ["F-C08", "F-I03"], "t": "2026-11-04T08:50:57Z", "verdict": "nothing"}
+{"note": "", "pair": ["F-O07", "F-X06"], "t": "2026-11-04T08:50:57Z", "verdict": "nothing"}
+{"note": "", "pair": ["F-I02", "F-M03"], "t": "2026-11-04T08:50:57Z", "verdict": "nothing"}
+{"note": "", "pair": ["F-X03", "F-X06"], "t": "2026-11-04T08:50:57Z", "verdict": "nothing"}
