@@ -14,6 +14,7 @@ import os
 import time
 
 import pindesk
+import pinday
 from botdata import dirlist as _dirlist
 from botdata.fmt import cnt as _cnt, dollars, dot, nof as _nof, of100 as _of100, pct_of, ret, usd
 from phone.html import esc, i_
@@ -24,19 +25,20 @@ from phone.commands.speed import (SERVER_SINCE_EPOCH, SPEED_HOME_DAYS, SPEED_MIN
 
 WORTH_CLOSE_S = 900                      # a 15-minute close
 WORTH_GAP_S = 20 * 60                    # no close_summary row for longer than this: the pin bot was not watching
-# Kalshi's weekly maintenance: every THURSDAY the 15-minute markets pause for about 2 h 15 min from 07:00 UTC (seen
-# Thu 10-15, 10-22, 10-29 and 11-05: no close on either machine; 2026-11-05 is a Thursday). A gap that starts in this
-# window and lasts under 3 h is Kalshi's, not the machine's, and is left out on both sides.
-MAINT_WDAY = 3                           # time.gmtime().tm_wday: Monday 0 -> Thursday 3
-MAINT_FROM_S, MAINT_TO_S, MAINT_MAX_S = 6 * 3600 + 30 * 60, 7 * 3600 + 30 * 60, 3 * 3600
+# Kalshi's weekly maintenance: every THURSDAY the 15-minute markets pause for about 2 h 15 min from 3:00 AM ET (seen
+# Thu 10-15, 10-22, 10-29 at 07:00Z and Thu 11-05 at 08:00Z, after the clocks went back: no close on either machine;
+# Kalshi keeps Eastern time). A gap that starts in this window (Eastern clock) and lasts under 3 h is Kalshi's, not the
+# machine's, and is left out on both sides.
+MAINT_WDAY = 3                           # tm_wday of the Eastern clock: Monday 0 -> Thursday 3
+MAINT_FROM_S, MAINT_TO_S, MAINT_MAX_S = 2 * 3600 + 30 * 60, 3 * 3600 + 30 * 60, 3 * 3600   # 2:30-3:30 AM ET start
 # the asked-size buckets of the size-matched estimate (the server's orders are bigger than the laptop's were: matching
 # by size compares like with like; the bucket edges are the ones the 11-05 study used)
 WORTH_BUCKETS = ((0, 25), (25, 60), (60, 150), (150, float("inf")))
 
 
 def is_maintenance(start, length_s):
-    """True for a gap that is Kalshi's Thursday maintenance window, not a machine's stop."""
-    tm = time.gmtime(start)
+    """True for a gap that is Kalshi's Thursday maintenance window (Eastern clock), not a machine's stop."""
+    tm = time.gmtime(float(start) + pinday.et_offset(float(start)))
     day_s = tm.tm_hour * 3600 + tm.tm_min * 60 + tm.tm_sec
     return tm.tm_wday == MAINT_WDAY and MAINT_FROM_S <= day_s <= MAINT_TO_S and length_s <= MAINT_MAX_S
 

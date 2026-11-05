@@ -249,6 +249,11 @@ def test_maintenance_rule():
     assert not WO.is_maintenance(THU + 86400 - 600, 9000), "the same gap on a Friday is a stop"
     assert not WO.is_maintenance(THU - 600, 4 * 3600), "a Thursday gap of 4 hours is a stop"
     assert not WO.is_maintenance(THU + 2 * 3600, 9000), "a Thursday gap from 09:00Z is a stop"
+    # the window follows the Eastern clock: after the clocks went back (11-01) the pause starts at 08:00Z
+    est_thu = calendar.timegm((2026, 11, 5, 8, 0, 0))
+    assert WO.is_maintenance(est_thu, 8100), "Thu 11-05 08:00Z = 3:00 AM EST is Kalshi's"
+    assert not WO.is_maintenance(est_thu - 3600, 8100), "Thu 11-05 07:00Z = 2:00 AM EST is a stop"
+    assert WO.is_maintenance(THU - 600, 8100), "Thu 10-22 06:50Z = 2:50 AM EDT is Kalshi's"
 
 
 def test_server_worth_numbers():
