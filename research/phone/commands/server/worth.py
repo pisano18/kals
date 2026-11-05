@@ -24,10 +24,10 @@ from phone.commands.speed import (SERVER_SINCE_EPOCH, SPEED_HOME_DAYS, SPEED_MIN
 
 WORTH_CLOSE_S = 900                      # a 15-minute close
 WORTH_GAP_S = 20 * 60                    # no close_summary row for longer than this: the pin bot was not watching
-# Kalshi's weekly maintenance: every Wednesday the 15-minute markets pause for about 2 h 15 min from 07:00 UTC (seen
-# 10-15, 10-22, 10-29, 11-05: no close on either machine). A gap that starts in this window and lasts under 3 h is
-# Kalshi's, not the machine's, and is left out on both sides.
-MAINT_WDAY = 2                           # time.gmtime().tm_wday: Monday 0 -> Wednesday 2
+# Kalshi's weekly maintenance: every THURSDAY the 15-minute markets pause for about 2 h 15 min from 07:00 UTC (seen
+# Thu 10-15, 10-22, 10-29 and 11-05: no close on either machine; 2026-11-05 is a Thursday). A gap that starts in this
+# window and lasts under 3 h is Kalshi's, not the machine's, and is left out on both sides.
+MAINT_WDAY = 3                           # time.gmtime().tm_wday: Monday 0 -> Thursday 3
 MAINT_FROM_S, MAINT_TO_S, MAINT_MAX_S = 6 * 3600 + 30 * 60, 7 * 3600 + 30 * 60, 3 * 3600
 # the asked-size buckets of the size-matched estimate (the server's orders are bigger than the laptop's were: matching
 # by size compares like with like; the bucket edges are the ones the 11-05 study used)
@@ -35,7 +35,7 @@ WORTH_BUCKETS = ((0, 25), (25, 60), (60, 150), (150, float("inf")))
 
 
 def is_maintenance(start, length_s):
-    """True for a gap that is Kalshi's Wednesday maintenance window, not a machine's stop."""
+    """True for a gap that is Kalshi's Thursday maintenance window, not a machine's stop."""
     tm = time.gmtime(start)
     day_s = tm.tm_hour * 3600 + tm.tm_min * 60 + tm.tm_sec
     return tm.tm_wday == MAINT_WDAY and MAINT_FROM_S <= day_s <= MAINT_TO_S and length_s <= MAINT_MAX_S
@@ -65,7 +65,7 @@ def _times(rows, t0, t1):
 
 def watch_record(results, t0, t1):
     """One machine's record over [t0, t1): the closes the pin bot watched (one close_summary row each), the gaps longer
-    than WORTH_GAP_S between them -- the window's edges included, Kalshi's Wednesday maintenance left out -- with the
+    than WORTH_GAP_S between them -- the window's edges included, Kalshi's Thursday maintenance left out -- with the
     closes inside them, their hours and the longest; and the connection hiccups (conn_event rows). t1 is `now` for a
     window still open, so a bot down right now shows as a gap."""
     ts = _times(pin_rows(results, "close_summary", t0), t0, t1)
@@ -178,7 +178,7 @@ def worth_lines(w, min_orders=None):
                 s_ += ")" if r["gaps"] == 1 else "; %s in all)" % _span_words(r["hours"] * 3600.0)
             s_ += ", %s" % _nof(r["conn"], "connection hiccup")
             return s_
-        L.append("Record: %s in its last %d days; %s in %s. Kalshi's Wednesday maintenance (%s) is left out of both." % (
+        L.append("Record: %s in its last %d days; %s in %s. Kalshi's Thursday maintenance (%s) is left out of both." % (
             esc(stops(rh, "the laptop")), SPEED_HOME_DAYS, esc(stops(rs, "the server")), esc(span),
             esc("%s and %s" % (_nof(rh["maint"], "gap"), _nof(rs["maint"], "gap")))))
         if w["laptop_style"] is not None and w["stop_rate"] is not None:

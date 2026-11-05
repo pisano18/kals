@@ -33,7 +33,7 @@ T = SV + 3 * 86400
 TMP = tempfile.mkdtemp(prefix="test_server_")
 WTMP = tempfile.mkdtemp(prefix="test_server_worth_")               # the worth-of-the-move world's pin logs (11-05)
 H0 = SV - SP.SPEED_HOME_DAYS * 86400
-WED = calendar.timegm((2026, 10, 21, 7, 0, 0))                     # a Wednesday 07:00Z inside the home window
+THU = calendar.timegm((2026, 10, 22, 7, 0, 0))                     # a Thursday 07:00Z inside the home window
 pp.LOG = os.path.join(TMP, "pinphone.log")
 HELPS = ("/server help", "/server ?", "/Server@kalsbot AWS", "/server  setup ", "/server Help")
 
@@ -210,14 +210,14 @@ def _wj(name, rows, mtime):
 
 def worth_world():
     """Pin logs in WTMP. Home (the laptop's last 14 days): a close_summary row every 15 min from H0 to SV except one
-    2-hour hole (8 closes) and Kalshi's Wednesday maintenance (135 min from WED), 3 conn_events. Server: a row every
+    2-hour hole (8 closes) and Kalshi's Thursday maintenance (135 min from THU), 3 conn_events. Server: a row every
     15 min from SV to T, 1 conn_event, 60 settled markets at $0.20 each. Orders: 20 at home (7 of 10 filled), 60 on the
     server (8 of 10 filled, 480 of 600 contracts). Returns the Ledger's order rows."""
     hole0 = H0 + 3 * 86400
     rows = []
     t = H0 + 300
     while t < SV:
-        if not (hole0 <= t < hole0 + 8 * 900) and not (WED <= t < WED + 135 * 60):
+        if not (hole0 <= t < hole0 + 8 * 900) and not (THU <= t < THU + 135 * 60):
             rows.append({"kind": "close_summary", "t": _iso(t), "close": t})
         t += 900
     rows += [{"kind": "conn_event", "t": _iso(H0 + 86400 * (k + 1)), "event": "stale_replaced"} for k in range(3)]
@@ -245,10 +245,10 @@ def worth_ledger(orders, bank=1000.0):
 
 
 def test_maintenance_rule():
-    assert WO.is_maintenance(WED - 600, 9000), "a Wednesday gap from 06:50Z lasting 2 h 30 min is Kalshi's"
-    assert not WO.is_maintenance(WED + 86400 - 600, 9000), "the same gap on a Thursday is a stop"
-    assert not WO.is_maintenance(WED - 600, 4 * 3600), "a Wednesday gap of 4 hours is a stop"
-    assert not WO.is_maintenance(WED + 2 * 3600, 9000), "a Wednesday gap from 09:00Z is a stop"
+    assert WO.is_maintenance(THU - 600, 9000), "a Thursday gap from 06:50Z lasting 2 h 30 min is Kalshi's"
+    assert not WO.is_maintenance(THU + 86400 - 600, 9000), "the same gap on a Friday is a stop"
+    assert not WO.is_maintenance(THU - 600, 4 * 3600), "a Thursday gap of 4 hours is a stop"
+    assert not WO.is_maintenance(THU + 2 * 3600, 9000), "a Thursday gap from 09:00Z is a stop"
 
 
 def test_server_worth_numbers():
@@ -284,7 +284,7 @@ def test_worth_lines_words():
            "bill needs the billing role (<code>/server help</code>)" % w["cost"] in s, s
     assert "Record: the laptop missed 8 closes (1 stop, the longest 2 h 15 min from Oct 16 12:10 AM ET), 3 connection " \
            "hiccups in its last 14 days; the server missed 0 closes, 1 connection hiccup in 3 days 0 h. Kalshi's " \
-           "Wednesday maintenance (1 gap and 0 gaps) is left out of both." in s, s
+           "Thursday maintenance (1 gap and 0 gaps) is left out of both." in s, s
     assert "At the server's +$0.04 a close, the laptop's stop rate (0.6% of its closes) would have cost about " \
            "<b>+$0.07</b> here: shown, not added" in s, s
     assert "a gap over 20 min between rows is a stop" in s
