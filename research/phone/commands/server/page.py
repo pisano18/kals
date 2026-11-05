@@ -19,6 +19,7 @@ from phone.commands.server.aws import (AWS_AZ, AWS_BILLED_FROM_EPOCH, AWS_BUDGET
                                        AWS_ELASTIC_IP, AWS_INSTANCE_NAME, AWS_INSTANCE_TYPE, AWS_SERVICE_SHORT,
                                        aws_cost, aws_estimate)
 from phone.commands.server.machine import KALSHI_HOST
+from phone.commands.server.worth import server_worth, worth_lines
 
 SERVER_WARN_CPU, SERVER_WARN_MEM, SERVER_WARN_DISK_GB = 90.0, 90, 8.0
 
@@ -128,9 +129,10 @@ def _server_aws_lines(aws, est, total, now):
     return L
 
 
-def server_html(m, ping, pots, aws, est, now, pin_home=None, pin_srv=None, active=None):
+def server_html(m, ping, pots, aws, est, now, pin_home=None, pin_srv=None, active=None, worth=None):
     """/server's screen: the machine (machine_read), the time to Kalshi (kalshi_ping), every pot's money (botstats'
-    cache), the AWS bill (aws_cost, aws_estimate). Each part says what it could not read; none stops the others."""
+    cache), the AWS bill (aws_cost, aws_estimate). Each part says what it could not read; none stops the others.
+    `worth` (11-05): server_worth's dict -- the "worth of the move" section under the header; None leaves it out."""
     best = min(ping["ms"]) if ping and ping.get("ms") else None
     used = (m["mem_total"] - m["mem_avail"]) if m.get("mem_total") is not None and m.get("mem_avail") is not None else None
     head = ["CPU %s" % _pct0(m.get("cpu")), "memory %s used" % _pct0(m.get("mem_load")),
@@ -152,6 +154,9 @@ def server_html(m, ping, pots, aws, est, now, pin_home=None, pin_srv=None, activ
         warn.append("Kalshi: %s" % ping["err"])
     for w in warn:
         L.append("⚠️ <b>%s</b>" % esc(w))
+    if worth is not None:
+        L.append("")
+        L.extend(worth_lines(worth))
     L.append("")
     L.append("⚙️ <b>Machine</b>")
     rows = [("CPU now", "%s (%s cores, %.1f s)" % (_pct0(m.get("cpu")), m.get("ncpu") or "?", _f(m.get("sample_s")))),
@@ -220,15 +225,26 @@ def load(ctx):
     est = aws_estimate(now)
     home = speed_stats(_speed_win(pins, SERVER_SINCE_EPOCH - SPEED_HOME_DAYS * 86400, SERVER_SINCE_EPOCH))
     srv = speed_stats(_speed_win(pins, SERVER_SINCE_EPOCH, now + 1))
+    # 11-05: the worth of the move (the /speed estimate net of the price-list cost, the two machines' records). A
+    # failure here is logged and named in its own section; the rest of the page still shows.
+    try:
+        bank = (ctx.ledger.bank() or {}).get("bank")
+    except Exception:                                   # noqa: BLE001
+        bank = None
+    try:
+        worth = server_worth(ctx.ledger.orders, ctx.ledger.results, now, bank)
+    except Exception as e:                              # noqa: BLE001
+        log(traceback.format_exc())
+        worth = {"err": str(e)[:120]}
     return {"m": m, "ping": ping, "pots": pots, "aws": aws, "est": est, "now": now, "home": home, "srv": srv,
-            "active": ctx.active()}
+            "active": ctx.active(), "worth": worth}
 
 
 def render(d):
     if d is None:
         return SERVER_HELP
     return server_html(d["m"], d["ping"], d["pots"], d["aws"], d["est"], d["now"], d["home"], d["srv"],
-                       active=d["active"])
+                       active=d["active"], worth=d.get("worth"))
 
 
 def fail(e):

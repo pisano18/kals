@@ -5,6 +5,7 @@ Plain test_* functions and a tiny runner (no pytest on C:\\Python314). Exit 0 = 
 write fence); every reading is planted (the machine, the Kalshi ping, botstats' pots, the AWS http function) and
 botstats.active_bots for the test's length: no network, no AWS, no process table, no file under results\\.
 """
+import calendar
 import json
 import os
 import re
@@ -24,12 +25,15 @@ import botstats                                                      # noqa: E40
 from phone import command as CM                                     # noqa: E402
 from phone import context as CX                                     # noqa: E402
 from phone.html import Html, tg_html_problems                       # noqa: E402
-from phone.commands.server import aws as AW, machine as MA, page as PG   # noqa: E402
+from phone.commands.server import aws as AW, machine as MA, page as PG, worth as WO   # noqa: E402
 from phone.commands import speed as SP                               # noqa: E402
 
 SV = SP.SERVER_SINCE_EPOCH
 T = SV + 3 * 86400
 TMP = tempfile.mkdtemp(prefix="test_server_")
+WTMP = tempfile.mkdtemp(prefix="test_server_worth_")               # the worth-of-the-move world's pin logs (11-05)
+H0 = SV - SP.SPEED_HOME_DAYS * 86400
+WED = calendar.timegm((2026, 10, 21, 7, 0, 0))                     # a Wednesday 07:00Z inside the home window
 pp.LOG = os.path.join(TMP, "pinphone.log")
 HELPS = ("/server help", "/server ?", "/Server@kalsbot AWS", "/server  setup ", "/server Help")
 
@@ -78,10 +82,11 @@ def aws_world(calls, role=True):
     return http
 
 
-def phone(**seams):
-    led = types.SimpleNamespace(results=TMP, hedges=[], settled=[], orders=list(ORDERS))
-    led.refresh = lambda: None
-    led.bank = lambda: {"bank": 1000.0}
+def phone(led=None, **seams):
+    if led is None:
+        led = types.SimpleNamespace(results=TMP, hedges=[], settled=[], orders=list(ORDERS))
+        led.refresh = lambda: None
+        led.bank = lambda: {"bank": 1000.0}
     ph = pp.Phone({"chat_id": 7, "secret": "s"}, pp.FakeTelegram(), ledger=led, now_fn=lambda: T,
                   health_fn=lambda: {"alive": True}, procs_fn=lambda: [])
     ph.bs_procs = []
@@ -117,6 +122,16 @@ def old_and_new(ph, text="/server", role=True):
     return old, c_old, new, c_new
 
 
+WORTH_HEAD, MACHINE_HEAD = "🏆 <b>Worth of the move", "⚙️ <b>Machine</b>"
+
+
+def without_worth(s):
+    """The new page minus its worth-of-the-move section (11-05): what the frozen legacy page must still equal."""
+    a, b = s.find(WORTH_HEAD), s.find(MACHINE_HEAD)
+    assert 0 <= a < b, "the worth section sits between the header and the machine block: %r" % s[:400]
+    return s[:a] + s[b:]
+
+
 # ---- the declaration -------------------------------------------------------------------------------------------------
 def test_declared_like_help():
     import tgcharts
@@ -141,7 +156,7 @@ def test_pinphone_reexports_the_same_objects():
 
 def test_only_aws_has_urllib():
     d = os.path.join(RESEARCH, "phone", "commands")
-    for f in ("machine.py", "page.py", "__init__.py"):
+    for f in ("machine.py", "page.py", "__init__.py", "worth.py"):
         with open(os.path.join(d, "server", f), encoding="utf-8") as fh:
             assert not re.search(r"^\s*(import|from)\s+urllib", fh.read(), re.M), f
     with open(os.path.join(d, "server", "aws.py"), encoding="utf-8") as fh:
@@ -165,11 +180,14 @@ def test_command_identical_to_phone():
             with active(bots):
                 ph = phone()
                 old, c_old, new, c_new = old_and_new(ph, "/Server@kalsbot", role)
-            assert type(new) is type(old) is Html and str(new) == str(old), (bots, role, str(new)[:300])
+            assert type(new) is type(old) is Html and without_worth(str(new)) == str(old), (bots, role, str(new)[:300])
             assert [c[:2] for c in c_new] == [c[:2] for c in c_old] and c_new, "the same AWS calls, in the same order"
             assert not tg_html_problems(new)
             assert ("This month so far: <b>$1.23</b>" in str(new)) is role, str(new)
             assert ("Cost Explorer read: AccessDeniedException (HTTP 403): not enabled" in str(new)) is role
+            # the fixture's two server orders are under the bar and no pin market has settled: the section says so
+            assert "🏆 <b>Worth of the move: too early to tell</b> (2 pin orders on the server, 3 days 0 h; none of the " \
+                   "server's filled pin markets has settled yet)" in str(new), str(new)
 
 
 def test_pots_failure_is_named_on_the_page():
@@ -178,7 +196,135 @@ def test_pots_failure_is_named_on_the_page():
     with active(("pin",)):
         ph = phone(pots_fn=bad)
         old, _a, new, _b = old_and_new(ph)
-    assert str(new) == str(old) and "botstats' cache could not be read (cache locked)" in str(new)
+    assert without_worth(str(new)) == str(old) and "botstats' cache could not be read (cache locked)" in str(new)
+
+
+# ---- the worth of the move (11-05) --------------------------------------------------------------------------------------
+def _wj(name, rows, mtime):
+    p = os.path.join(WTMP, name)
+    with open(p, "w", encoding="utf-8") as fh:
+        for r in rows:
+            fh.write(json.dumps(r) + "\n")
+    os.utime(p, (mtime, mtime))
+
+
+def worth_world():
+    """Pin logs in WTMP. Home (the laptop's last 14 days): a close_summary row every 15 min from H0 to SV except one
+    2-hour hole (8 closes) and Kalshi's Wednesday maintenance (135 min from WED), 3 conn_events. Server: a row every
+    15 min from SV to T, 1 conn_event, 60 settled markets at $0.20 each. Orders: 20 at home (7 of 10 filled), 60 on the
+    server (8 of 10 filled, 480 of 600 contracts). Returns the Ledger's order rows."""
+    hole0 = H0 + 3 * 86400
+    rows = []
+    t = H0 + 300
+    while t < SV:
+        if not (hole0 <= t < hole0 + 8 * 900) and not (WED <= t < WED + 135 * 60):
+            rows.append({"kind": "close_summary", "t": _iso(t), "close": t})
+        t += 900
+    rows += [{"kind": "conn_event", "t": _iso(H0 + 86400 * (k + 1)), "event": "stale_replaced"} for k in range(3)]
+    _wj("pinrun-live-20261013T000000Z.jsonl", rows, SV - 60)
+    rows = []
+    t = SV + 300
+    while t < T:
+        rows.append({"kind": "close_summary", "t": _iso(t), "close": t})
+        t += 900
+    rows.append({"kind": "conn_event", "t": _iso(SV + 3600), "event": "read_retry"})
+    rows += [{"kind": "settled", "t": _iso(SV + 1000 + i * 900), "ticker": "S%d" % i, "pnl_c": 20.0} for i in range(60)]
+    _wj("pinrun-live-20261027T042114Z.jsonl", rows, T)
+    orders = [{"t": H0 + 3600 * (i + 1), "tk": "H%d" % i, "filled": 7, "asked": 10, "latency_ms": 45,
+               "file": "pinrun-live-a.jsonl"} for i in range(20)]
+    orders += [{"t": SV + 900 * (i + 1), "tk": "S%d" % i, "filled": 8, "asked": 10, "latency_ms": 13,
+                "file": "pinrun-live-b.jsonl"} for i in range(60)]
+    return orders
+
+
+def worth_ledger(orders, bank=1000.0):
+    led = types.SimpleNamespace(results=WTMP, hedges=[], settled=[], orders=list(orders))
+    led.refresh = lambda: None
+    led.bank = lambda: {"bank": bank}
+    return led
+
+
+def test_maintenance_rule():
+    assert WO.is_maintenance(WED - 600, 9000), "a Wednesday gap from 06:50Z lasting 2 h 30 min is Kalshi's"
+    assert not WO.is_maintenance(WED + 86400 - 600, 9000), "the same gap on a Thursday is a stop"
+    assert not WO.is_maintenance(WED - 600, 4 * 3600), "a Wednesday gap of 4 hours is a stop"
+    assert not WO.is_maintenance(WED + 2 * 3600, 9000), "a Wednesday gap from 09:00Z is a stop"
+
+
+def test_server_worth_numbers():
+    orders = worth_world()
+    w = WO.server_worth(orders, WTMP, T, bank=1000.0)
+    assert w["home"]["n"] == 20 and w["srv"]["n"] == 60
+    assert abs(w["home"]["got_share"] - 0.7) < 1e-9 and abs(w["srv"]["got_share"] - 0.8) < 1e-9
+    assert abs(w["money"]["per"] - 12.0 / 480) < 1e-9 and w["money"]["markets"] == 60
+    assert abs(w["est"]["extra"] - 60.0) < 1e-6 and abs(w["est"]["usd"] - 1.50) < 1e-6, w["est"]
+    hourly = AW.aws_estimate(T)["hourly"]
+    cost = hourly * (T - AW.AWS_BILLED_FROM_EPOCH) / 3600.0
+    assert abs(w["cost"] - cost) < 1e-9 and abs(w["net"] - (1.50 - cost)) < 1e-9 and abs(w["per_day"] - w["net"] / 3) < 1e-9
+    assert abs(w["matched"] - 1.50) < 1e-6, "every order asked 10: matching by size changes nothing"
+    rh, rs = w["rec_home"], w["rec_srv"]
+    assert rh["closes"] == 14 * 96 - 8 - 9 and rh["gaps"] == 1 and rh["missed"] == 8 and rh["maint"] == 1 \
+        and rh["conn"] == 3, rh
+    assert abs(rh["longest"][1] - 9 * 900) < 1e-6 and abs(rh["hours"] - 2.25) < 1e-9
+    assert rs["closes"] == 288 and rs["gaps"] == 0 and rs["missed"] == 0 and rs["maint"] == 0 and rs["conn"] == 1, rs
+    assert abs(w["per_close"] - 12.0 / 288) < 1e-9 and abs(w["stop_rate"] - 8.0 / (1327 + 8)) < 1e-12
+    assert abs(w["laptop_style"] - w["stop_rate"] * 288 * w["per_close"]) < 1e-9
+
+
+def test_worth_lines_words():
+    w = WO.server_worth(worth_world(), WTMP, T, bank=1000.0)
+    s = "\n".join(WO.worth_lines(w))
+    net = w["net"]
+    assert s.startswith("🏆 <b>Worth of the move: 🔴 -$%.2f net so far</b> (3 days 0 h on the server: speed added +$1.50 in "
+                        "pin fills, the server cost $%.2f) · about <b>-$%.2f a day</b> · %+.2f%% of the main account's "
+                        "$1,000.00 bank · an estimate, not a proof" % (-net, w["cost"], -net / 3, 100 * net / 1000)), s
+    assert "Speed: (80.0% - 70.0% got of asked) x 600 asked here = +60 extra contracts x +$0.0250 each = <b>+$1.50</b>, " \
+           "the /speed figure; matched by order size (the server's orders are bigger) it reads <b>+$1.50</b>" in s, s
+    assert "Cost: $1.69 a day from the price list since the first boot (Oct 26 11:05 PM ET) = <b>$%.2f</b>; AWS's own " \
+           "bill needs the billing role (<code>/server help</code>)" % w["cost"] in s, s
+    assert "Record: the laptop missed 8 closes (1 stop, the longest 2 h 15 min from Oct 16 12:10 AM ET), 3 connection " \
+           "hiccups in its last 14 days; the server missed 0 closes, 1 connection hiccup in 3 days 0 h. Kalshi's " \
+           "Wednesday maintenance (1 gap and 0 gaps) is left out of both." in s, s
+    assert "At the server's +$0.04 a close, the laptop's stop rate (0.6% of its closes) would have cost about " \
+           "<b>+$0.07</b> here: shown, not added" in s, s
+    assert "a gap over 20 min between rows is a stop" in s
+    assert not tg_html_problems(Html(s))
+    # no bank: the % of bank is left out, nothing else changes
+    s2 = "\n".join(WO.worth_lines(WO.server_worth(worth_world(), WTMP, T, bank=None)))
+    assert "of the main account's" not in s2 and "an estimate, not a proof" in s2
+    # too early: under the bar, the headline says so and still gives the figure
+    s3 = "\n".join(WO.worth_lines(w, min_orders=100))
+    assert "⏳ too early: 60 orders, the bar is 100" in s3 and "net so far</b>" in s3
+    # could not be worked
+    s4 = "\n".join(WO.worth_lines({"err": "boom"}))
+    assert s4 == "🏆 <b>Worth of the move</b>: could not be worked (boom). /speed has the fill figures."
+
+
+def test_worth_on_the_page_and_the_rest_identical():
+    """With the worth world planted the page carries the section and, without it, is still the frozen legacy page."""
+    with active(("pin",)):
+        ph = phone(led=worth_ledger(worth_world()))
+        old, _a, new, _b = old_and_new(ph)
+    s = str(new)
+    assert without_worth(s) == str(old) and "🏆 <b>Worth of the move: 🔴 -$" in s and not tg_html_problems(new), s[:600]
+    assert s.index(WORTH_HEAD) < s.index(MACHINE_HEAD) < s.index("💰 <b>Funds"), "the section sits under the header"
+    # a bank read that fails costs only the % of bank; a worth that fails names itself and the page still shows
+    led = worth_ledger(worth_world())
+    led.bank = lambda: 1 / 0
+    with active(("pin",)):
+        ph = phone(led=led)
+        old, _a, new, _b = old_and_new(ph)
+    assert without_worth(str(new)) == str(old) and "of the main account's" not in str(new)
+    saved = PG.server_worth
+    PG.server_worth = lambda *a, **k: 1 / 0
+    try:
+        with active(("pin",)):
+            ph = phone()
+            old, _a, new, _b = old_and_new(ph)
+    finally:
+        PG.server_worth = saved
+    assert without_worth(str(new)) == str(old)
+    assert "🏆 <b>Worth of the move</b>: could not be worked (division by zero). /speed has the fill figures." in str(new)
 
 
 def test_command_failure_wall_identical():
