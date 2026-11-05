@@ -642,3 +642,15 @@
 {"note": "", "pair": ["F-O07", "F-X06"], "t": "2026-11-04T08:50:57Z", "verdict": "nothing"}
 {"note": "", "pair": ["F-I02", "F-M03"], "t": "2026-11-04T08:50:57Z", "verdict": "nothing"}
 {"note": "", "pair": ["F-X03", "F-X06"], "t": "2026-11-04T08:50:57Z", "verdict": "nothing"}
+{"pair": ["F-C05", "F-P06"], "t": "20261105T0848Z", "verdict": "drawn"}
+{"pair": ["F-P07", "F-X03"], "t": "20261105T0848Z", "verdict": "drawn"}
+{"pair": ["F-B01", "F-I07"], "t": "20261105T0848Z", "verdict": "drawn"}
+{"pair": ["F-P10", "F-R05"], "t": "20261105T0848Z", "verdict": "drawn"}
+{"pair": ["F-I06", "F-M10"], "t": "20261105T0848Z", "verdict": "drawn"}
+{"pair": ["F-M04", "F-M12"], "t": "20261105T0848Z", "verdict": "drawn"}
+{"note": "structural half is already computed in production (F-M01 evaluates fair from locked_sum every second); realised half has ~22-40 hedge events in all live history, no power (LEADS_20261019)", "pair": ["F-C05", "F-P06"], "t": "2026-11-05T08:52:59Z", "verdict": "nothing"}
+{"note": "X03's improvement comes from resting orders better than our limit; a sell at the touch gets the touch, no improvement to find. Only measurable is depth at the 23c bid for our size, which can only strengthen an already-settled never-exit-early", "pair": ["F-P07", "F-X03"], "t": "2026-11-05T08:52:59Z", "verdict": "nothing"}
+{"note": "no shared quantity: a silently skipped ticker does not touch autosize, which reads bank only. A per-refresh universe-count monitor is new data collection, not a measurement from data we hold", "pair": ["F-B01", "F-I07"], "t": "2026-11-05T08:52:59Z", "verdict": "nothing"}
+{"note": "the insight is correct (the tape's population IS the maker's, so R05's 31x does not bite a maker measurement) but the number it licenses is already measured: MAKER_SIM_2026-09-24 s3 ran it tau- and band-conditioned under three queue models and it is negative in every band, monotone worse as tau falls, -7.84c/contract at 0-10s. Reverses P10's +0.48c", "pair": ["F-P10", "F-R05"], "t": "2026-11-05T08:53:06Z", "verdict": "nothing"}
+{"note": "same section, same stage (RESULTS_flood) and F-M08 already decomposes M04 by volatility fifth. The only new question is whether the two calmness signals are redundant; the well-powered continuous version answers the wrong question (the business is the 3-sigma tail, and both facts say the tail is non-monotone in vol) and the tail version needs a 25-cell table on ~1,800 effective observations at a 2-5% base rate, ~2 events a cell", "pair": ["F-M04", "F-M12"], "t": "2026-11-05T08:53:06Z", "verdict": "nothing"}
+{"note": "settlewin.partial() mean-imputes up to 3 of 60 settlement prints with no log line (min_frac=0.95, default live at endgame.py:333) -- census the prints per settlement window and validate our reconstruction against Kalshi's own published settle level", "pair": ["F-I06", "F-M10"], "t": "2026-11-05T08:53:09Z", "verdict": "lead"}
