@@ -72,6 +72,7 @@ def block(c, bank, shown, cut=None):
                                                  esc(c["last_engaged"] or "?"),
                                                  (" · %d open" % c["open"]) if c["open"] else ""))
     out.append("%s net <b>%s</b>%s" % (_mark(c["net_usd"]), esc(usd(c["net_usd"])), esc(_pct(c["net_usd"], bank))))
+    out += [esc(x) for x in c.get("extra") or []]         # K: the skips without the rule, the window with and without
     for e in c["events"][-shown:] if shown else []:
         out.append("  %s · %s · %s · %s" % (esc(e["et"] or "?"), esc(e["coin"]),
                                          esc(usd(e["usd"]) if e["usd"] is not None else "open"), esc(_cut(e["words"], cut))))

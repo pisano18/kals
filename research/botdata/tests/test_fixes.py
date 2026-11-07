@@ -197,7 +197,7 @@ def _report(paths=None, now=NOW):
 def test_shape_and_sinces():
     d = tempfile.mkdtemp(prefix="fixes-test-")
     rep = _report(write_logs(d))
-    ck("".join(sorted(rep)) == F.IDS, "ten changes A..J, one row each")
+    ck("".join(sorted(rep)) == F.IDS, "eleven changes A..K, one row each")
     for c in rep.values():
         ck(set(c) >= {"id", "name", "what", "since", "engaged", "last_engaged", "open", "net_usd", "events"},
            "%s carries every field" % c["id"])
@@ -208,6 +208,8 @@ def test_shape_and_sinces():
     ck(rep["C"]["since"] == "Nov 2 8:35 AM ET", "C since 11-02 08:35 ET")
     for k in "DEFGHIJ":
         ck(rep[k]["since"] == "Nov 5 12:00 AM ET", "%s since the new build's start (not the 10-31 sha before 0925r)" % k)
+    ck(rep["K"]["since"] is None and rep["K"]["engaged"] == 0 and rep["K"]["extra"] == [],
+       "K is not live before a start record names a cheap_window")
 
 
 def test_rules_abc_reuse_pinrules_watch():
@@ -282,7 +284,7 @@ def test_not_live_yet_and_empty():
     d = tempfile.mkdtemp(prefix="fixes-test-")
     ps = write_logs(d)
     rep = _report(ps[:2])                                  # the 0925r run only: D..J are not live
-    for k in "DEFGHIJ":
+    for k in "DEFGHIJK":
         ck(rep[k]["since"] is None and rep[k]["engaged"] == 0 and rep[k]["net_usd"] == 0.0 and rep[k]["events"] == [],
            "%s not live yet" % k)
     ck(rep["I"]["what"] == "up to 5 positions open at once (was 3)", "the new flags' words before the build is live")
@@ -291,6 +293,84 @@ def test_not_live_yet_and_empty():
     ck(all(c["engaged"] == 0 for c in rep.values()) and rep["A"]["since"] and rep["D"]["since"] is None, "no logs at all")
     rep = _report([os.path.join(d, "missing.jsonl")])
     ck(all(c["engaged"] == 0 for c in rep.values()), "a missing log is tolerated")
+
+
+NOW_K = 1794080400.0               # 2026-11-07T19:00:00Z = 2:00 PM ET
+
+
+def run_k(recs):
+    """The 0925u run (11-07 07:00 ET on, --cheap-window 6 10 0.98): K. Every $ worked by hand: a skipped market holds
+    n_ask x 0.78 / 0.83 contracts at the ladder's average price, plus its shadow hedge (hedge_mult x those, fee in)."""
+    T = "2026-11-07T%s:%s:%sZ"
+    recs += [
+        _r("start", T % ("12", "00", "00"), code_sha="0e0e0e0e0e0e", cheap_window=[6.0, 10.0, 0.98]),
+        # K, FLIPPED (BNB 8:15 AM): 193.81 x 0.78 / 0.83 = 182.13 No at 97.287c lost 177.19 + fee 0.34 = -177.53; the
+        # shadow hedge, 1.25 x = 227.67 Yes at 70c, made 68.30 - fee 3.35 = +64.95: the buy would have lost 112.58
+        _r("refused", T % ("13", "14", "15"), gate="cheap_window", ticker="KXBNB15M-26NOV070815-15", close_s=1794057300,
+           want="no", leg="early", tau=45, price=0.97, fair=0.00013, window=[6.0, 10.0, 0.98], size=110.76,
+           n_ask=193.81, px=0.97287, lim=0.98, got=193.81, size_now=388.0),
+        _r("cheap_window_settled", T % ("13", "15", "40"), ticker="KXBNB15M-26NOV070815-15", close_s=1794057300,
+           result="yes", won=False, want="no", price=0.97, n_ask=193.81, px=0.97287, got=193.81, lim=0.98, tau=45,
+           leg="early", hedge_px=0.70, hedge_tau=23, hedge_belief=0.34116, hedge_mult=1.25, window=[6.0, 10.0, 0.98]),
+        # K, WON (ETH 7:30 AM): 50 x 0.78 / 0.83 = 46.99 Yes at 97.5c made 1.17 - fee 0.09 = +1.08: the rule gave it up
+        _r("refused", T % ("12", "29", "40"), gate="cheap_window", ticker="KXETH15M-26NOV070730-30", close_s=1794054600,
+           want="yes", leg="full", tau=20, price=0.975, fair=0.996, window=[6.0, 10.0, 0.98], size=50.0, n_ask=50.0,
+           px=0.975, lim=0.98, got=50.0, size_now=388.0),
+        _r("cheap_window_settled", T % ("12", "30", "45"), ticker="KXETH15M-26NOV070730-30", close_s=1794054600,
+           result="yes", won=True, want="yes", price=0.975, n_ask=50.0, px=0.975, hedge_px=None, window=[6.0, 10.0, 0.98]),
+        # K, OPEN (SOL 9:45 AM): no shadow result yet (1 h 15 m past its close at NOW_K: pending, not unknown)
+        _r("refused", T % ("14", "44", "30"), gate="cheap_window", ticker="KXSOL15M-26NOV070945-45", close_s=1794062700,
+           want="no", leg="full", tau=30, price=0.96, fair=0.003, window=[6.0, 10.0, 0.98], size=20.0, n_ask=40.0,
+           px=0.962, lim=0.98, got=40.0, size_now=388.0),
+        # another gate's refusal is not K's
+        _r("refused", T % ("13", "29", "50"), gate="wrong_side", ticker="KXXRP15M-26NOV070830-30", close_s=1794058200,
+           want="yes", tau=10, price=0.97),
+        # the window as pin traded it: a kept 98.5c buy closing 8:30 AM (+1.50) counts, an 11:30 AM close does not
+        _r("settled", T % ("13", "30", "20"), ticker="KXZEC15M-26NOV070830-30", want="yes", result="yes", cost=0.985,
+           pnl_c=150.0),
+        _r("settled", T % ("16", "30", "20"), ticker="KXETH15M-26NOV071130-30", want="no", result="no", cost=0.99,
+           pnl_c=500.0),
+    ]
+    return recs
+
+
+def test_k_cheap_window():
+    d = tempfile.mkdtemp(prefix="fixes-test-")
+    ps = write_logs(d)
+    p = os.path.join(d, "pinrun-live-20261107T101819Z.jsonl")
+    with open(p, "w", encoding="utf-8") as fh:
+        for r in run_k([]):
+            fh.write(json.dumps(r) + "\n")
+    rep = _report(ps + [p], now=NOW_K)
+    K = rep["K"]
+    ck(K["since"] == "Nov 7 7:00 AM ET" and K["engaged"] == 3 and K["open"] == 1,
+       "K: since the first start naming a cheap window; three skips, one open: %s" % {x: K[x] for x in ("since", "engaged", "open")})
+    w = {e["coin"]: e for e in K["events"]}
+    ck(w["BNB"]["usd"] == 112.58 and "FLIPPED" in w["BNB"]["words"] and "would have lost $112.58" in w["BNB"]["words"]
+       and "Yes hedge pin would have bought at 70.0c" in w["BNB"]["words"] and "saved" in w["BNB"]["words"]
+       and "skipped a first No buy at 97.0c with 45 s left (about 182 contracts)" in w["BNB"]["words"],
+       "K flipped: -177.53 + 64.95 = -112.58 without the rule, +112.58 saved: %s" % w["BNB"])
+    ck(w["ETH"]["usd"] == -1.08 and "WON" in w["ETH"]["words"] and "would have made $1.08" in w["ETH"]["words"]
+       and "gave up" in w["ETH"]["words"] and "hedge" not in w["ETH"]["words"],
+       "K won: +1.08 without the rule, -1.08 given up: %s" % w["ETH"])
+    ck(w["SOL"]["usd"] is None and w["SOL"]["open"] and "XRP" not in w,
+       "K open: no $ until its shadow settles; another gate's refusal is not K's")
+    ck(K["net_usd"] == 111.5, "K net: +112.58 - 1.08 = +111.50: %s" % K["net_usd"])
+    ck(K["extra"] == ["without the rule: the 2 settled skips would have lost $111.50 (1 won, 1 flipped, hedges in) "
+                      "\u00b7 1 still open",
+                      "closes 6 AM to 10 AM ET since the rule (1 settled market): pin made +$1.50 with it, -$110.00 without it"],
+       "K extra: the skips without the rule, and the window with (+1.50) and without (+1.50 - 111.50): %s" % K["extra"])
+    ck(K["what"] == "no first buy under 98.0c in a market closing 6 AM to 10 AM ET (the market is skipped); each skip is "
+                    "priced by what it would have done", "K what, off the start record: %s" % K["what"])
+    T = F.totals(list(rep.values()))
+    ck(T["net_usd"] == round(sum(c["net_usd"] for k, c in rep.items() if k != "J"), 2) and T["engaged"] == 18,
+       "totals take K in (15 + 3 engagements): %s" % T)
+    ck(F.cw_in_window(1794054600, [6, 10]) and F.cw_in_window(1794049200, [6, 10]) and not F.cw_in_window(1794063600, [6, 10])
+       and not F.cw_in_window(1794048300, [6, 10]) and F.cw_in_window(1792836000, [6, 10]) and not F.cw_in_window(None, [6, 10]),
+       "cw_in_window: 7:30 and 6:00 in, 10:00 and 5:45 out (EST), 06:00 EDT on 10-24 in, no close out")
+    ck(F.cw_shadow_usd({"result": None}) is None and F.cw_shadow_usd({"result": "no", "want": "no", "n_ask": 0}) == 0.0
+       and F._hour(6) == "6 AM" and F._hour(10) == "10 AM" and F._hour(12) == "12 PM" and F._hour(15) == "3 PM"
+       and F._hour(24) == "12 AM", "K helpers")
 
 
 def test_default_paths_through_botdata():

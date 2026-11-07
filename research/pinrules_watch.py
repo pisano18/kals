@@ -97,9 +97,11 @@ RULE_WHAT = {"A": "skip a later buy when the index is across the line and our pr
 RAIL_WORDS = {"band_boost_off": ("band", "the 1.5x band boost (buys priced 95.5c to 98.1c)"),
               "late_boost_off": ("late", "the 1.5x last-10-seconds boost")}
 RESTART_REMEDY = "A restart while flat puts it back on: /approve pinrestart"
-# the tracked changes D..J (botdata.fixes) and the verb each one's $ takes (+ / -)
-FIX_POS = {"D": "MADE", "E": "MADE", "F": "SAVED", "G": "SAVED", "H": "SAVED", "I": "MADE", "J": "MADE"}
-FIX_NEG = {"D": "LOST", "E": "COST", "F": "GAVE UP", "G": "GAVE UP", "H": "GAVE UP", "I": "LOST", "J": "LOST"}
+# the tracked changes D..K (botdata.fixes) and the verb each one's $ takes (+ / -); K (v-cheapwin, 11-07) is a skipped
+# cheap morning buy: + = its shadow lost (saved), - = its shadow won (gave up)
+FIX_POS = {"D": "MADE", "E": "MADE", "F": "SAVED", "G": "SAVED", "H": "SAVED", "I": "MADE", "J": "MADE", "K": "SAVED"}
+FIX_NEG = {"D": "LOST", "E": "COST", "F": "GAVE UP", "G": "GAVE UP", "H": "GAVE UP", "I": "LOST", "J": "LOST",
+           "K": "GAVE UP"}
 
 
 # ---------------------------------------------------------------------------
@@ -941,6 +943,35 @@ def self_test(log_path):
     if due:
         st2["fix_alerted"].append(fix_id(*due[0]))
     check("change alert once, never twice", len(new_fix_events(ch, st2)), 0, 0)
+    # v-cheapwin (3): change K (cheap morning skip): a skipped BNB 8:15 AM No buy whose shadow FLIPPED (the buy would
+    # have lost $112.58 with its hedge) is a SAVED alert; a skip whose shadow won $1.08 is under the line
+    tkK, tkK2 = "KXBNB15M-26NOV070815-15", "KXETH15M-26NOV070730-30"
+    rowsK = [dict(kind="start", t="2026-11-07T12:00:00Z", code_sha="0925u0000000", pid=1, live=True,
+                  cheap_window=[6.0, 10.0, 0.98]),
+             dict(kind="refused", gate="cheap_window", ticker=tkK, close_s=calendar.timegm((2026, 11, 7, 13, 15, 0)),
+                  want="no", leg="early", tau=45, price=0.97, n_ask=193.81, px=0.97287, t="2026-11-07T13:14:15Z"),
+             dict(kind="cheap_window_settled", ticker=tkK, close_s=calendar.timegm((2026, 11, 7, 13, 15, 0)),
+                  result="yes", won=False, want="no", n_ask=193.81, px=0.97287, hedge_px=0.70, hedge_mult=1.25,
+                  t="2026-11-07T13:15:40Z"),
+             dict(kind="refused", gate="cheap_window", ticker=tkK2, close_s=calendar.timegm((2026, 11, 7, 12, 30, 0)),
+                  want="yes", leg="full", tau=20, price=0.975, n_ask=50.0, px=0.975, t="2026-11-07T12:29:40Z"),
+             dict(kind="cheap_window_settled", ticker=tkK2, close_s=calendar.timegm((2026, 11, 7, 12, 30, 0)),
+                  result="yes", won=True, want="yes", n_ask=50.0, px=0.975, hedge_px=None, t="2026-11-07T12:30:45Z")]
+    pK = os.path.join(d, "pinrun-live-20261107T120000Z.jsonl")
+    with open(pK, "w", encoding="utf-8") as fh:
+        for r in rowsK:
+            fh.write(json.dumps(r) + "\n")
+    chK = FX.report(paths=[pK], now=float(calendar.timegm((2026, 11, 7, 19, 0, 0))))
+    dueK = new_fix_events(chK, {"fix_alerted": []})
+    check("change K: one $10+ engagement is due (the skip that flipped; the $1.08 one is under the line)", len(dueK), 1, 1)
+    ftK = fix_text(dueK[0][0], dueK[0][1], FX.totals(chK), 3308.36) if dueK else ""
+    print()
+    print(ftK)
+    want_ftK = ("PIN CHANGE SAVED $112.58", "K cheap morning skip", "BNB", "Nov 7 8:14 AM ET", "FLIPPED",
+                "would have lost $112.58", "no first buy under 98.0c", "/fixes")
+    check("change K text: SAVED and $, the change, the coin, the time, what happened (%d phrases)" % len(want_ftK),
+          sum(1 for w in want_ftK if w in ftK), len(want_ftK), len(want_ftK))
+    rt = rt + ftK                                    # the em-dash check below reads this alert too
     check("no em dash in any alert text", (chr(0x2014) in rt) or (chr(0x2014) in ft), False, False)
     print()
     print(alert_text(hy_e, run, 2628.63))

@@ -103,20 +103,41 @@ def test_page_over_the_synthetic_logs():
         paths.set_results(old)
 
 
+def test_k_cheap_window_block():
+    """v-cheapwin: K's block carries its net, the skips without the rule and the window with / without it."""
+    old, td = _world()
+    try:
+        with open(os.path.join(td, "pinrun-live-20261107T101819Z.jsonl"), "w", encoding="utf-8") as fh:
+            for r in TF.run_k([]):
+                fh.write(json.dumps(r) + "\n")
+        F._CACHE.clear()
+        s = str(_run(now=TF.NOW_K))
+        assert len(s) <= MAX_LEN, len(s)
+        blk = s.split("<b>K cheap morning skip</b>")[1]
+        assert blk.startswith("\nno first buy under 98.0c in a market closing 6 AM to 10 AM ET"), blk[:200]
+        assert "since Nov 7 7:00 AM ET\nengaged 3 times, last Nov 7 9:44 AM ET · 1 open\n🟢 net <b>+$111.50</b>" in blk, blk
+        assert ("\nwithout the rule: the 2 settled skips would have lost $111.50 (1 won, 1 flipped, hedges in) · 1 still "
+                "open\ncloses 6 AM to 10 AM ET since the rule (1 settled market): pin made +$1.50 with it, -$110.00 "
+                "without it\n") in blk, blk
+        assert "—" not in s
+    finally:
+        paths.set_results(old)
+
+
 def test_before_the_new_build_and_empty_folder():
     old, td = _world()
     try:
         os.remove(os.path.join(td, "pinrun-live-20261105T050000Z.jsonl"))
         F._CACHE.clear()
         s = str(_run())
-        assert s.count("not live yet (comes with the new build)") == 7, s
+        assert s.count("not live yet (comes with the new build)") == 8, s   # D..J and K
         assert "<b>I max positions 5</b>\nup to 5 positions open at once (was 3)\nnot live yet" in s
         assert "engaged 2 times, last Nov 2 11:44 AM ET · 1 open\n🟢 net <b>+$85.15</b>" in s, s
         for p in os.listdir(td):
             os.remove(os.path.join(td, p))
         F._CACHE.clear()
         s = str(_run())                                        # the smoke's real folder may hold no pin log at all
-        assert s.count("not engaged yet") == 3 and s.count("not live yet") == 7 and "⚪ <b>All changes: net $0.00</b>" in s, s
+        assert s.count("not engaged yet") == 3 and s.count("not live yet") == 8 and "⚪ <b>All changes: net $0.00</b>" in s, s
         assert "(+0.00% of the bank)" in s and "engaged 0 times" in s
     finally:
         paths.set_results(old)
@@ -131,16 +152,16 @@ def test_size_limit_trims_events_first():
             c["events"] = [{"et": "Nov 5 1:00 AM ET", "coin": "ZEC", "usd": 1.0, "words": "w" * 400, "open": False}] * 9
         s = str(FC.render(d, _ctx()))
         assert len(s) <= MAX_LEN and "engaged 9 times" in s and "w" * 400 not in s, (len(s), s[:300])
-        assert s.count("w" * 59 + "…") == 10, "one event per change, its words cut to 60"
+        assert s.count("w" * 59 + "…") == 11, "one event per change, its words cut to 60"
         for c in d["changes"]:
             c["events"] = c["events"][:1]
             c["events"][0] = dict(c["events"][0], words="x" * 2000)
         s = str(FC.render(d, _ctx()))
-        assert len(s) <= MAX_LEN and "x" * 2000 not in s and s.count("x" * 59 + "…") == 10, "one cut event each"
+        assert len(s) <= MAX_LEN and "x" * 2000 not in s and s.count("x" * 59 + "…") == 11, "one cut event each"
         for c in d["changes"]:
             c["what"] = "y" * 300                              # the blocks alone are over the limit: no events at all
         s = str(FC.render(d, _ctx()))
-        assert "xxxx" not in s and s.count("y" * 300) == 10, "when even one cut event each does not fit, the blocks alone"
+        assert "xxxx" not in s and s.count("y" * 300) == 11, "when even one cut event each does not fit, the blocks alone"
         for c in d["changes"]:
             c["what"], c["events"] = "short", []
         d["changes"][0]["events"] = [{"et": "Nov 5 1:00 AM ET", "coin": "ZEC", "usd": 1.0, "words": "w" * 400, "open": False}]
