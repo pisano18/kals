@@ -59,7 +59,7 @@ def block(c, bank, shown, cut=None):
     """One change: name, what, since, engaged / last, net, the last `shown` events (their words cut to `cut` chars)."""
     out = ["<b>%s %s</b>" % (esc(c["id"]), esc(c["name"])), esc(c["what"])]
     if not c["since"]:
-        out.append("not live yet (comes with the new build)")
+        out.append(c.get("not_live") or "not live yet (comes with the new build)")   # L: its own words (fixes.L_NOT_LIVE)
         return out
     out.append("since %s" % esc(c["since"]))
     if c.get("off") and not c["engaged"]:
@@ -72,15 +72,18 @@ def block(c, bank, shown, cut=None):
                                                  esc(c["last_engaged"] or "?"),
                                                  (" · %d open" % c["open"]) if c["open"] else ""))
     out.append("%s net <b>%s</b>%s" % (_mark(c["net_usd"]), esc(usd(c["net_usd"])), esc(_pct(c["net_usd"], bank))))
-    out += [esc(x) for x in c.get("extra") or []]         # K: the skips without the rule, the window with and without
+    out += [esc(x) for x in c.get("extra") or []]         # K: the skips without the rule, the window with and without;
+    #                                                       L: what the shadowed jump hedge would have paid / saved / made
     for e in c["events"][-shown:] if shown else []:
         out.append("  %s · %s · %s · %s" % (esc(e["et"] or "?"), esc(e["coin"]),
                                          esc(usd(e["usd"]) if e["usd"] is not None else "open"), esc(_cut(e["words"], cut))))
     return out
 
 
-# how the page shrinks to one message: fewer events first, then shorter event words, then no events (the blocks stay)
-PLAN = ((SHOWN, None), (2, None), (1, None), (1, 110), (1, 60), (0, None))
+# how the page shrinks to one message: fewer events first, then shorter event words, then no events (the blocks stay).
+# The 30-char step came with L (12 changes): one 60-char event per change no longer fits one message, one 30-char
+# event (the time, coin, $ and the first words) still does.
+PLAN = ((SHOWN, None), (2, None), (1, None), (1, 110), (1, 60), (1, 30), (0, None))
 
 
 def render(d, ctx):

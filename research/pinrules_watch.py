@@ -98,11 +98,13 @@ RULE_WHAT = {"A": "skip a later buy when the index is across the line and our pr
 RAIL_WORDS = {"band_boost_off": ("band", "the 1.5x band boost (buys priced 95.5c to 98.1c)"),
               "late_boost_off": ("late", "the 1.5x last-10-seconds boost")}
 RESTART_REMEDY = "A restart while flat puts it back on: /approve pinrestart"
-# the tracked changes D..K (botdata.fixes) and the verb each one's $ takes (+ / -); K (v-cheapwin, 11-07) is a skipped
-# cheap morning buy: + = its shadow lost (saved), - = its shadow won (gave up)
-FIX_POS = {"D": "MADE", "E": "MADE", "F": "SAVED", "G": "SAVED", "H": "SAVED", "I": "MADE", "J": "MADE", "K": "SAVED"}
+# the tracked changes D..L (botdata.fixes) and the verb each one's $ takes (+ / -); K (v-cheapwin, 11-07) is a skipped
+# cheap morning buy: + = its shadow lost (saved), - = its shadow won (gave up); L (v-0925v JS, 11-08) is the jump hedge
+# in shadow: + = the premium it would have paid stayed in the bank (kept), - = the save it would have made was missed
+FIX_POS = {"D": "MADE", "E": "MADE", "F": "SAVED", "G": "SAVED", "H": "SAVED", "I": "MADE", "J": "MADE", "K": "SAVED",
+           "L": "KEPT"}
 FIX_NEG = {"D": "LOST", "E": "COST", "F": "GAVE UP", "G": "GAVE UP", "H": "GAVE UP", "I": "LOST", "J": "LOST",
-           "K": "GAVE UP"}
+           "K": "GAVE UP", "L": "GAVE UP"}
 
 
 # ---------------------------------------------------------------------------

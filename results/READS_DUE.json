@@ -1078,6 +1078,22 @@
    "how": "results\\kalshi_watch.log on the server; phone /watch",
    "bar": "after 3 days: 0 false alarms on the phone; cfb_pdf either fetching or the check marked as 'site refuses' with no repeated alarm; every real Kalshi change in the window was caught",
    "status": "open"
+  },
+  {
+   "id": "jumphedge-shadow-sanity",
+   "due": "2026-11-15T12:00Z",
+   "what": "v-jumpshadow (pin_jumpshadow.ps1, 11-08): the jump hedge runs as a SHADOW (--hedge-jump-shadow 6 in place of --hedge-jump 6; --hedge-jump-max 8 and --jump-hedge-min-ask 0.05 kept; same build d51b131b55cf). 7-day sanity: is the shadow writing, and has it sent nothing?",
+   "how": "In results/pinrun-live-*.jsonl since the switch's start record (hedge_jump null, hedge_jump_shadow 6): count the jump_shadow records by outcome (would_send / capped / cheap_skip / no_ask / filtered / nothing_to_buy / error) and by coin, the would_send ones with their n, ask and ask_size; confirm 0 hedge / hedge_extra records whose trigger is 'jump' since the switch (the shadow sends nothing; a belief-line hedge with trigger 'belief' is the ordinary hedge and is fine); confirm every start record since the switch carries hedge_jump null and hedge_jump_shadow 6 (a restart that lost the flag would show hedge_jump 6).",
+   "bar": "PRE-REGISTERED 2026-11-08. OK = at least one jump_shadow record in 7 days (live 10-23..11-08 the alarm fired about 4 times a day) and 0 jump-triggered orders. A jump-triggered order = the shadow is not what it says; stop and read the code. Zero jump_shadow records in 7 days with jump moves on the tape = the shadow is not being written; read the log for errors before trusting the 12-07 read.",
+   "status": "open"
+  },
+  {
+   "id": "jumphedge-shadow-read",
+   "due": "2026-12-07T12:00Z",
+   "what": "v-jumpshadow (11-08): the jump hedge went to SHADOW because live 10-23..11-08 (15.5 days) it was -$295.21 at today's 376 contracts (57 false alarms paid $327.90 of insurance on bets that won; the 3 real flips added only $32.69 over the 0.40 belief line; -$32/day over 11-01..11-08), and every premium-cutting variant was dead (jh1108 REPORT / RESULTS / DECISION). The question this read answers: what would the jump hedge have made or lost since the switch, priced from the shadow's own records, and does it earn its way back?",
+   "how": "From the jump_shadow records with would_send true since the switch (one per position; capped / cheap_skip / no_ask / filtered / nothing_to_buy outcomes bought nothing and count $0), each joined to its market's result and to pin's own records on that position: (a) markets pin's side WON: the would-have-paid premium = n x ask (+ taker fee 0.07 x ask x (1 - ask) x n) at the shadow's ask, i.e. insurance thrown away; (b) markets that FLIPPED: the would-have-saved = n x (the belief-line hedge's real fill price on that position, or 1.00 if the belief line never covered) minus n x the shadow's ask, fees in; a position the belief line hedged in the same second is worth $0. Scale every position to today's SIZE (n x 376 / SIZE then). Net = (b) - (a); report both halves, the count of would_send alarms, the flips among them, the 10-20c ask bucket on its own (live 9 alarms 0 flips vs replay 4 fires 3 flips: the bucket the samples disagree on), and the day-to-day swing. Source: pin's live logs and the ledger (results/kalshi_ledger.json), never the replay. Fill assumption: a shadow ask is a quote, not a fill -- the live jump hedge filled 100% since the 11-04 tick fix, so (a) is not overstated; (b) assumes the full n at the ask, so state it as a ceiling.",
+   "bar": "PRE-REGISTERED 2026-11-08, before any shadow record exists. RE-ENABLE the jump hedge (the line pair back to \"--hedge-jump\", \"6\", in both launchers, rerun restart_bot while flat) ONLY if the net is >= +$5/day at today's size over >= 30 days of shadow records AND both halves are positive: the saves on flips (b) exceed the premiums on winners (a) AND the net stays positive with the single largest save removed. Anything else = the shadow stays and the read is renewed another 30 days. A net under -$150 (the jump hedge would have lost that much more) closes the question: delete the shadow read and leave the shadow on for the record. Report the answer in dollars a day next to the belief hedge's own result over the same days.",
+   "status": "open"
   }
  ]
 }

@@ -27,21 +27,32 @@ THE CHANGES and when each counts as engaged (the push-11-04 scoring table):
                         ladder's average price, plus the belief hedge it would have bought; + when that shadow lost
                         (saved), - when it won (gave up). The row also says what the window as a whole made with the
                         rule and what it would have made without it.
+  L jump hedge shadow   a jump_shadow record with would_send (v-0925v JS, 11-08: --hedge-jump-shadow 6 in place of
+                        --hedge-jump 6; the operator: "Keep working on jump hedge. It's a big problem currently"): the
+                        jump hedge pin WOULD have sent that second, sized as the send site sizes it, nothing sent. Priced
+                        as F prices a skipped jump hedge (pinrules_watch.score_B's method): bet won: + the premium kept
+                        (n x ask + fee), less what pin's odds-line hedge then really paid on those contracts; bet lost: -
+                        what it would have got back, less what the odds-line hedge really got back on those contracts.
+                        The row also says what the jump hedge itself would have made (paid on won markets vs saved on
+                        flips) and how many alarms the 8 sd cap or the 5c bar would have stopped anyway (not counted).
 A and B count from 11-01 15:37 ET, C from 11-02 08:35 ET, D to J from the first start record after the 0925r build
-(code_sha ca156bf45704) with another code_sha, K from the first start record that names a cheap_window. An engagement
-whose market has not settled is "open" (not in net $).
+(code_sha ca156bf45704) with another code_sha, K from the first start record that names a cheap_window, L from the
+first start record with hedge_jump_shadow set (pinrun refuses it next to --hedge-jump, so the jump hedge is off there).
+An engagement whose market has not settled is "open" (not in net $).
 
 A settled leg's pnl_c is pin's own figure for the whole leg, the taker fee INSIDE it (pinrun: pnl = filled * (1 - cost
 or -cost) - billed_fee(cost, filled)). A leg is matched by ticker, our side (want; a hedge leg's want is its hedge side),
 the nearest cost, then the nearest time; a leg is claimed once per change. Records of older builds may lack fields:
 every read is a .get with a default.
 
-    report(paths=None, now=None) -> [change dict per A..K]:
+    report(paths=None, now=None) -> [change dict per A..L]:
         {id, name, what, since (ET words or None = not live yet), since_t, engaged, last_engaged, last_t, open,
          net_usd, events: [{t, epoch, et, coin, words, usd (None while open), open}],
          off (True only for G while the launcher leaves --late-bypass-fix off: built, switched off),
-         extra (lines under the net; K's with / without the rule)}
-    totals(changes) -> {engaged, open, net_usd} over every change but J; J's leg is already inside C.
+         extra (lines under the net; K's with / without the rule; L's paid vs saved and the alarms not counted),
+         not_live (the phone's words while since is None, or None for the default)}
+    totals(changes) -> {engaged, open, net_usd} over every change but J; J's leg is already inside C. L is in: the
+        premium it keeps and the save it misses are pin's real money, as K's skipped buys are.
 """
 import calendar
 import json
@@ -62,10 +73,11 @@ import logfiles as _lf                    # noqa: E402  (a fix tracked past 60 d
 
 BASE_SHA = "ca156bf45704"                 # pin 0925r: D to J start at the first later start record with another sha
 UNKNOWN_AFTER_S = _rw.UNKNOWN_AFTER_S     # a market with no result 3 h after its close: "unknown", still open
-IDS = "ABCDEFGHIJK"
+IDS = "ABCDEFGHIJKL"
 NAMES = {"A": "later-buy check", "B": "jump cap", "C": "bigger hedge", "D": "boost rail", "E": "hedge tick",
          "F": "cheap jump skip", "G": "late-boost bypass fix", "H": "extra stake cap", "I": "max positions 5",
-         "J": "extra on odds", "K": "cheap morning skip"}
+         "J": "extra on odds", "K": "cheap morning skip", "L": "jump hedge shadow"}
+L_NOT_LIVE = "not live yet (comes with the next pin restart)"
 # K's shadow scale, measured on pin's live logs 10-16..11-07: orders with an ask under 98c filled 54,063 of the 69,390
 # contracts they asked for, and a market's first buy is 81% (flips) to 84% (wins) of its contracts -- the same on both
 # sides, so scaling the first refused buy up to the whole market tilts the score toward neither the rule nor against it
@@ -223,16 +235,44 @@ def _hour(h):
     return "%d %s" % (12 if h % 12 == 0 else h % 12, "AM" if h < 12 else "PM")
 
 
+def js_fills(r):
+    """L: the fill the shadow jump hedge would have made, [(n, ask)] (pinrun's jump_shadow_fields has already sized n
+    to the book's depth and the position's unhedged part), or [] when there is nothing to price."""
+    n, ask = _f((r or {}).get("n")), _f((r or {}).get("ask"), None)
+    return [(n, ask)] if n > 0 and ask is not None and 0.0 < ask < 1.0 else []
+
+
+def js_premium(r):
+    """L: what the shadow jump hedge would have paid up front, fee in: n x ask + Kalshi's fee (pinrules_watch.fee,
+    ceil(7 x ask x (1 - ask) x n) / 100)."""
+    return -_rw.value(js_fills(r), False)
+
+
+def js_outcome(r):
+    """L: the jump_shadow record's outcome (would_send, capped, cheap_skip, no_ask, filtered, nothing_to_buy, error);
+    a record without the field is read off its flags."""
+    oc = (r or {}).get("outcome")
+    if oc:
+        return str(oc)
+    if r.get("would_send"):
+        return "would_send"
+    if r.get("capped"):
+        return "capped"
+    if r.get("cheap_skip"):
+        return "cheap_skip"
+    return "other"
+
+
 # ---------------------------------------------------------------------------
 class Scan:
     """One pass over the logs for everything the D..J scores need (pinrules_watch.Logs holds A, B, C's)."""
 
     WANT = ('"start"', '"settled"', '"hedge"', '"hedge_extra"', '"hedge_quote"', '"band_boost"', '"late_boost"',
             '"boost_rail_kept"', '"hedge_cheap_skip"', '"late_bypass_refused"', '"extra_stake_capped"',
-            '"open_cap_relaxed"', '"order"', '"cheap_window')
+            '"open_cap_relaxed"', '"order"', '"cheap_window', '"jump_shadow"')
     LISTS = {"hedge": "hedges", "hedge_extra": "extras", "boost_rail_kept": "kept", "hedge_cheap_skip": "cheap",
              "late_bypass_refused": "late_bypass", "extra_stake_capped": "stake_capped", "open_cap_relaxed": "open_cap",
-             "order": "orders"}
+             "order": "orders", "jump_shadow": "shadow"}
 
     def __init__(self, paths):
         self.starts = []                      # (epoch, record, path)
@@ -273,7 +313,7 @@ class Scan:
                         quote[(tk, r.get("side"))] = r
                         continue
                     key = (k, tk, r.get("t"), r.get("want"), r.get("side"), r.get("cost"), r.get("price"), r.get("n"),
-                           r.get("client_order_id"), r.get("leg"), r.get("which"))
+                           r.get("client_order_id"), r.get("leg"), r.get("which"), r.get("outcome"), r.get("entry"))
                     if key in seen:
                         continue
                     seen.add(key)
@@ -336,6 +376,14 @@ class Scan:
             w = r.get("cheap_window")
             if isinstance(w, (list, tuple)) and len(w) == 3:
                 return t, list(w)
+        return None, None
+
+    def js_since(self):
+        """L's start: (epoch, start record) of the first start record with hedge_jump_shadow set (the launcher passes
+        --hedge-jump-shadow; pinrun refuses it next to --hedge-jump, so the jump hedge is off there), else (None, None)."""
+        for t, r, _p in self.starts:
+            if r.get("hedge_jump_shadow") is not None:
+                return t, r
         return None, None
 
     def window_net(self, since, window):
@@ -663,6 +711,106 @@ def _k_extra(S, tally, since, window):
     return lines
 
 
+def _l(S, now, since):
+    """L: each jump_shadow with would_send (one per position: the second the jump hedge would have sent), scored as F
+    scores a skipped jump hedge (pinrules_watch.score_B's method): usd = what pin's own hedges really did on those
+    contracts minus what the shadow hedge would have done, so + = premium kept by not sending, - = a save missed.
+    The real hedge is pin's executed hedge records of the hedge side on that ticker from the shadow's second on, up to
+    the shadow's contracts, each record's contracts claimed once across a ticker's shadow events. Returns (events,
+    {won, flipped, open, paid, real_paid, saved, capped, cheap}): paid = the premiums the shadow would have paid on won
+    markets, real_paid = what pin's hedges really paid there, saved = what the shadow would have saved on flips."""
+    out = []
+    tally = {"won": 0, "flipped": 0, "open": 0, "paid": 0.0, "real_paid": 0.0, "saved": 0.0, "capped": 0, "cheap": 0,
+             "net": 0.0}                       # net = the sum of the events' rounded $ (what the page's net line shows)
+    claimed = {}                              # id(hedge record) -> contracts already matched to a shadow event
+    for r in S.shadow:
+        if r["_epoch"] < since:
+            continue
+        oc = js_outcome(r)
+        if oc != "would_send":
+            if oc == "capped":
+                tally["capped"] += 1
+            elif oc == "cheap_skip":
+                tally["cheap"] += 1
+            continue
+        tk, want = r["ticker"], r.get("want")
+        side = r.get("side") or ("no" if want == "yes" else "yes")
+        fills = js_fills(r)
+        n = _rw.got(fills)
+        res = S.result(tk)
+        st = _status(tk, res, now, r.get("close_s"))
+        real, left = [], n
+        for h in S.hedges:
+            if left <= 1e-9:
+                break
+            if (h["ticker"] != tk or h.get("side") != side or h["_epoch"] < r["_epoch"]
+                    or h.get("status") != "executed" or h.get("price") is None):
+                continue
+            avail = _f(h.get("n")) - claimed.get(id(h), 0.0)
+            if avail <= 1e-9:
+                continue
+            take = min(avail, left)
+            claimed[id(h)] = claimed.get(id(h), 0.0) + take
+            real.append((take, _f(h.get("price"))))
+            left -= take
+        rn = _rw.got(real)
+        words = "a %s sd jump against %s with %s s left: it would have bought %.0f %s at %s (odds %.0f%% our way); " \
+                "nothing was sent" % (("%.1f" % _f(r.get("jump_sd"))) if r.get("jump_sd") is not None else "?",
+                                      _side(want), r.get("tau", "?"), n, _side(side), _cents(r.get("ask")),
+                                      100 * _f(r.get("belief")))
+        usd = None
+        if st == "scored" and fills:
+            flipped = res == side
+            jv = _rw.value(fills, flipped)
+            rv = _rw.value(real, flipped)
+            usd = rv - jv
+            if flipped:
+                tally["flipped"] += 1
+                tally["saved"] += jv - rv
+                words += "; the bet FLIPPED: it would have got back %s, pin's odds hedge %s on those contracts, so " \
+                         "going without it %s %s" % (_rw.usd(jv, False),
+                                                    ("really got back %s" % _rw.usd(rv, False)) if rn > 0 else "bought nothing",
+                                                    "saved" if usd >= 0 else "cost", _rw.usd(abs(usd), False))
+            else:
+                tally["won"] += 1
+                tally["paid"] += -jv
+                tally["real_paid"] += -rv
+                if rn > 0:
+                    words += "; the bet won: it would have paid %s, pin's odds hedge really paid %s on those contracts, " \
+                             "so going without it %s %s" % (_rw.usd(-jv, False), _rw.usd(-rv, False),
+                                                           "kept" if usd >= 0 else "cost", _rw.usd(abs(usd), False))
+                else:
+                    words += "; the bet won and no hedge was needed, so that premium stayed in the bank: %s kept" % (
+                        _rw.usd(-jv, False))
+        elif st == "scored":
+            usd = 0.0
+            words += "; nothing to price (no contracts or no ask in the record)"
+        else:
+            tally["open"] += 1
+        if usd is not None:
+            tally["net"] += round(usd, 2)
+        out.append(_event(r, words, usd, st))
+    return out, tally
+
+
+def _l_extra(tally, start):
+    """L's two lines under the net: what the jump hedge would have paid (won markets) and saved (flips), so what it
+    would have made had it been live, and the alarms the 8 sd cap or the 5c bar would have stopped anyway."""
+    nw, nf = tally["won"], tally["flipped"]
+    made = -round(tally["net"], 2)            # minus the page's net to the cent (the unrounded parts could differ by 1c)
+    first = "would have paid %s in premiums on %d won market%s · would have saved %s on %d flip%s (vs the odds hedge pin " \
+            "really bought)%s" % (_rw.usd(tally["paid"], False), nw, "" if nw == 1 else "s", _rw.usd(tally["saved"], False),
+                                  nf, "" if nf == 1 else "s", (" · %d still open" % tally["open"]) if tally["open"] else "")
+    second = "so it would have %s %s" % ("made" if made >= 0 else "lost", _rw.usd(abs(made), False))
+    if tally["real_paid"] > 0.004:
+        second += " (pin's odds hedge really paid %s on those won markets)" % _rw.usd(tally["real_paid"], False)
+    cap, bar = (start or {}).get("hedge_jump_max"), (start or {}).get("jump_hedge_min_ask")
+    second += "; not counted: %d capped (%s sd or more), %d under the %s bar" % (
+        tally["capped"], ("%.0f" % _f(cap)) if cap is not None else "8", tally["cheap"],
+        _cents(bar) if bar is not None else "5.0c")
+    return [first, second]
+
+
 # ---------------------------------------------------------------------------
 def whats(start):
     """One plain line per change, read off the newest start record's flags where they matter."""
@@ -684,6 +832,7 @@ def whats(start):
         "I": "up to %s positions open at once (was 3)" % cap,
         "J": "the extra hedge leg fires on odds under the line whatever fired the hedge alarm",
         "K": _k_what(start.get("cheap_window")),
+        "L": _l_what(start),
     }
 
 
@@ -694,14 +843,23 @@ def _k_what(w):
             "it would have done" % (_cents(w[2]), _hour(w[0]), _hour(w[1])))
 
 
-def _change(cid, what, since, events, off=False, extra=None):
+def _l_what(st):
+    """L's line, off the start record that switched the shadow on (6 sd alarm, 8 sd cap, 5c bar when it says nothing)."""
+    st = st or {}
+    sd, cap, bar = st.get("hedge_jump_shadow"), st.get("hedge_jump_max"), st.get("jump_hedge_min_ask")
+    return ("the jump hedge is in shadow: it sends nothing; this is what it would have made (%s sd alarm, %s sd cap, %s bar "
+            "as before)" % (("%.0f" % _f(sd)) if sd is not None else "6", ("%.0f" % _f(cap)) if cap is not None else "8",
+                            _cents(bar) if bar is not None else "5.0c"))
+
+
+def _change(cid, what, since, events, off=False, extra=None, not_live=None):
     events = sorted(events, key=lambda e: e["epoch"] or 0)
     scored = [e["usd"] for e in events if e["usd"] is not None]
     last = events[-1]["epoch"] if events else None
     return {"id": cid, "name": NAMES[cid], "what": what, "since": et_words(since), "since_t": since,
             "engaged": len(events), "last_engaged": et_words(last), "last_t": last,
             "open": sum(1 for e in events if e["open"]), "net_usd": round(sum(scored), 2) if events else 0.0,
-            "events": events, "off": bool(off), "extra": list(extra or [])}
+            "events": events, "off": bool(off), "extra": list(extra or []), "not_live": not_live}
 
 
 def report(paths=None, now=None):
@@ -733,12 +891,20 @@ def report(paths=None, now=None):
     else:
         evs, tally = _k(S, now, k_since)
         out.append(_change("K", _k_what(k_window), k_since, evs, extra=_k_extra(S, tally, k_since, k_window)))
+    # L: from the first start record with hedge_jump_shadow set (v-0925v JS), its words off that record
+    l_since, l_start = S.js_since()
+    if l_since is None:
+        out.append(_change("L", _l_what(None), None, [], not_live=L_NOT_LIVE))
+    else:
+        evs, tally = _l(S, now, l_since)
+        out.append(_change("L", _l_what(l_start), l_since, evs, extra=_l_extra(tally, l_start)))
     return out
 
 
 def totals(changes):
     """{engaged, open, net_usd} over every change except J: a J leg is also a C engagement (C scores every executed
-    extra), so J stays out of the sum and that leg is counted once."""
+    extra), so J stays out of the sum and that leg is counted once. L is in: what it keeps or misses is pin's real
+    money (the premium not spent, the save the odds line then paid more for), as K's skipped buys are."""
     cs = [c for c in changes if c["id"] != "J"]
     return {"engaged": sum(c["engaged"] for c in cs), "open": sum(c["open"] for c in cs),
             "net_usd": round(sum(c["net_usd"] for c in cs), 2)}

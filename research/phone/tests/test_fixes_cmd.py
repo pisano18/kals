@@ -124,6 +124,38 @@ def test_k_cheap_window_block():
         paths.set_results(old)
 
 
+def test_l_jump_shadow_block():
+    """v-0925v JS: L's block carries its net (+ premium kept, - save missed), what the shadowed jump hedge would have
+    paid and saved and so made, and the alarms the cap or the bar would have stopped anyway."""
+    old, td = _world()
+    try:
+        for name, recs in (("pinrun-live-20261107T101819Z.jsonl", TF.run_k([])),
+                           ("pinrun-live-20261108T190000Z.jsonl", TF.run_l([]))):
+            with open(os.path.join(td, name), "w", encoding="utf-8") as fh:
+                for r in recs:
+                    fh.write(json.dumps(r) + "\n")
+        F._CACHE.clear()
+        s = str(_run(now=TF.NOW_L))
+        assert len(s) <= MAX_LEN, len(s)
+        blk = s.split("<b>L jump hedge shadow</b>")[1]
+        assert blk.startswith("\nthe jump hedge is in shadow: it sends nothing; this is what it would have made (6 sd alarm, "
+                              "8 sd cap, 5.0c bar as before)\n"), blk[:300]
+        assert "since Nov 8 2:00 PM ET\nengaged 4 times, last Nov 8 4:44 PM ET · 1 open\n🔴 net <b>-$54.17</b> (-1.93% of the bank)" in blk, blk
+        assert ("\nwould have paid $7.23 in premiums on 2 won markets · would have saved $51.05 on 1 flip (vs the odds hedge pin "
+                "really bought) · 1 still open\nso it would have made $54.17 (pin's odds hedge really paid $10.35 on those won "
+                "markets); not counted: 1 capped (8 sd or more), 1 under the 5.0c bar\n") in blk, blk
+        assert "—" not in s and "not live yet" not in blk.split("\n\n")[0]
+        # the page is full here (K's and L's lines), so the events are the first to go; L's own block is what matters
+        blk_only = "\n".join(FC.block(F.report(now=TF.NOW_L)[-1], BANK, 1, None))
+        assert blk_only.endswith("\n  Nov 8 4:44 PM ET · SOL · open · a 6.4 sd jump against No with 30 s left: it would have bought "
+                                 "30 Yes at 8.0c (odds 90% our way); nothing was sent"), blk_only[-300:]
+        T = F.totals(F.report(now=TF.NOW_L))
+        assert T["engaged"] == 22 and T["open"] == 4, "L is in the total: %s" % T
+        assert s.rstrip().endswith("· engaged 22 times · 4 open"), s[-200:]
+    finally:
+        paths.set_results(old)
+
+
 def test_before_the_new_build_and_empty_folder():
     old, td = _world()
     try:
@@ -131,13 +163,16 @@ def test_before_the_new_build_and_empty_folder():
         F._CACHE.clear()
         s = str(_run())
         assert s.count("not live yet (comes with the new build)") == 8, s   # D..J and K
+        assert "<b>L jump hedge shadow</b>\nthe jump hedge is in shadow: it sends nothing; this is what it would have made " \
+               "(6 sd alarm, 8 sd cap, 5.0c bar as before)\n" \
+               "not live yet (comes with the next pin restart)" in s, s     # L: its own waiting words
         assert "<b>I max positions 5</b>\nup to 5 positions open at once (was 3)\nnot live yet" in s
         assert "engaged 2 times, last Nov 2 11:44 AM ET · 1 open\n🟢 net <b>+$85.15</b>" in s, s
         for p in os.listdir(td):
             os.remove(os.path.join(td, p))
         F._CACHE.clear()
         s = str(_run())                                        # the smoke's real folder may hold no pin log at all
-        assert s.count("not engaged yet") == 3 and s.count("not live yet") == 8 and "⚪ <b>All changes: net $0.00</b>" in s, s
+        assert s.count("not engaged yet") == 3 and s.count("not live yet") == 9 and "⚪ <b>All changes: net $0.00</b>" in s, s
         assert "(+0.00% of the bank)" in s and "engaged 0 times" in s
     finally:
         paths.set_results(old)
@@ -152,16 +187,17 @@ def test_size_limit_trims_events_first():
             c["events"] = [{"et": "Nov 5 1:00 AM ET", "coin": "ZEC", "usd": 1.0, "words": "w" * 400, "open": False}] * 9
         s = str(FC.render(d, _ctx()))
         assert len(s) <= MAX_LEN and "engaged 9 times" in s and "w" * 400 not in s, (len(s), s[:300])
-        assert s.count("w" * 59 + "…") == 11, "one event per change, its words cut to 60"
+        # twelve changes (L, 11-08): one 60-char event each is over one message, one 30-char event each fits
+        assert s.count("w" * 29 + "…") == 12 and "w" * 59 not in s, "one event per change, its words cut to 30"
         for c in d["changes"]:
             c["events"] = c["events"][:1]
             c["events"][0] = dict(c["events"][0], words="x" * 2000)
         s = str(FC.render(d, _ctx()))
-        assert len(s) <= MAX_LEN and "x" * 2000 not in s and s.count("x" * 59 + "…") == 11, "one cut event each"
+        assert len(s) <= MAX_LEN and "x" * 2000 not in s and s.count("x" * 29 + "…") == 12, "one cut event each"
         for c in d["changes"]:
             c["what"] = "y" * 300                              # the blocks alone are over the limit: no events at all
         s = str(FC.render(d, _ctx()))
-        assert "xxxx" not in s and s.count("y" * 300) == 11, "when even one cut event each does not fit, the blocks alone"
+        assert "xxxx" not in s and s.count("y" * 300) == 12, "when even one cut event each does not fit, the blocks alone"
         for c in d["changes"]:
             c["what"], c["events"] = "short", []
         d["changes"][0]["events"] = [{"et": "Nov 5 1:00 AM ET", "coin": "ZEC", "usd": 1.0, "words": "w" * 400, "open": False}]
