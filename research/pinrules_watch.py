@@ -98,13 +98,15 @@ RULE_WHAT = {"A": "skip a later buy when the index is across the line and our pr
 RAIL_WORDS = {"band_boost_off": ("band", "the 1.5x band boost (buys priced 95.5c to 98.1c)"),
               "late_boost_off": ("late", "the 1.5x last-10-seconds boost")}
 RESTART_REMEDY = "A restart while flat puts it back on: /approve pinrestart"
-# the tracked changes D..L (botdata.fixes) and the verb each one's $ takes (+ / -); K (v-cheapwin, 11-07) is a skipped
+# the tracked changes D..M (botdata.fixes) and the verb each one's $ takes (+ / -); K (v-cheapwin, 11-07) is a skipped
 # cheap morning buy: + = its shadow lost (saved), - = its shadow won (gave up); L (v-0925v JS, 11-08) is the jump hedge
-# in shadow: + = the premium it would have paid stayed in the bank (kept), - = the save it would have made was missed
+# in shadow: + = the premium it would have paid stayed in the bank (kept), - = the save it would have made was missed;
+# M (call B, 11-08) is a buy of pin's own the 2-bet budget held back: + = the bet lost, the held-back stake was saved,
+# - = the bet won, the held-back gain was given up (M's true-3rd-bet list is not an event list and never alerts)
 FIX_POS = {"D": "MADE", "E": "MADE", "F": "SAVED", "G": "SAVED", "H": "SAVED", "I": "MADE", "J": "MADE", "K": "SAVED",
-           "L": "KEPT"}
+           "L": "KEPT", "M": "SAVED"}
 FIX_NEG = {"D": "LOST", "E": "COST", "F": "GAVE UP", "G": "GAVE UP", "H": "GAVE UP", "I": "LOST", "J": "LOST",
-           "K": "GAVE UP", "L": "GAVE UP"}
+           "K": "GAVE UP", "L": "GAVE UP", "M": "GAVE UP"}
 
 
 # ---------------------------------------------------------------------------
@@ -978,7 +980,43 @@ def self_test(log_path):
                 "would have lost $112.58", "no first buy under 98.0c", "/fixes")
     check("change K text: SAVED and $, the change, the coin, the time, what happened (%d phrases)" % len(want_ftK),
           sum(1 for w in want_ftK if w in ftK), len(want_ftK), len(want_ftK))
-    rt = rt + ftK                                    # the em-dash check below reads this alert too
+    # call B (4): change M (3rd bet blocked): a full DOGE buy the 2-bet budget held to 50 where the old argv's third bet
+    # had room for 100 more; the bet LOST, so the 100 x 97.8c + fee 0.16 not spent is a SAVED $97.96 alert; the true
+    # 3rd bet under its net (c["third"]) never alerts
+    tkM0, tkM = "KXBNB15M-26NOV081800-00", "KXDOGE15M-26NOV081800-00"
+    csM = calendar.timegm((2026, 11, 8, 23, 0, 0))
+    rowsM = [dict(kind="start", t="2026-11-08T21:00:00Z", code_sha="d51b131b55cf", pid=1, live=True, extra_coin=0.0,
+                  late_extra=0.0, late_extra_tau=15, bank_brake=4.5, size=20.0, band_mults=[[0.955, 0.981, 1.5]]),
+             dict(kind="autosize", t="2026-11-08T21:00:01Z", old=20.0, new=100.0),
+             dict(kind="order", t="2026-11-08T22:59:40Z", ticker=tkM0, want="yes", leg="full", filled=150.0, exec_price=0.98,
+                  limit_sent=0.98, tau_at_send=20, status="executed", body={"count": "150.00"}, client_order_id="pin-1"),
+             dict(kind="signal", t="2026-11-08T22:59:52Z", live=True, ticker=tkM, want="yes", price=0.978, tau=8, size=500.0,
+                  take_n=50.0, leg="full", budget_left=50.0, fair=0.9999, ladder=[[0.978, 500.0]]),
+             dict(kind="order", t="2026-11-08T22:59:52Z", ticker=tkM, want="yes", leg="full", filled=50.0, exec_price=0.978,
+                  limit_sent=0.98, tau_at_send=8, status="executed", body={"count": "50.00"}, client_order_id="pin-2"),
+             dict(kind="refused", gate="close_budget", t="2026-11-08T22:59:53Z", ticker="KXETH15M-26NOV081800-00", close_s=csM,
+                  size_now=100.0, spent=200.0, budget=200.0, base=200.0, extra_coin=0.0, tau=7, size=100.0, budget_left=0.0),
+             dict(kind="settled", t="2026-11-08T23:00:20Z", ticker=tkM0, want="yes", result="yes", cost=0.98, pnl_c=300.0),
+             dict(kind="settled", t="2026-11-08T23:00:20Z", ticker=tkM, want="yes", result="no", cost=0.978, pnl_c=-4890.0)]
+    pM = os.path.join(d, "pinrun-live-20261108T210000Z.jsonl")
+    with open(pM, "w", encoding="utf-8") as fh:
+        for r in rowsM:
+            fh.write(json.dumps(r) + "\n")
+    chM = FX.report(paths=[pM], now=float(calendar.timegm((2026, 11, 9, 0, 40, 0))))
+    cM = next(c for c in chM if c["id"] == "M")
+    check("change M (3rd bet blocked): one held-back buy, net +$97.96, one refusal under it unpriced (no trajectory log)",
+          cM["net_usd"] if (cM["engaged"] == 1 and cM["third"] == [] and "1 close hit the budget" in cM["extra"][1]) else -1,
+          97.95, 97.97)
+    dueM = new_fix_events(chM, {"fix_alerted": []})
+    check("change M: one $10+ engagement is due", len(dueM), 1, 1)
+    ftM = fix_text(dueM[0][0], dueM[0][1], FX.totals(chM), 2800.0) if dueM else ""
+    print()
+    print(ftM)
+    want_ftM = ("PIN CHANGE SAVED $97.96", "M 3rd bet blocked", "DOGE", "Nov 8 5:59 PM ET", "held to the 2-bet budget",
+                "the bet LOST, so holding them back saved $97.96", "a close spends 2 bets, never a 3rd", "/fixes")
+    check("change M text: SAVED and $, the change, the coin, the time, what happened (%d phrases)" % len(want_ftM),
+          sum(1 for w in want_ftM if w in ftM), len(want_ftM), len(want_ftM))
+    rt = rt + ftK + ftM                              # the em-dash check below reads these alerts too
     check("no em dash in any alert text", (chr(0x2014) in rt) or (chr(0x2014) in ft), False, False)
     print()
     print(alert_text(hy_e, run, 2628.63))

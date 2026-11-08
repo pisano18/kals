@@ -1,10 +1,10 @@
-"""test_fixes.py -- botdata/fixes.py (v-fixes, 2026-11-04): every live pin change A..L scored on synthetic pin logs.
+"""test_fixes.py -- botdata/fixes.py (v-fixes, 2026-11-04): every live pin change A..M scored on synthetic pin logs.
 
 Run:  C:\\Python314\\python.exe research\\botdata\\tests\\test_fixes.py   (exit 0 = every test passed; botstats.py
 --selftest runs it too). Synthetic runs: the 0925r build (code_sha ca156bf45704; rules A, B, C), a later build with
-another sha (D..J), the 0925u cheap-window run (K) and the 0925v jump-hedge-shadow run (L). Every $ below is worked by
-hand from the scoring table (Kalshi's taker fee ceil(7 * p * (1 - p) * n) / 100 inside); the phone test
-(phone/tests/test_fixes_cmd.py) renders the same logs.
+another sha (D..J), the 0925u cheap-window run (K), the 0925v jump-hedge-shadow run (L) and the call-B run with its
+trajectory log (M). Every $ below is worked by hand from the scoring table (Kalshi's taker fee ceil(7 * p * (1 - p) * n)
+/ 100 inside); the phone test (phone/tests/test_fixes_cmd.py) renders the same logs.
 """
 import json
 import os
@@ -198,10 +198,10 @@ def _report(paths=None, now=NOW):
 def test_shape_and_sinces():
     d = tempfile.mkdtemp(prefix="fixes-test-")
     rep = _report(write_logs(d))
-    ck("".join(sorted(rep)) == F.IDS == "ABCDEFGHIJKL", "twelve changes A..L, one row each")
+    ck("".join(sorted(rep)) == F.IDS == "ABCDEFGHIJKLM", "thirteen changes A..M, one row each")
     for c in rep.values():
         ck(set(c) >= {"id", "name", "what", "since", "engaged", "last_engaged", "open", "net_usd", "events", "extra",
-                      "not_live"}, "%s carries every field" % c["id"])
+                      "not_live", "third"}, "%s carries every field" % c["id"])
         for e in c["events"]:
             ck(set(e) >= {"t", "coin", "words", "usd"} and "\u2014" not in e["words"], "%s event fields, no em dash" % c["id"])
         ck("\u2014" not in c["what"], "%s what has no em dash" % c["id"])
@@ -215,6 +215,8 @@ def test_shape_and_sinces():
        and rep["L"]["not_live"] == F.L_NOT_LIVE == "not live yet (comes with the next pin restart)"
        and all(rep[k]["not_live"] is None for k in "ABCDEFGHIJK"),
        "L is not live before a start record has hedge_jump_shadow set, and says what it waits for: %s" % rep["L"]["not_live"])
+    ck(rep["M"]["since"] is None and rep["M"]["engaged"] == 0 and rep["M"]["third"] == [] and rep["M"]["not_live"] == F.M_NOT_LIVE,
+       "M is not live before a start record has extra_coin 0 and late_extra 0: %s" % rep["M"]["not_live"])
 
 
 def test_rules_abc_reuse_pinrules_watch():
@@ -288,8 +290,8 @@ def test_g_h_i_j():
 def test_not_live_yet_and_empty():
     d = tempfile.mkdtemp(prefix="fixes-test-")
     ps = write_logs(d)
-    rep = _report(ps[:2])                                  # the 0925r run only: D..L are not live
-    for k in "DEFGHIJKL":
+    rep = _report(ps[:2])                                  # the 0925r run only: D..M are not live
+    for k in "DEFGHIJKLM":
         ck(rep[k]["since"] is None and rep[k]["engaged"] == 0 and rep[k]["net_usd"] == 0.0 and rep[k]["events"] == [],
            "%s not live yet" % k)
     ck(rep["I"]["what"] == "up to 5 positions open at once (was 3)", "the new flags' words before the build is live")
@@ -578,6 +580,274 @@ def test_l_real_hedge_bigger_than_shadow():
     ck(L["extra"][0].startswith("would have paid $53.97 in premiums on 1 won market · would have saved $41.12 on 1 flip")
        and L["extra"][1].startswith("so it would have made $41.96 (pin's odds hedge really paid $54.81 on those won markets)"),
        "the made line is minus the net to the cent: %s" % L["extra"])
+
+
+NOW_M = 1794184800.0               # 2026-11-09T00:40:00Z = 7:40 PM ET
+M_START = dict(code_sha="d51b131b55cf", extra_coin=0.0, late_extra=0.0, late_extra_tau=15, late_tau=10, bank_brake=4.5,
+               size=20.0, max_per_close=2, max_per_market=2, pin=0.995, price_ceiling=0.98, band99_ceiling=0.99,
+               band99_frac=0.1, edge_floor=0.003, ev_floor=0.003, measured_flip=0.009, dump_discount=0.15,
+               early_min_price=0.9, early_frac=0.333, tau_max=30, tau_min=3, band_mults=[[0.955, 0.981, 1.5]],
+               cheap_window=[6.0, 10.0, 0.98], coin_size_frac={"KXHYPE15M": 0.15}, hedge_jump_shadow=6.0, hedge_jump=None,
+               hedge_jump_max=8.0, jump_hedge_min_ask=0.05, max_positions=5)
+# the closes of the call-B run (UTC epoch): A third bet won (cost), B flipped (saved) with a held coin refused outside
+# the late window, C the late slot (open), D unknown, E a held-back buy that won (cost), F one that lost (saved), G none
+CL = {"A": 1794175200, "B": 1794176100, "C": 1794177000, "D": 1794173400, "E": 1794174300, "F": 1794178800, "G": 1794179700}
+
+
+def _ts(epoch):
+    import time as _t
+    return _t.strftime("%Y-%m-%dT%H:%M:%SZ", _t.gmtime(epoch))
+
+
+def _order(t, tk, want, n, px, tau, leg="full", filled=None, limit=None):
+    return _r("order", t, ticker=tk, want=want, leg=leg, tau_at_send=tau, filled=(n if filled is None else filled),
+              exec_price=px, limit_sent=(px if limit is None else limit), status="executed",
+              body={"count": "%.2f" % n, "ticker": tk}, client_order_id="pin-%s-%s" % (t, tk[-6:]))
+
+
+def run_m(recs):
+    """The call-B run (11-08 4:00 PM ET on, --extra-coin 0 --late-extra 0 --bank-brake 4.5; SIZE 100 after the autosize,
+    so a close's budget is 200): M. Every $ worked by hand (Kalshi's fee ceil(7 x p x (1 - p) x n) / 100 inside)."""
+    A, B, C, D, E, F, G = (CL[k] for k in "ABCDEFG")
+    recs += [
+        _r("start", "2026-11-08T21:00:00Z", **M_START),
+        _r("autosize", "2026-11-08T21:00:01Z", old=20.0, new=100.0, series_size=10.0, why="bank $882"),
+        # E (4:45 PM): XRP took 140 of the 200; NEAR (a new coin, 11 s left) got 60, the budget's last contracts, while the
+        # book held 331 under 98c; the old argv's room (60 + 100) and the 1.5x band (96.5c) allowed 150: 90 more. NEAR won,
+        # so the 90 would have made 90 x 2c (at the 98c limit) - fee ceil(7 x 90 x 0.98 x 0.02 = 12.35) / 100 = 0.13:
+        # 1.80 - 0.13 = 1.67 given up
+        _order(_ts(E - 25), "KXXRP15M-26NOV081645-45", "yes", 140.0, 0.975, 25),
+        _r("signal", _ts(E - 11), live=True, ticker="KXNEAR15M-26NOV081645-45", want="no", price=0.965, tau=11, size=1.0,
+           take_n=1.0, leg="full", budget_left=60.0, fair=0.00355, ladder=[[0.965, 1.0], [0.97, 400.0], [0.985, 20.0]]),
+        _r("sweep_depth", _ts(E - 11), ticker="KXNEAR15M-26NOV081645-45", want="no", touch=1.0, ladder=331.0, was=1.0,
+           now=60.0, limit=0.98),
+        _order(_ts(E - 11), "KXNEAR15M-26NOV081645-45", "no", 60.0, 0.9699, 11, limit=0.98),
+        _r("settled", _ts(E + 20), ticker="KXXRP15M-26NOV081645-45", want="yes", result="yes", cost=0.975, pnl_c=350.0),
+        _r("settled", _ts(E + 20), ticker="KXNEAR15M-26NOV081645-45", want="no", result="no", cost=0.9699, pnl_c=180.6),
+        # F (6:00 PM): BNB took 150; DOGE (new, 8 s left) got the last 50 of a 500 book at 97.8c; the old room 150 and the
+        # band 1.5x allowed 150: 100 more. DOGE LOST, so the 100 would have lost 100 x 97.8c + fee ceil(7 x 100 x 0.978
+        # x 0.022 = 15.06) / 100 = 0.16: 97.96 saved
+        _order(_ts(F - 20), "KXBNB15M-26NOV081800-00", "yes", 150.0, 0.98, 20),
+        _r("signal", _ts(F - 8), live=True, ticker="KXDOGE15M-26NOV081800-00", want="yes", price=0.978, tau=8, size=500.0,
+           take_n=50.0, leg="full", budget_left=50.0, fair=0.9999, ladder=[[0.978, 500.0], [0.99, 100.0]]),
+        _order(_ts(F - 8), "KXDOGE15M-26NOV081800-00", "yes", 50.0, 0.978, 8, limit=0.98),
+        _r("settled", _ts(F + 20), ticker="KXBNB15M-26NOV081800-00", want="yes", result="yes", cost=0.98, pnl_c=300.0),
+        _r("settled", _ts(F + 20), ticker="KXDOGE15M-26NOV081800-00", want="yes", result="no", cost=0.978, pnl_c=-4890.0),
+        # G (6:15 PM), nothing for M: a full buy the budget did not bind (100 asked, 200 left), an early leg (its own
+        # cap, not the budget's), and a bound buy the book did not even fill (20 asked, 12 filled)
+        _r("signal", _ts(G - 45), live=True, ticker="KXSOL15M-26NOV081815-15", want="yes", price=0.99, tau=45, size=300.0,
+           take_n=33.0, leg="early", budget_left=33.0, fair=0.999, ladder=[[0.99, 300.0]]),
+        _order(_ts(G - 45), "KXSOL15M-26NOV081815-15", "yes", 33.0, 0.99, 45, leg="early"),
+        _r("signal", _ts(G - 20), live=True, ticker="KXETH15M-26NOV081815-15", want="yes", price=0.97, tau=20, size=300.0,
+           take_n=100.0, leg="full", budget_left=200.0, fair=0.9999, ladder=[[0.97, 300.0]]),
+        _order(_ts(G - 20), "KXETH15M-26NOV081815-15", "yes", 100.0, 0.97, 20, limit=0.98),
+        _r("signal", _ts(G - 10), live=True, ticker="KXZEC15M-26NOV081815-15", want="no", price=0.97, tau=10, size=300.0,
+           take_n=20.0, leg="full", budget_left=20.0, fair=0.0001, ladder=[[0.97, 300.0]]),
+        _order(_ts(G - 10), "KXZEC15M-26NOV081815-15", "no", 20.0, 0.97, 10, filled=12.0, limit=0.98),
+        _r("settled", _ts(G + 20), ticker="KXSOL15M-26NOV081815-15", want="yes", result="yes", cost=0.99, pnl_c=30.0),
+        _r("settled", _ts(G + 20), ticker="KXETH15M-26NOV081815-15", want="yes", result="yes", cost=0.97, pnl_c=280.0),
+        _r("settled", _ts(G + 20), ticker="KXZEC15M-26NOV081815-15", want="no", result="no", cost=0.97, pnl_c=34.0),
+        # A (5:00 PM): ZEC and BTC spent the 200; ETH, SOL and DOGE refused at 11 s. ETH never had an offer; SOL had 200
+        # at 97c with fair 1.0: the one third bet, 100 Yes at 97c, and it WON: 100 x 3c - fee ceil(7 x 100 x 0.97 x 0.03 =
+        # 20.37) / 100 = 0.21: 2.79 the block cost. DOGE (500 at 97.5c) found the slot taken.
+        _order(_ts(A - 45), "KXZEC15M-26NOV081700-00", "yes", 33.0, 0.99, 45, leg="early"),
+        _order(_ts(A - 20), "KXBTC15M-26NOV081700-00", "yes", 100.0, 0.97, 20),
+    ] + [_r("refused", _ts(A - 11), gate="close_budget", ticker=tk, close_s=A, size_now=100.0, spent=200.0, budget=200.0,
+            base=200.0, extra_coin=0.0, tau=11, size=100.0, budget_left=0.0)
+         for tk in ("KXETH15M-26NOV081700-00", "KXSOL15M-26NOV081700-00", "KXDOGE15M-26NOV081700-00")] + [
+        _r("settled", _ts(A + 20), ticker="KXZEC15M-26NOV081700-00", want="yes", result="yes", cost=0.99, pnl_c=30.0),
+        _r("settled", _ts(A + 20), ticker="KXBTC15M-26NOV081700-00", want="yes", result="yes", cost=0.97, pnl_c=280.0),
+        # B (5:15 PM): XRP (held, refused at 20 s with an offer) gets no third bet outside the late window and had no offer
+        # inside it; BNB at 9 s: 150 at 96c, fair 99.9%: 100 Yes at 96c, and it FLIPPED: 100 x 96c + fee ceil(7 x 100 x
+        # 0.96 x 0.04 = 26.88) / 100 = 0.27: 96.27 saved
+        _order(_ts(B - 30), "KXXRP15M-26NOV081715-15", "yes", 100.0, 0.975, 30),
+        _order(_ts(B - 25), "KXNEAR15M-26NOV081715-15", "no", 100.0, 0.98, 25),
+        _r("refused", _ts(B - 20), gate="close_budget", ticker="KXXRP15M-26NOV081715-15", close_s=B, size_now=100.0,
+           spent=200.0, budget=200.0, base=200.0, extra_coin=0.0, tau=20, size=100.0, budget_left=0.0),
+        _r("refused", _ts(B - 9), gate="close_budget", ticker="KXBNB15M-26NOV081715-15", close_s=B, size_now=100.0,
+           spent=200.0, budget=200.0, base=200.0, extra_coin=0.0, tau=9, size=100.0, budget_left=0.0),
+        _r("settled", _ts(B + 20), ticker="KXXRP15M-26NOV081715-15", want="yes", result="yes", cost=0.975, pnl_c=250.0),
+        _r("settled", _ts(B + 20), ticker="KXNEAR15M-26NOV081715-15", want="no", result="no", cost=0.98, pnl_c=200.0),
+        # C (5:30 PM): DOGE (held) refused at 20 s with an offer; at 15 s (the late window, tau <= late_extra_tau) its 300
+        # at 96.6c take the slot: 100 Yes at 96.6c, no result yet (the close is 2 h 10 min old at NOW_M: pending)
+        _order(_ts(C - 30), "KXDOGE15M-26NOV081730-30", "yes", 100.0, 0.975, 30),
+        _order(_ts(C - 27), "KXZEC15M-26NOV081730-30", "no", 100.0, 0.98, 27),
+        _r("refused", _ts(C - 20), gate="close_budget", ticker="KXDOGE15M-26NOV081730-30", close_s=C, size_now=100.0,
+           spent=200.0, budget=200.0, base=200.0, extra_coin=0.0, tau=20, size=100.0, budget_left=0.0),
+        # D (4:30 PM): HYPE (a --coin-size-frac 0.15 coin: its full bet is 15) refused at 10 s with 50 at 97c; no result
+        # anywhere 3 h 10 min later: unknown, still open
+        _order(_ts(D - 30), "KXSOL15M-26NOV081630-30", "yes", 100.0, 0.97, 30),
+        _order(_ts(D - 25), "KXBNB15M-26NOV081630-30", "no", 100.0, 0.975, 25),
+        _r("refused", _ts(D - 10), gate="close_budget", ticker="KXHYPE15M-26NOV081630-30", close_s=D, size_now=100.0,
+           spent=200.0, budget=200.0, base=200.0, extra_coin=0.0, tau=10, size=100.0, budget_left=0.0),
+        _r("settled", _ts(D + 20), ticker="KXSOL15M-26NOV081630-30", want="yes", result="yes", cost=0.97, pnl_c=280.0),
+        _r("settled", _ts(D + 20), ticker="KXBNB15M-26NOV081630-30", want="no", result="no", cost=0.975, pnl_c=230.0),
+    ]
+    return recs
+
+
+def traj_m(recs):
+    """The trajectory log of run_m's closes: one record a second a market (ask None = no offer on our side)."""
+    A, B, C, D = (CL[k] for k in "ABCD")
+
+    def tj(tk, cs, tau, ask, size, fair, want, held=None, gate="close_budget"):
+        return _r("traj", _ts(cs - tau), ticker=tk, close_s=cs, tau=tau, want=want, held=held, fair=fair,
+                  conf=(fair if want == "yes" else 1.0 - fair), spot=1.0, strike=1.0, eff_strike=1.0, ask=ask,
+                  ask_size=(size if ask is not None else None), opp_ask=0.01, opp_size=100.0, gate=gate, near=True)
+    for tau in range(11, -1, -1):
+        recs.append(tj("KXETH15M-26NOV081700-00", A, tau, None, None, 1.0, "yes"))
+        recs.append(tj("KXSOL15M-26NOV081700-00", A, tau, 0.97, 200.0, 1.0, "yes"))
+        recs.append(tj("KXDOGE15M-26NOV081700-00", A, tau, 0.975, 500.0, 1.0, "yes"))
+    for tau in range(20, -1, -1):
+        recs.append(tj("KXXRP15M-26NOV081715-15", B, tau, (0.96 if tau >= 16 else None), 100.0, 1.0, "yes", held="yes"))
+    for tau in range(9, -1, -1):
+        recs.append(tj("KXBNB15M-26NOV081715-15", B, tau, 0.96, 150.0, (0.999 if tau >= 2 else 0.0), "yes"))
+    for tau in range(20, 13, -1):
+        recs.append(tj("KXDOGE15M-26NOV081730-30", C, tau, (0.965 if tau > 15 else 0.966), 300.0, 1.0, "yes", held="yes"))
+    for tau in range(10, 2, -1):
+        recs.append(tj("KXHYPE15M-26NOV081630-30", D, tau, 0.97, 50.0, 1.0, "yes"))
+    return recs
+
+
+def write_m(d):
+    """run_m's pin log and its trajectory log in folder `d`; returns the pin log's path."""
+    pm = os.path.join(d, "pinrun-live-20261108T210000Z.jsonl")
+    with open(pm, "w", encoding="utf-8") as fh:
+        for r in run_m([]):
+            fh.write(json.dumps(r) + "\n")
+    with open(os.path.join(d, "pintraj-live-20261108T210000Z.jsonl"), "w", encoding="utf-8") as fh:
+        for r in traj_m([]):
+            fh.write(json.dumps(r) + "\n")
+    return pm
+
+
+def test_m_third_bet_blocked():
+    d = tempfile.mkdtemp(prefix="fixes-test-")
+    ps = write_logs(d)
+    pk = os.path.join(d, "pinrun-live-20261107T101819Z.jsonl")
+    pl = os.path.join(d, "pinrun-live-20261108T190000Z.jsonl")
+    for p, recs in ((pk, run_k([])), (pl, run_l([]))):
+        with open(p, "w", encoding="utf-8") as fh:
+            for r in recs:
+                fh.write(json.dumps(r) + "\n")
+    pm = write_m(d)
+    rep = _report(ps + [pk, pl, pm], now=NOW_M)
+    M = rep["M"]
+    ck(M["since"] == "Nov 8 4:00 PM ET" and M["not_live"] is None and rep["L"]["since"] == "Nov 8 2:00 PM ET",
+       "M: since the first start record with extra_coin 0 and late_extra 0 (L's shadow start, without the fields, is not "
+       "it): %s" % M["since"])
+    # (1) the net: pin's own buys the 2-bet budget held back
+    ck(M["engaged"] == 2 and M["open"] == 0 and M["net_usd"] == 96.29, "M: two held-back buys, -1.67 + 97.96 = +96.29: %s" % {
+        x: M[x] for x in ("engaged", "open", "net_usd")})
+    w = {e["coin"]: e for e in M["events"]}
+    ck(w["NEAR"]["usd"] == -1.67 and w["NEAR"]["words"] == (
+        "a full No buy at 97.0c with 11 s left was held to the 2-bet budget: 60 went out (the book had 331 under 98.0c; the "
+        "old argv's third bet had room for 90 more, a new coin); the bet won, so holding them back gave up $1.67 (at the 98.0c "
+        "limit: a ceiling)"), "M held-back, won: min(1.5 x 100, 331, 60 + 100) - 60 = 90 at the 98c limit: %s" % w["NEAR"])
+    ck(w["DOGE"]["usd"] == 97.96 and "50 went out (the book had 500 under 98.0c; the old argv's third bet had room for 100 "
+       "more, a new coin); the bet LOST, so holding them back saved $97.96" in w["DOGE"]["words"],
+       "M held-back, lost: 100 x 97.8c + fee 0.16 = 97.96 saved: %s" % w["DOGE"])
+    ck(sorted(w) == ["DOGE", "NEAR"] and w["NEAR"]["et"] == "Nov 8 4:44 PM ET" and w["DOGE"]["et"] == "Nov 8 5:59 PM ET",
+       "M: the unbound ETH buy, the early SOL leg and the half-filled ZEC buy are not events: %s" % sorted(w))
+    # (2) the true 3rd bets, under the net and not in it
+    T3 = {(e["coin"], e["et"]): e for e in M["third"]}
+    ck(len(M["third"]) == 4 and sorted(c for c, _t in T3) == ["BNB", "DOGE", "HYPE", "SOL"],
+       "M third: one bet a close (A: SOL, B: BNB, C: DOGE, D: HYPE), never a second in the same close: %s" % sorted(T3))
+    sol = T3[("SOL", "Nov 8 4:59 PM ET")]
+    ck(sol["usd"] == -2.79 and sol["words"] == (
+        "a 3rd bet of 100 Yes at 97.0c with 11 s left (fair 100.00% our way); it WON (the index at the close): the bet would "
+        "have made $2.79, so blocking it cost $2.79 (a ceiling: its hedges are not known)"),
+       "M third, won: 100 x 3c - fee 0.21 = 2.79 the block cost: %s" % sol)
+    bnb = T3[("BNB", "Nov 8 5:14 PM ET")]
+    ck(bnb["usd"] == 96.27 and "a 3rd bet of 100 Yes at 96.0c with 9 s left (fair 99.90% our way); it FLIPPED (the index at "
+       "the close): the bet would have lost $96.27, so blocking it saved $96.27" in bnb["words"],
+       "M third, flipped: 100 x 96c + fee 0.27 = 96.27 saved: %s" % bnb)
+    doge = T3[("DOGE", "Nov 8 5:29 PM ET")]
+    ck(doge["usd"] is None and doge["open"] and doge["t"] == "2026-11-08T22:29:45Z" and "with 15 s left" in doge["words"]
+       and doge["words"].endswith("; not settled yet"),
+       "M third, the late slot: a coin already bought is refused at 20 s and takes the slot at 15 s (pinrun: tau <= "
+       "late_extra_tau); open: %s" % doge)
+    hype = T3[("HYPE", "Nov 8 4:29 PM ET")]
+    ck(hype["usd"] is None and hype["open"] and hype["words"].startswith("a 3rd bet of 15 Yes at 97.0c with 10 s left")
+       and hype["words"].endswith("; no result 3 h after the close (unknown)"),
+       "M third, unknown: HYPE's full bet is 15 (0.15 x 100); no result 3 h on: %s" % hype)
+    ck(M["extra"] == [
+        "held back: 2 full buys cut to the 2-bet budget where the old argv had room for a 3rd; the contracts not bought would "
+        "have made $1.67 on 1 won, lost $97.96 on 1 flipped",
+        "a true 3rd bet, NOT in the net (the old build dropped it too, at its base check): 4 closes hit the budget, 4 would "
+        "have gone out (1 had no offer, 1 failed a gate, 1 found the slot taken), won $2.79 on 1, lost $96.27 on 1, so "
+        "blocking them saved $93.48 \u00b7 2 open; the 12-08 read reverts B only above $5/day"],
+       "M extra: the held-back line and the true-3rd-bet line (ETH no offer, XRP held outside the late window, DOGE in close "
+       "A found the slot taken): %s" % M["extra"])
+    ck(M["what"] == ("a close spends 2 bets, never a 3rd (--extra-coin 0 --late-extra 0, brake 4.50, the same bet size; the old "
+                     "argv allowed one more on a new coin or inside 15 s); the net is what that held back on pin's own buys"),
+       "M what, off the start record: %s" % M["what"])
+    for e in M["events"] + M["third"]:
+        ck("\u2014" not in e["words"], "no em dash in M's words")
+    T = F.totals(list(rep.values()))
+    ck(T["engaged"] == 24 and T["open"] == 4 and T["net_usd"] == round(sum(c["net_usd"] for k, c in rep.items() if k != "J"), 2),
+       "totals take M's net in (15 + 3 + 4 + 2 engagements), never its third list: %s" % T)
+    ck(all(rep[k]["third"] == [] for k in "ABCDEFGHIJKL"), "only M carries a third list")
+    # helpers: the judge's gates one by one, the fee, the band multiple, the coin and the full bet
+    R = F.m_rules(M_START)
+    base = dict(ask=0.97, ask_size=50.0, fair=1.0, want="yes", tau=11, held=None)
+    ck(F.m_judge(base, R, 100.0, False, 0, CL["A"]) == (50.0, "full", None), "judge: a full leg capped by the book")
+    ck(F.m_judge(dict(base, ask=None), R, 100.0, False, 0, CL["A"])[2] == "no offer", "judge: no ask = no offer")
+    ck("confidence" in F.m_judge(dict(base, fair=0.99), R, 100.0, False, 0, CL["A"])[2], "judge: fair under PIN")
+    ck("already bought" in F.m_judge(dict(base, tau=16), R, 100.0, True, 1, CL["A"])[2]
+       and F.m_judge(dict(base, tau=15, held="yes"), R, 100.0, True, 1, CL["A"])[2] is None,
+       "judge: a bought coin only inside the late window (15 s)")
+    ck("holds 2 buys" in F.m_judge(dict(base, tau=10, held="yes"), R, 100.0, True, 2, CL["A"])[2], "judge: max per market")
+    ck("other side" in F.m_judge(dict(base, held="no"), R, 100.0, True, 1, CL["A"])[2], "judge: never both sides")
+    ck("over the ceiling" in F.m_judge(dict(base, ask=0.991), R, 100.0, False, 0, CL["A"])[2]
+       and F.m_judge(dict(base, ask=0.985), R, 100.0, False, 0, CL["A"]) == (10.0, "band", None)
+       and "already held" in F.m_judge(dict(base, ask=0.985, held="yes", tau=10), R, 100.0, True, 1, CL["A"])[2],
+       "judge: 99.1c refused, 98.5c a band tenth when nothing is held")
+    # (under the live argv the confidence gate and the 98c ceiling imply both floors: a 99.5% side at 98c or less always
+    # clears 0.3c of edge and 0.3c of EV; the floors bind only with other numbers)
+    ck("edge" in F.m_judge(dict(base, ask=0.97, fair=0.9955), dict(R, edge_floor=0.03), 100.0, False, 0, CL["A"])[2]
+       and "EV" in F.m_judge(dict(base, ask=0.979, fair=1.0), dict(R, ev_floor=0.02), 100.0, False, 0, CL["A"])[2]
+       and "dump guard" in F.m_judge(dict(base, ask=0.80), R, 100.0, False, 0, CL["A"])[2],
+       "judge: the edge floor (2.55c gross - 0.20c fee under a 3c floor), the EV floor (1.05c under 2c), the dump guard at 80c")
+    early = F.m_judge(dict(base, tau=40), R, 100.0, False, 0, CL["A"])
+    ck(abs(early[0] - 33.3) < 1e-9 and early[1:] == ("early", None)
+       and "early look under" in F.m_judge(dict(base, tau=40, ask=0.89), R, 100.0, False, 0, CL["A"])[2]
+       and "cheap window" in F.m_judge(base, R, 100.0, False, 0, 1794054600)[2]
+       and "a book of 0.50" in F.m_judge(dict(base, ask_size=0.5), R, 100.0, False, 0, CL["A"])[2],
+       "judge: the early leg (a third), its 90c floor, the cheap window (a 7:30 AM close), the 1-contract book")
+    ck(F.m_fee1(0.96) == 0.0027 and F.m_band_mult(0.965, R) == 1.5 and F.m_band_mult(0.981, R) == 1.0
+       and F.m_coin("KXBTCD-26NOV0813-T75699.99") == "KXBTC" and F.m_coin("KXBTC15M-26NOV081300-00") == "KXBTC"
+       and F.m_full("KXHYPE15M-26NOV081630-30", 100.0, 10.0, M_START) == 15.0
+       and F.m_full("KXBTCD-26NOV0813-T75699.99", 100.0, 10.0, M_START) == 10.0
+       and F.m_full("KXETH15M-26NOV081630-30", 100.0, 10.0, M_START) == 100.0, "fee, band multiple, coin, full bet")
+    ck(F.traj_paths(r"C:\x\pinrun-live-20261108T210000Z.jsonl") == [r"C:\x\pintraj-live-20261108T210000Z.jsonl",
+                                                                       r"C:\x\pintraj-live-20261108T210000Z.jsonl.gz"]
+       and F.traj_paths(r"C:\x\archive\pinrun-live-20261108T210000Z.jsonl.gz")[0].endswith("pintraj-live-20261108T210000Z.jsonl")
+       and F.traj_paths("other.jsonl") == [], "traj_paths")
+    # the old argv's run: the same records under --extra-coin 1 count for nothing (M not live)
+    with open(pm, "w", encoding="utf-8") as fh:
+        for r in run_m([]):
+            if r["kind"] == "start":
+                r = dict(r, extra_coin=1.0, late_extra=1.0, bank_brake=3.0)
+            fh.write(json.dumps(r) + "\n")
+    rep = _report(ps + [pk, pl, pm], now=NOW_M)
+    ck(rep["M"]["since"] is None and rep["M"]["engaged"] == 0 and rep["M"]["third"] == [] and rep["M"]["not_live"] == F.M_NOT_LIVE
+       == "not live yet (comes with the first pin start on call B)",
+       "M: a run on --extra-coin 1 is not live, whatever records it holds")
+
+
+def test_m_without_a_trajectory_log():
+    """No pintraj log next to the pin log: the refusals are counted (no offer seen), nothing is priced, the held-back
+    buys still score."""
+    d = tempfile.mkdtemp(prefix="fixes-test-")
+    pm = write_m(d)
+    os.remove(os.path.join(d, "pintraj-live-20261108T210000Z.jsonl"))
+    M = _report([pm], now=NOW_M)["M"]
+    ck(M["engaged"] == 2 and M["net_usd"] == 96.29 and M["third"] == [], "held-back buys scored, no third bet priced")
+    ck(M["extra"][1].startswith("a true 3rd bet, NOT in the net (the old build dropped it too, at its base check): 4 closes hit "
+                                "the budget, 0 would have gone out (7 had no offer, 0 failed a gate, 0 found the slot taken), "
+                                "won $0.00 on 0, lost $0.00 on 0, so blocking them saved $0.00;"),
+       "the line says every refusal went unpriced: %s" % M["extra"][1])
 
 
 def test_default_paths_through_botdata():

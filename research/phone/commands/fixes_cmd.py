@@ -55,8 +55,9 @@ def _cut(words, n):
     return w if n is None or len(w) <= n else w[:max(1, n - 1)].rstrip() + "…"
 
 
-def block(c, bank, shown, cut=None):
-    """One change: name, what, since, engaged / last, net, the last `shown` events (their words cut to `cut` chars)."""
+def block(c, bank, shown, cut=None, extra_cut=None):
+    """One change: name, what, since, engaged / last, net, its extra lines (cut to `extra_cut` chars; 0 = left out), the
+    last `shown` events (their words cut to `cut` chars)."""
     out = ["<b>%s %s</b>" % (esc(c["id"]), esc(c["name"])), esc(c["what"])]
     if not c["since"]:
         out.append(c.get("not_live") or "not live yet (comes with the new build)")   # L: its own words (fixes.L_NOT_LIVE)
@@ -72,18 +73,25 @@ def block(c, bank, shown, cut=None):
                                                  esc(c["last_engaged"] or "?"),
                                                  (" · %d open" % c["open"]) if c["open"] else ""))
     out.append("%s net <b>%s</b>%s" % (_mark(c["net_usd"]), esc(usd(c["net_usd"])), esc(_pct(c["net_usd"], bank))))
-    out += [esc(x) for x in c.get("extra") or []]         # K: the skips without the rule, the window with and without;
-    #                                                       L: what the shadowed jump hedge would have paid / saved / made
+    if extra_cut != 0:                                    # K: the skips without the rule, the window with and without;
+        #                                                   L: what the shadowed jump hedge would have paid / saved / made;
+        #                                                   M: the held-back contracts and the true 3rd bet (not in its net)
+        out += [esc(_cut(x, extra_cut)) for x in c.get("extra") or []]
     for e in c["events"][-shown:] if shown else []:
         out.append("  %s · %s · %s · %s" % (esc(e["et"] or "?"), esc(e["coin"]),
                                          esc(usd(e["usd"]) if e["usd"] is not None else "open"), esc(_cut(e["words"], cut))))
     return out
 
 
-# how the page shrinks to one message: fewer events first, then shorter event words, then no events (the blocks stay).
-# The 30-char step came with L (12 changes): one 60-char event per change no longer fits one message, one 30-char
-# event (the time, coin, $ and the first words) still does.
-PLAN = ((SHOWN, None), (2, None), (1, None), (1, 110), (1, 60), (1, 30), (0, None))
+# how the page shrinks to one message: fewer events first, then shorter event words, then shorter extra lines (K, L, M's
+# lines under their nets), then no events (the blocks stay), then no extra lines. Each step is (events shown, their
+# words' cut, the extra lines' cut: None whole, 0 none). The 30-char step came with L (12 changes): one 60-char event per
+# change no longer fits one message, one 30-char event (the time, coin, $ and the first words) still does. The extra
+# cuts came with M (13 changes, 11-08): with K, L and M all live their six lines alone are a third of a message, so
+# measured on the 11-08 logs the blocks with whole lines and no events ran to 4,398 chars; cutting the lines to 120
+# chars keeps one 30-char event per change on the page (the test holds every step).
+PLAN = ((SHOWN, None, None), (2, None, None), (1, None, None), (1, 110, None), (1, 60, None), (1, 30, None),
+        (1, 30, 120), (0, None, None), (0, None, 120), (1, 30, 0), (0, None, 0))
 
 
 def render(d, ctx):
@@ -92,10 +100,10 @@ def render(d, ctx):
     total = "%s <b>All changes: net %s</b>%s · engaged %d time%s%s" % (
         _mark(T["net_usd"]), esc(usd(T["net_usd"])), esc(_pct(T["net_usd"], bank)), T["engaged"],
         "" if T["engaged"] == 1 else "s", (" · %d open" % T["open"]) if T["open"] else "")
-    for shown, cut in PLAN:
+    for shown, cut, extra_cut in PLAN:
         out = [HEAD, i_(NOTE)]
         for c in changes:
-            out += [""] + block(c, bank, shown, cut)
+            out += [""] + block(c, bank, shown, cut, extra_cut)
         out += ["", total]
         msg = "\n".join(out)
         if len(msg) <= MAX_LEN:
