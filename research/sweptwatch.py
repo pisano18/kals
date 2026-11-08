@@ -25,6 +25,14 @@ SEEN = os.path.join(REPO, "results", ".swept_seen")
 GLOB = os.path.join(REPO, "results", "pinrun-live-*.jsonl")
 
 
+def _mtime0(path):
+    """A file's modified time, 0 once it has gone (log_rotate.py archives old logs, 2026-11-07)."""
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return 0.0
+
+
 def load_seen():
     if not os.path.exists(SEEN):
         return set()
@@ -37,7 +45,7 @@ def load_seen():
 
 def scan(seen):
     out = []
-    for path in sorted(glob.glob(GLOB), key=os.path.getmtime)[-3:]:
+    for path in sorted(glob.glob(GLOB), key=_mtime0)[-3:]:
         try:
             fh = open(path, encoding="utf-8", errors="replace")
         except OSError:

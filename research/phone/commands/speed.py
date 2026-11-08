@@ -20,6 +20,7 @@ from botdata.fmt import dot, of100 as _of100, pct1, pct_of, ret              # n
 from phone.command import Command, declare
 from phone.html import Html, details, elines, esc, i_, pre, table
 from botdata import dirlist as _dirlist
+import logfiles                                                         # archived pin logs (log_rotate.py)
 
 
 # ===========================================================================
@@ -107,7 +108,8 @@ _TAILS = {}
 def tail_rows(path, field, value):
     """Every record of an append-only jsonl log whose `field` is `value`, read ONCE whole and after that only the bytes
     added since the last call (a file that shrank was replaced: it is read again from the start). Lines are screened
-    by substring before json.loads, and a cut last line waits for its end. [] when the file cannot be read."""
+    by substring before json.loads, and a cut last line waits for its end. [] when the file cannot be read.
+    An archived log (results\\archive\\<name>.gz, log_rotate.py) is unpacked and read whole, once: it never grows."""
     try:
         size = os.path.getsize(path)
     except OSError:
@@ -117,11 +119,15 @@ def tail_rows(path, field, value):
     if hit is None or size < hit["off"]:
         hit = _TAILS[key] = {"off": 0, "rows": []}
     if size > hit["off"]:
+        gz = logfiles.is_gz(path)
         try:
-            with open(path, "rb") as fh:
-                fh.seek(hit["off"])
-                chunk = fh.read(size - hit["off"])
-        except OSError:
+            if gz:
+                chunk = logfiles.read_bytes(path)
+            else:
+                with open(path, "rb") as fh:
+                    fh.seek(hit["off"])
+                    chunk = fh.read(size - hit["off"])
+        except (OSError, EOFError):
             return hit["rows"]
         cut = chunk.rfind(b"\n")
         if cut >= 0:
@@ -136,6 +142,8 @@ def tail_rows(path, field, value):
                 if isinstance(r, dict) and r.get(field) == value:
                     hit["rows"].append(r)
             hit["off"] += cut + 1
+        if gz:
+            hit["off"] = size                     # the PACKED size: read once, never again
     return hit["rows"]
 
 
@@ -207,7 +215,7 @@ def speed_pin_money(results, server_rows, since):
         if o.get("tk") and _f(o.get("got")) > 0:
             got[o["tk"]] = got.get(o["tk"], 0.0) + _f(o["got"])
     made = {}
-    for p in sorted(_dirlist.glob(os.path.join(results, "pinrun-live-*.jsonl"))):
+    for p in logfiles.glob(os.path.join(results, "pinrun-live-*.jsonl"), globber=_dirlist.glob):
         try:
             if os.path.getmtime(p) < since:
                 continue

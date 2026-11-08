@@ -1,0 +1,4 @@
+# the live launchers are kept BYTE-EXACT: no line-ending conversion (restart_bot_hand.ps1 mixes CRLF and LF;
+# SHA256SUMS.txt stays LF so `sha256sum -c` reads it)
+*.ps1 -text
+SHA256SUMS.txt -text

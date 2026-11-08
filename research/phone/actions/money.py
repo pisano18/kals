@@ -12,9 +12,12 @@ TWO PATHS, NOTHING ELSE (ALLOWED_POST; post() refuses any other path and any bod
   POST /portfolio/intra_exchange_instance_transfer   the main account, pool -> pool (ordercli.build_transfer: centicents)
 
 THE RAILS, checked on the plan and again just before sending (the source cash is read again then):
-  - an amount from $0.01 to MAX_MOVE_USD ($500) a move, and at most MAX_DAY_USD ($1,000) moved per ET day (counted from
-    results\\phone_actions.jsonl, so a restart does not reset it); telegram.json may set move_max_usd, move_day_max_usd,
-    move_margin_usd;
+  - an amount of at least $0.01. NO CAP by default (v-move-nocap, the operator's choice: MAX_MOVE_USD and MAX_DAY_USD are
+    None); telegram.json may set one -- move_max_usd a move, move_day_max_usd per ET day (counted from
+    results\\phone_actions.jsonl, so a restart does not reset it) -- and move_margin_usd;
+  - a BIG move asks once more (v-move-big, 2026-11-07, the phone audit): over BIG_MOVE_USD ($500) or over BIG_SHARE (25%)
+    of the source pot's cash, the first '/move yes CODE' sends nothing and asks again with the amount as a % of the bank
+    (every pot's cash + open bets, funds_read) and of the source pot -- a second code, its own 2 minutes (big_reasons);
   - the source has the cash (a cash read that failed refuses: never blind);
   - a pot holding open bets keeps in cash at least what those bets cost + MARGIN_USD ($2): a move never leaves a bot's
     open bets short;
@@ -46,6 +49,8 @@ POOL_NAME = {0: "weather pool", 2: "crypto pool"}
 MAX_MOVE_USD = None             # v-move-nocap: None = no cap (telegram.json move_max_usd sets one)
 MAX_DAY_USD = None              # v-move-nocap: None = no cap (telegram.json move_day_max_usd sets one)
 MARGIN_USD = 2.0
+BIG_MOVE_USD = 500.0            # v-move-big: a move over this ...
+BIG_SHARE = 0.25                # ... or over this share of the source pot's cash asks once more
 POST_TIMEOUT_S = 20
 
 
@@ -156,6 +161,39 @@ def open_cost(funds, sub):
     return float(s["open"]), None
 
 
+def bank_of(funds):
+    """(dollars, complete): every pot's cash in every pool + every account's open bets, from one funds_read() -- the
+    bank a big move is a % of. complete False when a cash or an open-bets read failed (the figure is then a floor);
+    (None, False) when nothing was read."""
+    vals, complete = [], True
+    for s in (funds.get("subs") or {}).values():
+        for p in (s.get("pools") or {}).values():
+            if p.get("dollars") is None:
+                complete = False
+            else:
+                vals.append(float(p["dollars"]))
+        if s.get("open") is None:
+            complete = False
+        else:
+            vals.append(float(s["open"]))
+    if funds.get("list_err"):
+        complete = False
+    return (round(sum(vals), 2) if vals else None), complete and bool(vals)
+
+
+def big_reasons(plan):
+    """Why this move asks once more (v-move-big): [] for an ordinary move; else the reasons in words ('over $500',
+    'over 25% of the source pot's cash'). plan['src_cash'] is the source pot's cash when the plan was made."""
+    a = float(plan["amount"])
+    out = []
+    if a > BIG_MOVE_USD + 1e-9:
+        out.append("over $%.0f" % BIG_MOVE_USD)
+    sc = plan.get("src_cash")
+    if sc is None or sc <= 0 or a > BIG_SHARE * float(sc) + 1e-9:
+        out.append("over %.0f%% of the source pot's cash" % (100 * BIG_SHARE))
+    return out
+
+
 def trades_in(sub):
     """The pool the bots of account `sub` trade in (bots.cash_pool), or None for an account no bot uses."""
     try:
@@ -209,6 +247,7 @@ def plan_move(words, funds, cfg=None, now=None, moved_today=0.0, plan_id=None):
         path = POOL_PATH
     plan = {"id": plan_id, "kind": kind, "amount": amount, "src": src, "dst": dst, "path": path, "body": body,
             "src_cash": cash(funds, *src), "dst_cash": cash(funds, *dst), "t": now}
+    plan["bank"], plan["bank_complete"] = bank_of(funds)        # v-move-big: what a big move is a % of
     plan["open"], plan["open_err"] = open_cost(funds, src[0])
     bad = check(plan, plan["src_cash"], plan["dst_cash"], cfg, moved_today)
     if bad:

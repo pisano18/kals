@@ -43,6 +43,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 os.environ.setdefault("KALS_SELFTESTED", "1")
+import logfiles                                              # noqa: E402  (archived logs: log_rotate.py)
 import downtime                                              # noqa: E402
 import pinstreak                                             # noqa: E402
 import pinvalue                                              # noqa: E402
@@ -87,8 +88,8 @@ def closes_and_flags():
 def book_share():
     """(median share of the offered book we take, n markets)."""
     sig, fills = collections.defaultdict(list), collections.Counter()
-    for p in sorted(glob.glob(os.path.join(REPO, "results", "pinrun-live-*.jsonl"))):
-        for line in open(p, encoding="utf-8", errors="ignore"):
+    for p in logfiles.glob(os.path.join(REPO, "results", "pinrun-live-*.jsonl")):
+        for line in logfiles.open(p, encoding="utf-8", errors="ignore"):
             if '"signal"' not in line and '"order"' not in line:
                 continue
             try:

@@ -15,6 +15,18 @@ in its order:
      command with no `fail` lets the exception out, and the poll loop answers 'error: ...' as it always did).
   6. Nothing claims the message -> help_cmd.unknown_reply ('I did not understand that.' + /help).
 
+v-tg-stale (2026-11-07, the phone audit: the phone starts polling with offset None and never looked at a message's date,
+so a '/stop yes', '/start' or '/pause' queued while it was down ran hours late). A CONTROL (Command.is_control: every
+'controls' command, /pair, /alive) whose Telegram message is older than STALE_S (5 minutes) when it is handled is NOT
+run: the chat is told it was ignored and why (stale_reply), in words that never repeat a secret (Command.echo: /pair's
+secret, /alive's ping URL -- the reply and its log line both). An old /pair from a stranger while paired: no answer to
+it, and the paired chat is told (pair.stale). A message with no date is handled as fresh: the self-tests' FakeTelegram,
+and every message of a poll the runtime re-armed promptly after a short batch (phone/app.py PROMPT_GAP_S: delivered at
+once, so a fast server clock can never lock the controls out).
+v-ledger-unreadable (2026-11-07): every money page (MONEY_SECTIONS, MONEY_PAGES) gets the warning line at the top when
+Kalshi rows were left out of its totals -- '3 markets unreadable (Kalshi field change?)' (money_note; the count is
+botdata/ledgercheck.py's, the words phone/render/unbooked.py's). Nothing is added when every row reads.
+
 FAULT ISOLATION (DESIGN section 2). Every command module is imported inside a try (discover(): phone.command.discover
 does one module at a time). A module that fails to import costs only its own commands: their names answer 'this command
 failed to load: ...' (logged), the rest of the phone keeps working, and the import is tried again on each such message
@@ -44,6 +56,9 @@ from phone.log import log
 PACKAGE = "phone.commands"
 HELP_MODULE = PACKAGE + ".help_cmd"
 PAIR = "/pair"
+STALE_S = 300                   # v-tg-stale: a control whose message is older than this is not run
+MONEY_SECTIONS = ("money", "one_bot")                                   # v-ledger-unreadable: every page of these ...
+MONEY_PAGES = ("/status", "/losses", "/hedges", "/fills", "/brief")     # ... and these gets the unreadable line
 
 _LOCK = threading.RLock()
 _STATE = {"done": False, "failed": {}}          # discover() ran; {module: the exception of its last import attempt}
@@ -208,6 +223,72 @@ def failed_reply(cmd, module, err):
         cmd, type(err).__name__, str(err)[:200])
 
 
+def message_age(ctx, sent_at):
+    """Seconds since the message was sent (its Telegram `date`), when that is over STALE_S; else None (fresh, or no
+    date: the self-tests' FakeTelegram sends none)."""
+    try:
+        if sent_at is None:
+            return None
+        age = float(ctx.now()) - float(sent_at)
+    except (TypeError, ValueError):
+        return None
+    return age if age > STALE_S else None
+
+
+def echo_of(c, ctx):
+    """What a log line or a reply may repeat of this message: Command.echo_of (never a secret: /pair's, /alive's URL)."""
+    return c.echo_of(ctx.text) if c is not None else (ctx.cmd or "")
+
+
+def stale_reply(ctx, age_s, sent_at, c=None):
+    """A control that waited too long: not run, and why (v-tg-stale). It may have been done already: a phone ended
+    while hung (boot_all, v-tg-hung) gets again from Telegram what it had handled but not yet confirmed -- so the words
+    say how to tell."""
+    from phone.monitor import span_words, when_words
+    return Html("⏱ <b>Not done now: %s</b> was sent %s ago (%s ET) and reached the phone only now (it was restarting or "
+                "offline). A control older than %d minutes is never run late: what it does may not be what you want "
+                "now. If you already got an answer to it then, it was done then; if not, send it again if you still "
+                "want it." % (esc(echo_of(c, ctx)), esc(span_words(age_s)),
+                              esc(when_words(float(sent_at), ctx.now())), STALE_S // 60))
+
+
+def _pair_stale(ctx, age):
+    """An old /pair from a stranger while paired: no answer to it; pair.stale tells the paired chat. Never raises."""
+    try:
+        from phone.commands import pair as _pair
+        _pair.stale(ctx, age)
+    except Exception:                                           # noqa: BLE001
+        log("could not report an old /pair:\n%s" % traceback.format_exc())
+    return None
+
+
+def is_money_page(c):
+    return c is not None and (c.section in MONEY_SECTIONS or c.name in MONEY_PAGES)
+
+
+def money_note(ctx, c, reply):
+    """`reply` with the unreadable-markets line on top when `c` is a money page and Kalshi rows were left out of the
+    totals (v-ledger-unreadable); `reply` as it is otherwise. Never raises."""
+    if reply is None or not is_money_page(c):
+        return reply
+    try:
+        from botdata import ledgercheck as _lc
+        from phone.render.unbooked import note_lines
+        s = _lc.scan(ctx.results)
+        if s.get("error"):
+            log("ledger check failed: %s" % s["error"])
+        lines = note_lines(s)
+        if not lines:
+            return reply
+        if getattr(reply, "is_html", False):
+            return Html("\n".join(lines) + "\n" + reply)
+        from phone.html import html_to_plain
+        return html_to_plain("\n".join(lines)) + "\n" + str(reply)
+    except Exception:                                           # noqa: BLE001
+        log("money note failed:\n%s" % traceback.format_exc())
+        return reply
+
+
 def unknown(ctx):
     """Nothing claims the message: help_cmd.unknown_reply (the words, then /help); plain words if that module is
     broken."""
@@ -220,15 +301,16 @@ def unknown(ctx):
 
 
 # ---- dispatch -----------------------------------------------------------------------------------------------------------
-def dispatch(phone, chat_id, text):
+def dispatch(phone, chat_id, text, sent_at=None):
     """The reply for one incoming message to `phone` (the runtime: phone.app.Phone), or None to ignore it. Phone.handle's
     rules, in its order (see the module note). A command with no `fail` may raise: the poll loop answers 'error: ...'.
-    v-tg-fast2: one tap (botdata.dirlist.tap): the results folder is listed once for all of the reply's globs."""
+    v-tg-fast2: one tap (botdata.dirlist.tap): the results folder is listed once for all of the reply's globs.
+    v-tg-stale: `sent_at` is the message's Telegram date (epoch seconds; None = fresh)."""
     with _dirlist.tap():
-        return _dispatch(phone, chat_id, text)
+        return _dispatch(phone, chat_id, text, sent_at)
 
 
-def _dispatch(phone, chat_id, text):
+def _dispatch(phone, chat_id, text, sent_at=None):
     ctx = Ctx.from_phone(phone, text, chat_id=chat_id)
     cmd = ctx.cmd
     if cmd == PAIR:
@@ -237,17 +319,28 @@ def _dispatch(phone, chat_id, text):
             if broken:
                 log("refused pairing from chat %s: %s failed to load: %s" % (chat_id, broken[0], broken[1]))
             return None
+        age = message_age(ctx, sent_at)
+        if age is not None:                         # v-tg-stale: an old /pair is never run late
+            log("ignored /pair from chat %s: sent %d s ago" % (chat_id, age))
+            if phone.chat_id is None or chat_id == phone.chat_id:
+                return stale_reply(ctx, age, sent_at, c)
+            return _pair_stale(ctx, age)            # a stranger while paired: silence, the paired chat is told
         return c.run(ctx)
     if phone.chat_id is None or chat_id != phone.chat_id:
         return None                                  # not ours: silence
     c, broken = command_for(cmd)
+    if c is not None and c.is_control:              # v-tg-stale: a control queued while the phone was down
+        age = message_age(ctx, sent_at)
+        if age is not None:
+            log("ignored %s: sent %d s ago (over %d s)" % (echo_of(c, ctx)[:60], age, STALE_S))
+            return stale_reply(ctx, age, sent_at, c)
     if c is None or c.needs_ledger:
         phone.ledger.refresh()
     bot = _bots.by_command(cmd)                     # v-tg-active: a paused or retired bot's own command
     if bot is not None and bot.name not in ctx.active():
         return hidden_reply(ctx, bot.name)
     if c is not None:
-        return c.run(ctx)
+        return money_note(ctx, c, c.run(ctx))
     if broken:
         return failed_reply(cmd, *broken)
     return unknown(ctx)

@@ -115,6 +115,7 @@ from collections import defaultdict
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+import logfiles                                              # noqa: E402  (archived logs: log_rotate.py)
 import pinrun                                                # noqa: E402
 import pindata                                               # noqa: E402
 import pinsim                                                # noqa: E402
@@ -314,11 +315,11 @@ def load_live(pattern=None):
     has a preceding signal on the same ticker in the same second).
     """
     fills = []
-    for fp in sorted(glob.glob(pattern or LOGS)):
+    for fp in logfiles.glob(pattern or LOGS):
         start = {}
         last_sig = {}
         pend = []            # fills from this file, awaiting settled records
-        for line in open(fp, encoding="utf-8", errors="replace"):
+        for line in logfiles.open(fp, encoding="utf-8", errors="replace"):
             line = line.strip()
             if not line:
                 continue
@@ -338,7 +339,7 @@ def load_live(pattern=None):
                 body = r.get("body") or {}
                 want = "yes" if str(body.get("side")) == "bid" else "no"
                 fills.append({
-                    "log": os.path.basename(fp),
+                    "log": logfiles.log_name(fp),
                     "ticker": r["ticker"],
                     "series": r["ticker"].split("-")[0],
                     "want": want,

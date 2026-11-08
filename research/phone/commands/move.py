@@ -13,6 +13,11 @@ automatically"):
   /move yes 4821             within 2 minutes: checks again on fresh cash, sends the ONE transfer, reads both sides back
   /move no                   forgets the plan
 
+A BIG move (v-move-big, 2026-11-07, the phone audit: "/move has no cap" -- kept uncapped, the operator's choice): over
+$500, or over 25% of the source pot's cash (money.big_reasons), says so on the plan with the amount as a % of the bank
+(every pot's cash + open bets) and of the source pot, and the first '/move yes CODE' sends NOTHING: it asks once more,
+with a new code and its own 2 minutes ('/move yes CODE2' sends; '/move no' forgets it).
+
 The work and every rail are phone/actions/money.py's (the only phone code that posts to Kalshi). What adapts after a
 move, by itself: the pin bot re-reads its cash and resizes (only while flat); the ladder rescales from its pot; the FX
 taker resizes from both its pots as one bank (v-fx-onepot, only while flat); the jump band is fixed size. The phone's money pages read Kalshi's transfer books, so a move shows as money
@@ -52,8 +57,9 @@ def _usage(cfg):
             "%s a move, %s a day" % ("no limit" if mx is None else dollars(mx), "no limit" if day is None else dollars(day)))
     return i_("Move: /move 50 main jb (amount, from, to) · /move 25 fx main · between the main account's pools: "
               "/move 20 main pool0 pool2. You get the plan and a code; /move yes CODE within %d minutes sends it. "
-              "Limits: %s; a pot holding open bets keeps their cost + %s in cash."
-              % (ASK_TTL_S // 60, caps, dollars(margin)))
+              "Limits: %s; a pot holding open bets keeps their cost + %s in cash; a move over %s or over %.0f%% of "
+              "its pot's cash asks once more." % (ASK_TTL_S // 60, caps, dollars(margin), dollars(_money.BIG_MOVE_USD),
+                                                  100 * _money.BIG_SHARE))
 
 
 def listing(ctx):
@@ -101,6 +107,20 @@ def _side(sub, pool):
     return "%s (%s)" % (_word(sub, pool), _money.pot_label(sub, pool))
 
 
+def _share_words(plan):
+    """'$600.00 is 23.1% of the bank ($2,594.71: every pot's cash + open bets) and 30% of main's cash ($2,000.00)'."""
+    a = plan["amount"]
+    bank, whole = plan.get("bank"), plan.get("bank_complete")
+    parts = []
+    if bank:
+        parts.append("%.1f%% of the bank (%s%s: every pot's cash + open bets)" % (
+            100.0 * a / bank, "at least " if not whole else "", dollars(bank)))
+    sc = plan.get("src_cash")
+    if sc:
+        parts.append("%.0f%% of %s's cash (%s)" % (100.0 * a / sc, _word(*plan["src"]), dollars(sc)))
+    return "%s is %s" % (dollars(a), " and ".join(parts) if parts else "a share of the bank that could not be read")
+
+
 def _adapts(plan):
     out = []
     for sub, pool in (plan["src"], plan["dst"]):
@@ -132,9 +152,23 @@ def plan_reply(ctx, words):
         L.append(i_("After: " + "; ".join(ad) + "."))
     L.append(i_("One %s transfer, checked again on fresh cash before it is sent." % (
         "subaccount" if plan["kind"] == "sub" else "pool-to-pool")))
+    big = _money.big_reasons(plan)
+    if big:                                                     # v-move-big: says so, and asks once more after the yes
+        L.append("⚠️ <b>Big move</b> (%s): %s. After your yes it asks once more before anything is sent." % (
+            esc(" and ".join(big)), esc(_share_words(plan))))
     L.append("To send it, reply <code>/move yes %s</code> within %d minutes (<code>/move no</code> forgets it)." % (
         code, ASK_TTL_S // 60))
     return Html("\n".join(L))
+
+
+def big_ask(ctx, plan, now):
+    """v-move-big: the second question for a big move -- a new code, its own ASK_TTL_S; nothing is sent."""
+    code = _confirm.ask(ctx.chat_id, "move", plan["id"], now, ASK_TTL_S, plan=dict(plan, big_ok=True), code=True)
+    log("/move: big move of $%.2f asked once more (%s)" % (plan["amount"], "; ".join(_money.big_reasons(plan))))
+    return Html("⚠️ <b>Last check: move %s</b> from %s to %s?\n%s.\nNothing has been sent. To send it, reply "
+                "<code>/move yes %s</code> within %d minutes (<code>/move no</code> forgets it)." % (
+                    esc(dollars(plan["amount"])), esc(_side(*plan["src"])), esc(_side(*plan["dst"])),
+                    esc(_share_words(plan)), code, ASK_TTL_S // 60))
 
 
 def send_reply(ctx, code):
@@ -144,6 +178,8 @@ def send_reply(ctx, code):
         head = {"expired": "That plan has expired.", "code": "That is not the code."}.get(why, "No move is waiting.")
         return Html("%s Nothing moved. Send <code>/move 50 main jb</code> for a new plan." % head)
     plan = got["plan"]
+    if _money.big_reasons(plan) and not plan.get("big_ok"):
+        return big_ask(ctx, plan, now)
     done = moved_today(now)
     try:
         res = _money.execute(plan, ctx.funds_get(), ctx.cfg, done)

@@ -88,6 +88,7 @@ import pinsupply                                                     # noqa: E40
 from botdata import clock as _clock                                  # noqa: E402
 from botdata import dirlist as _dirlist                              # noqa: E402
 from botdata import hedgeplay as _hedgeplay                          # noqa: E402
+import logfiles                                                      # noqa: E402  (archived logs: log_rotate.py)
 
 REPO = os.path.dirname(HERE)
 RESULTS = os.path.join(REPO, "results")
@@ -227,7 +228,7 @@ def _bank_from_why(why):
 class Ledger:
     def __init__(self, results=RESULTS):
         self.results = results
-        self.files = {}            # path -> bytes consumed
+        self.files = {}            # path -> bytes consumed (an archived .gz: read once, whole)
         self.settled = []          # dicts with t, tk, pnl ($), cost, want, result, close, file
         self.orders = []
         self.signals = []
@@ -240,6 +241,7 @@ class Ledger:
         self.closes = []           # close_summary records, trimmed
         self.newest = None
         self.newest_rows = []      # the newest file's order / hedge / settled rows (for open positions)
+        self.unbooked = {"unreadable": [], "void": []}   # v-ledger-unreadable: Kalshi rows left out of the money
 
     def _load_kalshi(self):
         """Settled MONEY, one row per MARKET, from Kalshi's own books.
@@ -285,7 +287,12 @@ class Ledger:
         # v-hedge-split (2026-11-01): the bet / the hedge / the buys after a flip of every hedged market, from this
         # ledger's own hedge records (botdata/hedgeplay.py): row["kind"] and row["play"]; a market not split has none
         hx = _hedgeplay.index(self.hedges) if self.hedges else {}
+        # v-ledger-unreadable (2026-11-07): a row with a count, a cost or the fee missing (a renamed Kalshi field) would
+        # book as a total loss or pure profit, and a voided market as the whole stake lost: left out, and counted
+        self.unbooked = pinledger.unbooked(rows)
         for s in rows.values():
+            if not pinledger.booked(s):
+                continue
             tk = s.get("ticker") or ""
             st = s.get("settled_time") or ""
             out.append({
@@ -331,27 +338,46 @@ class Ledger:
         # number. The record shapes differ (the commodity log has `won` where
         # the crypto log has `want`/`cost`), and `_ingest` reads every one of
         # those with .get(), so a missing field shows blank instead of lying.
-        paths = sorted(_dirlist.glob(os.path.join(self.results, "pinrun-live-*.jsonl"))
-                       + _dirlist.glob(os.path.join(self.results, "cmdlive-*.jsonl")))
+        #
+        # 2026-11-07: pin's logs untouched for 60 days are moved to results\archive\<name>.gz by log_rotate.py;
+        # logfiles.glob lists them in start order (the same order as before: cmdlive-* first, then pinrun-live-*)
+        # and each is read ONCE, whole -- or not at all when this process already read its plain copy.
+        paths = (sorted(_dirlist.glob(os.path.join(self.results, "cmdlive-*.jsonl")))
+                 + logfiles.glob(os.path.join(self.results, "pinrun-live-*.jsonl"), globber=_dirlist.glob))
         if not paths:
             return False
         changed = False
-        newest = max(paths, key=os.path.getmtime)
+        newest = max(paths, key=logfiles.by_mtime)    # 11-07: a log archived since the listing sorts oldest
         if newest != self.newest:
             self.newest = newest
             self.newest_rows = []
             self.files.pop(newest, None)
         for p in paths:
-            try:
-                size = os.path.getsize(p)
-            except OSError:
-                continue
-            done = self.files.get(p, 0)
-            if size <= done:
-                continue
-            with open(p, "rb") as fh:
-                fh.seek(done)
-                chunk = fh.read()
+            if logfiles.is_gz(p):
+                if p in self.files:
+                    continue
+                self.files[p] = 0
+                if self.files.get(os.path.join(self.results, logfiles.log_name(p))):
+                    continue                  # read in this process while it was still plain
+                done = 0
+                try:
+                    chunk = logfiles.read_bytes(p)
+                except (OSError, EOFError, ValueError):
+                    continue
+            else:
+                try:
+                    size = os.path.getsize(p)
+                except OSError:
+                    continue
+                done = self.files.get(p, 0)
+                if size <= done:
+                    continue
+                try:
+                    with open(p, "rb") as fh:
+                        fh.seek(done)
+                        chunk = fh.read()
+                except OSError:
+                    continue                  # archived (or held by log_rotate) this very moment: next refresh
             cut = chunk.rfind(b"\n")
             if cut < 0:
                 continue
@@ -376,7 +402,7 @@ class Ledger:
     def _ingest(self, r, path):
         k = r.get("kind")
         t = parse_t(r.get("t"))
-        f = os.path.basename(path)
+        f = logfiles.log_name(path)          # an archived log keeps its own name (no .gz)
         if k == "settled":
             # DELIBERATELY IGNORED. Money now comes from Kalshi's own
             # settlements (`_load_kalshi`), never from our logs. The logs
@@ -1397,15 +1423,16 @@ def health(ledger):
     h["kalshi_ok"], h["kalshi_prev"], h["kalshi_open"], h["kalshi_chans"], h["kalshi_age"] = recorder_ok(os.path.join(KALS, "kalshi_data"))
     h["feeds_ok"], h["feeds_prev"], h["feeds_open"], h["feeds_chans"], h["feeds_age"] = recorder_ok(os.path.join(KALS, "feed_data"))
     if not remote:
+        # 11-07: logfiles.mtime -- log_rotate may archive an old log between this listing and the look at its time
         lives = _dirlist.glob(os.path.join(RESULTS, "pinrun-live-*.jsonl"))
-        h["blind"] = (blind_of(tail_rows(max(lives, key=os.path.getmtime)), time.time())
+        h["blind"] = (blind_of(tail_rows(max(lives, key=lambda p: logfiles.mtime(p, 0.0))), time.time())
                       if lives and h["alive"] else None)
     h["cdc_age"] = newest_mtime_age(os.path.join(KALS, "cdc_data"))
     now = time.time()
     h["paper_arms"] = sum(1 for p in _dirlist.glob(os.path.join(RESULTS, "pinrun-paper-*.jsonl"))
-                          if now - os.path.getmtime(p) < 900)
+                          if now - logfiles.mtime(p, 0.0) < 900)
     h["race_arms"] = sum(1 for p in _dirlist.glob(os.path.join(RESULTS, "pinracearm-*.jsonl"))
-                         if now - os.path.getmtime(p) < 900)
+                         if now - logfiles.mtime(p, 0.0) < 900)
     try:
         h["disk_gb"] = shutil.disk_usage("C:\\").free / 1e9
     except OSError:
@@ -1651,7 +1678,7 @@ def quick_health():
          "blind": None}
     lives = _dirlist.glob(os.path.join(RESULTS, "pinrun-live-*.jsonl"))
     if lives:
-        for r in tail_rows(max(lives, key=os.path.getmtime)):
+        for r in tail_rows(max(lives, key=logfiles.by_mtime)):
             if r.get("kind") == "halt":
                 h["halt"] = {"t": parse_t(r.get("t")), "kind": "halt", "why": r.get("why")}
     return h
@@ -1827,7 +1854,7 @@ def status_facts(now=None):
     except Exception as e:                              # noqa: BLE001
         h["flat"], h["flat_err"] = "UNKNOWN", str(e)[:120]
     lives = _dirlist.glob(os.path.join(RESULTS, "pinrun-live-*.jsonl"))
-    ages = [a for a in ((_file_age_s(max(lives, key=os.path.getmtime)) if lives else None),
+    ages = [a for a in ((_file_age_s(max(lives, key=logfiles.by_mtime)) if lives else None),
                         _file_age_s(os.path.join(RESULTS, "pinrun-live.out"))) if a is not None]
     h["quiet_s"] = min(ages) if ages else None
     h["phone_s"] = _file_age_s(os.path.join(RESULTS, "pinphone.heartbeat"))

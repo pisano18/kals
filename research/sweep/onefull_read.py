@@ -3,7 +3,9 @@
    priced at the refused price x the refused size (an UPPER bound on what the bot could have bought), outcome from
    our own Kalshi ledger row for that market (we held it, so the result is known).
 2. The bar's first line: no market shows two full-size entry orders in one close."""
-import glob, json, collections, calendar, time
+import glob, json, collections, calendar, sys, time
+sys.path.insert(0, r"C:\kals-repo\research")
+import logfiles                                         # pin's archived logs (log_rotate.py)
 
 START = "2026-09-27T08:11:15"
 L = json.load(open(r"C:\kals-repo\results\kalshi_ledger.json", encoding="utf-8"))["settlements"]
@@ -13,8 +15,8 @@ for s in L.values():
 
 ref = {}
 orders = collections.defaultdict(list)
-for f in sorted(glob.glob(r"C:\kals-repo\results\pinrun-live-*.jsonl")):
-    for l in open(f, encoding="utf-8", errors="replace"):
+for f in logfiles.glob(r"C:\kals-repo\results\pinrun-live-*.jsonl"):
+    for l in logfiles.open(f, encoding="utf-8", errors="replace"):
         if '"kind": "refused"' not in l and '"kind": "order"' not in l:
             continue
         try:

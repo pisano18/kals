@@ -26,6 +26,15 @@ self-tests and the golden harness turn it on only where they test it):
              bot is DOWN, so an outside service notices when the server, the phone or a bot stops.
   REPORTS    the weekly report (Sunday 8 PM ET, this Mon..Sun week) and the monthly one (the 1st, 8 AM ET, the month just
              ended), next to the 8 AM daily: phone/reports.py, the same page as /week and /month last.
+  LEDGER     v-ledger-unreadable (2026-11-07): Kalshi settlement rows no money total books (botdata/ledgercheck.py: a
+             count, a cost or the fee missing -- what a renamed Kalshi field looks like -- or a voided market). ONE
+             urgent alert when unreadable markets first appear (0 -> N; it does not repeat while the count grows, the
+             money pages' top line shows the count now), one when every row reads again (N -> 0); one plain alert when
+             more markets are voided WHILE THE PHONE RUNS (the first scan of a run learns the voids already there, so a
+             restart never repeats it). Read every LEDGER_EVERY_S; the scan re-reads only files that changed.
+  ROTATION   the server's log rotation (research/log_rotate.py, task KalsLogRotate; phone/rotation.py, 11-07): once
+             when it turns bad (never ran, stuck, stale, failed, git unreadable so it moved nothing, the disk within 8
+             weeks of the 6 GB line) and once when it works again. Not installed: nothing.
 
 Every alert leads with what happened and what it means in $; every one goes through `send(msg, urgent)` (alerts.py:
 muted -> nothing; quiet hours hold what is not urgent). Each check is inside its own try: one failing never costs the
@@ -52,6 +61,7 @@ FLUX_S = 90                             # a Kalshi read this close to the bot's 
 BAL_READS = 2                           # the gap must be there on this many reads in a row
 WEEKLY_AT_S = 20 * 3600                 # the weekly report: Sunday 8 PM ET (this Mon..Sun week)
 MONTHLY_AT_S = 8 * 3600                 # the monthly report: the 1st, 8 AM ET (the month just ended)
+LEDGER_EVERY_S = 60                     # the unreadable-markets check runs at most this often
 
 
 @dataclass
@@ -69,6 +79,12 @@ class MonitorState:
     reports_learnt: bool = False
     held: list = field(default_factory=list)        # [(epoch, msg)] what quiet hours held (alerts.flush_held)
     alive: object = None                            # phone/alive.py's AliveState (the outside 'is it alive' ping)
+    ledger_t: float = None                          # when the unreadable-markets check last ran
+    ledger_told: int = 0                            # the unreadable count the last alert told (0 = none / all read)
+    void_told: int = 0                              # the voided-markets count already told (or learnt)
+    void_learnt: bool = False                       # the first scan of this run has set void_told
+    rot_t: float = None                             # phone/rotation.py: when the log rotation's state was last read
+    rot_bad: str = None                             # ...and the bad state already told (None: none, or ok again)
 
 
 def state_of(st):
@@ -409,14 +425,50 @@ def fmt(build, plain):
         return plain()
 
 
+def check_ledger(ctx, m, send, now):
+    """v-ledger-unreadable: one alert when unreadable Kalshi rows first appear, one when they are gone; one when more
+    markets are voided (see LEDGER in the module note)."""
+    if m.ledger_t is not None and 0.0 <= now - m.ledger_t < LEDGER_EVERY_S:
+        return
+    m.ledger_t = now
+    from botdata import ledgercheck as _lc
+    from phone.render import unbooked as _ub
+    s = _lc.scan(ctx.results)
+    if s.get("error"):
+        log("ledger check: the scan failed: %s" % s["error"])
+        return
+    n, before = s["unreadable"], m.ledger_told
+    if n and not before:
+        m.ledger_told = n
+        send(fmt(lambda: _ub.alert_text(s, before),
+                 lambda: "%d markets unreadable (Kalshi field change?): left out of every money total." % n), urgent=True)
+    elif before and not n:
+        m.ledger_told = 0
+        send(fmt(lambda: _ub.alert_text(s, before),
+                 lambda: "Every Kalshi settlement reads again (%d markets were left out)." % before), urgent=True)
+    if not m.void_learnt or s["void"] < m.void_told:
+        m.void_learnt = True                        # the voids already there were told by an earlier run (or need none)
+        m.void_told = s["void"]
+    elif s["void"] > m.void_told:
+        new, m.void_told = s["void"] - m.void_told, s["void"]
+        send(fmt(lambda: _ub.void_alert(s, new),
+                 lambda: "%d more markets voided by Kalshi: left out of the money totals." % new))
+
+
 def check_alive(ctx, m, send, now):
     """The outside 'is it alive' ping (phone/alive.py), after the DOWN check has had its say."""
     from phone import alive as _alive
     _alive.check(ctx, m, send, now)
 
 
+def check_rotation(ctx, m, send, now):
+    """The server's log rotation (phone/rotation.py, 11-07): once when it turns bad, once when it works again."""
+    from phone import rotation as _rotation
+    _rotation.check(ctx, m, send, now, fmt=fmt)
+
+
 CHECKS = (("down", check_down), ("stops", check_gauges), ("balance", check_balance), ("reports", check_reports),
-          ("alive", check_alive))
+          ("ledger", check_ledger), ("alive", check_alive), ("rotation", check_rotation))
 
 
 def tick(ctx, st, send, now=None):

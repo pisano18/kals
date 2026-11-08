@@ -43,6 +43,9 @@ import json
 import os
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))    # research/, so logfiles imports under python -I
+import logfiles                                                    # noqa: E402  (archived logs: log_rotate.py)
+
 ET = datetime.timezone(datetime.timedelta(hours=-4))
 CHEAP_UNDER = 0.95          # the price below which a contract is worth having
 SIZE_MIRROR_CUT = "2026-09-19T12:26:00Z"   # A66: paper arms stop being a control
@@ -98,9 +101,9 @@ def cheap_share(prices, weights=None, under=CHEAP_UNDER):
 
 
 def _iter(pattern):
-    for f in sorted(glob.glob(os.path.join(REPO, "results", pattern))):
+    for f in logfiles.glob(os.path.join(REPO, "results", pattern)):
         try:
-            fh = open(f, encoding="utf-8", errors="replace")
+            fh = logfiles.open(f, encoding="utf-8", errors="replace")
         except OSError:
             continue
         with fh:

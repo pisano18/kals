@@ -69,6 +69,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 from botdata import clock  # noqa: E402
+import logfiles  # noqa: E402  (pin's logs archived by log_rotate.py after 60 days)
 
 RESULTS = os.path.join(os.path.dirname(HERE), "results")
 STATE = os.path.join(RESULTS, "pinrules_watch.json")
@@ -200,7 +201,7 @@ class Logs:
         seen = set()
         for path in paths:
             try:
-                fh = open(path, encoding="utf-8", errors="replace")
+                fh = logfiles.open(path, encoding="utf-8", errors="replace")
             except OSError:
                 continue
             with fh:
@@ -275,8 +276,8 @@ class Logs:
 
 def pin_paths(start_epoch):
     """pin's live logs that can hold anything from `start_epoch` on, plus the log before (fill ratios)."""
-    ps = sorted(glob.glob(os.path.join(RESULTS, "pinrun-live-*.jsonl")))
-    keep = [p for p in ps if os.path.getmtime(p) >= (start_epoch or 0) - 86400]
+    ps = logfiles.glob(os.path.join(RESULTS, "pinrun-live-*.jsonl"))     # plain + archived, in start order
+    keep = [p for p in ps if logfiles.mtime(p, 0.0) >= (start_epoch or 0) - 86400]   # 0: archived since the listing
     i = ps.index(keep[0]) if keep else len(ps)
     return ps[max(0, i - 1):] if keep else ps[-2:]
 
@@ -664,14 +665,18 @@ def fix_text(c, ev, tot, bank):
 
 # ---------------------------------------------------------------------------
 class Phone:
-    def __init__(self, dry=False):
+    """The phone path (also research\\kalshi_watch.py's, v-kwatch 11-07): urgent = sent with sound even in the quiet
+    hours, the rest silent then. `log_fn` (default this file's log) is where its own failures are written."""
+
+    def __init__(self, dry=False, log_fn=None):
         self.dry = dry
+        self.log = log_fn or log
         self.cfg = {}
         try:
             with open(TELEGRAM_CFG, encoding="utf-8") as fh:
                 self.cfg = json.load(fh)
         except (OSError, ValueError) as e:
-            log("no phone config (%s)" % type(e).__name__)
+            self.log("no phone config (%s)" % type(e).__name__)
 
     def quiet(self, now):
         try:
@@ -687,7 +692,7 @@ class Phone:
             return True
         token, chat = self.cfg.get("token"), self.cfg.get("chat_id")
         if not token or not chat:
-            log("not sent: the phone config has no token or chat_id")
+            self.log("not sent: the phone config has no token or chat_id")
             return False
         from phone.html import MAX_LEN, split_text
         from phone.transport import Telegram
@@ -698,11 +703,11 @@ class Phone:
                 d = tg._call("sendMessage", {"chat_id": chat, "text": chunk,
                                              "disable_notification": "true" if silent else None})
                 if not d.get("ok"):
-                    log("Telegram said not ok: %s" % str(d)[:200])
+                    self.log("Telegram said not ok: %s" % str(d)[:200])
                     return False
             return True
         except Exception as e:
-            log("send failed: %s" % type(e).__name__)
+            self.log("send failed: %s" % type(e).__name__)
             return False
 
 

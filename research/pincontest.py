@@ -105,6 +105,7 @@ from collections import defaultdict
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+import logfiles                                               # noqa: E402  (archived logs: log_rotate.py)
 from pincross import cp_interval                              # noqa: E402
 from pinselect import icc_deff, mde_pp                        # noqa: E402
 import gzsalvage                                              # noqa: E402
@@ -329,9 +330,9 @@ def own_fills(live_glob):
     offers we hit as CONTESTED -- by us.
     """
     out = []
-    for path in sorted(glob.glob(live_glob)):
+    for path in logfiles.glob(live_glob):
         try:
-            fh = open(path, encoding="utf-8", errors="replace")
+            fh = logfiles.open(path, encoding="utf-8", errors="replace")
         except OSError:
             continue
         with fh:

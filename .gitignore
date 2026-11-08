@@ -55,6 +55,8 @@ results/pintraj-*.jsonl
 # reverts a LIVE bot's state; the VM plan copies these by hand, never via git.
 /results/*.pid
 /results/*.heartbeat
+# the keep-alive's once-an-hour kill guards (deaf_kill_*.last, phone_hung_kill.last): a stash must never reset them
+/results/*.last
 /results/*.stop
 /results/.run.lock
 /results/.swept_seen
@@ -145,3 +147,17 @@ results/desk_actions/
 results/approvals/state.json
 results/approvals/state.json.tmp
 results/phone_actions.jsonl
+# v-kwatch (2026-11-07): the Kalshi watch's runtime state, log and install output (server-side, never committed)
+results/kalshi_watch_state.json
+results/kalshi_watch_state.json.tmp
+results/kalshi_watch.log
+results/kalshi_watch.crash
+results/kalshi_watch_install.out
+
+# ops fixes (2026-11-07): research/log_rotate.py moves finished logs into results/archive/ (gzip). IGNORED, so a
+# "git add -A; git stash" (the 10-15 Teleport auto-stash) can never take the only copy of an archived log away.
+/results/archive/
+/results/log_rotate.log
+/results/log_rotate_status.json
+/results/log_rotate_status.json.tmp
+/results/log_rotate_installed.json

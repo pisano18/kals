@@ -39,6 +39,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
+import logfiles                                                    # noqa: E402  (archived logs: log_rotate.py)
 
 REPO = os.path.dirname(HERE)
 RESULTS = os.path.join(REPO, "results")
@@ -187,7 +188,7 @@ def collect(day, data=None, series=CRYPTO, tau_keep=TAU_KEEP, on_progress=None):
 
     # ---- what WE did, and why
     import pindesk
-    for f in sorted(glob.glob(os.path.join(RESULTS, "pinrun-live-*.jsonl"))):
+    for f in logfiles.glob(os.path.join(RESULTS, "pinrun-live-*.jsonl")):
         for line in _lines(f) if f.endswith(".gz") else open(
                 f, encoding="utf-8", errors="replace"):
             if "15M-" not in line:

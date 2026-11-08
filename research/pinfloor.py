@@ -37,6 +37,7 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
+import logfiles                                                    # noqa: E402  (archived logs: log_rotate.py)
 REPO = os.path.dirname(HERE)
 RESULTS = os.path.join(REPO, "results")
 
@@ -111,11 +112,11 @@ def scan(paths=None, sources=None):
     if paths is None:
         paths = []
         for name, pat in (sources or MONEY_LOGS):
-            found = sorted(glob.glob(os.path.join(RESULTS, pat)))
+            found = logfiles.glob(os.path.join(RESULTS, pat))
             for f in found:
                 lookup[f] = name
             paths += found
-        paths = sorted(paths)
+        paths = sorted(paths, key=logfiles.sort_key)
     days = collections.defaultdict(lambda: {
         "closes": 0, "looks": 0, "tradeable": 0, "fired": 0,
         "offers": 0, "at10": 0, "at39": 0, "atfloor": 0,
@@ -124,7 +125,7 @@ def scan(paths=None, sources=None):
         "contracts": 0.0, "staked": 0.0,
         "by_src": collections.defaultdict(float)})
     for p in paths:
-        for line in io.open(p, encoding="utf-8", errors="replace"):
+        for line in logfiles.open(p, encoding="utf-8", errors="replace"):
             if '"kind"' not in line:
                 continue
             try:

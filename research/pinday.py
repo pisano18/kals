@@ -53,6 +53,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 from downtime import et_offset                                   # noqa: E402
+import logfiles                                                  # noqa: E402  (archived logs: log_rotate.py)
 
 RESULTS = os.path.join(os.path.dirname(HERE), "results")
 LIVE_GLOB = os.path.join(RESULTS, "pinrun-live-*.jsonl")
@@ -135,7 +136,7 @@ def load(paths):
     seen, out = set(), []
     for p in paths:
         try:
-            fh = open(p, encoding="utf-8", errors="replace")
+            fh = logfiles.open(p, encoding="utf-8", errors="replace")
         except OSError:
             continue
         with fh:
@@ -220,7 +221,7 @@ def load_race(paths):
     seen, out = set(), []
     for p in paths:
         try:
-            fh = open(p, encoding="utf-8", errors="replace")
+            fh = logfiles.open(p, encoding="utf-8", errors="replace")
         except OSError:
             continue
         with fh:
@@ -289,11 +290,13 @@ def ledger_markets(rows):
     exchange ever list one ticker twice, the two are summed into the one
     market; nothing is dropped. `skipped` counts rows with no ticker or no
     day, so a guard that discards data says how much it discarded.
+    v-ledger-unreadable (2026-11-07): a row pinledger cannot book (a count, a cost or the fee missing -- a renamed
+    Kalshi field -- or a voided market) is skipped and counted too, never booked as a loss or a profit.
     """
     import pinledger          # here, not at the top: pinledger imports pinday
     out, skipped = {}, 0
     for s in rows.values():
-        if not isinstance(s, dict):
+        if not isinstance(s, dict) or not pinledger.booked(s):
             skipped += 1
             continue
         tk = s.get("ticker") or ""
@@ -399,8 +402,8 @@ def report(results=RESULTS, days=7, crypto_glob=None, now=None, out=print):
     now = time.time() if now is None else now
     today = et_day_of_epoch(now)
     explicit = crypto_glob is not None
-    paths = sorted(glob.glob(crypto_glob if explicit
-                             else os.path.join(results, LIVE_PAT)))
+    paths = logfiles.glob(crypto_glob if explicit
+                          else os.path.join(results, LIVE_PAT))
     recs = load(paths)
     if not explicit:
         recs += load(sorted(glob.glob(os.path.join(results, CMD_PAT))))
@@ -453,7 +456,8 @@ def report(results=RESULTS, days=7, crypto_glob=None, now=None, out=print):
             "python research/pinledger.py")
         flag = "  LOGS"
     if led_skipped or log_skipped:
-        say("  (unplaceable rows set aside: %d ledger, %d log -- no ticker or no day)"
+        say("  (unplaceable rows set aside: %d ledger, %d log -- no ticker or no day, or a ledger row "
+            "missing a number its money needs, or voided)"
             % (led_skipped, log_skipped))
     say()
     say("  %-10s %-9s | %7s %9s %6s | %9s %9s %6s %8s"

@@ -43,6 +43,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 os.environ.setdefault("KALS_DASH_SELFTESTED", "1")
+import logfiles                                                # noqa: E402  (archived logs: log_rotate.py)
 import pindash                                                 # noqa: E402
 
 LOSS_COST_C = 35.8       # measured cents/contract on the ten real losing closes
@@ -174,9 +175,8 @@ def book_trend(rows=None, bar=0.50):
     import datetime as _dt
     if rows is None:
         rows = []
-        for q in sorted(glob.glob(os.path.join(REPO, "results",
-                                                "pinrun-live-*.jsonl"))):
-            for line in open(q, encoding="utf-8"):
+        for q in logfiles.glob(os.path.join(REPO, "results", "pinrun-live-*.jsonl")):
+            for line in logfiles.open(q, encoding="utf-8"):
                 try:
                     d = json.loads(line)
                 except ValueError:

@@ -74,6 +74,7 @@ import zlib
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
+import logfiles                                                    # noqa: E402  (archived logs: log_rotate.py)
 RESULTS = os.path.join(os.path.dirname(HERE), "results")
 
 COINS = ("KXBTC15M", "KXETH15M", "KXSOL15M", "KXXRP15M", "KXDOGE15M",
@@ -319,7 +320,7 @@ def load_our_fills(paths, t0_ms, t1_ms):
     out = []
     for p in paths:
         try:
-            fh = open(p, encoding="utf-8")
+            fh = logfiles.open(p, encoding="utf-8")
         except OSError:
             continue
         with fh:
@@ -849,7 +850,7 @@ def main():
         sys.exit(1)
     t0 = calendar.timegm(time.strptime(a.start, "%Y-%m-%dT%H")) * 1000
     t1 = calendar.timegm(time.strptime(a.end, "%Y-%m-%dT%H")) * 1000
-    fills = load_our_fills(sorted(glob.glob(os.path.join(RESULTS, "pinrun-live-*.jsonl"))), t0, t1)
+    fills = load_our_fills(logfiles.glob(os.path.join(RESULTS, "pinrun-live-*.jsonl")), t0, t1)
     print("our entry fills in window: %d orders, %d markets" % (len(fills), len({f['tk'] for f in fills})))
     outcome = load_outcomes(a.data, a.start, a.end)
     print("outcomes (lifecycle determined): %d markets" % len(outcome))

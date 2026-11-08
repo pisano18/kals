@@ -45,6 +45,12 @@ class Command:
     fail            fail(exception) -> reply: the old method's 'Could not build ...' answer (see the module note).
     needs_ledger    the router refreshes ctx.ledger before running it (every command does today: Phone.handle).
     runs_in_worker  it starts a background worker that later calls ctx.say (controls, /update).
+    control         it CHANGES something (v-tg-stale, 2026-11-07): a message for it older than router.STALE_S is not
+                    run, and the chat is told why (a control queued while the phone was down never runs hours late).
+                    None (the default) = every command of the 'controls' section; True / False says so for another.
+    echo            echo(text) -> what a log line or a reply may repeat of a message for it, when its words carry a
+                    secret (/pair's secret, /alive's ping URL); None = the message as typed. (v-tg-stale: the 'Not done'
+                    answer and its log line repeat the message, and must never repeat a secret; Command.echo_of)
     examples        extra message texts the shadow / tests run besides the bare names: ('/server help', '/stop yes').
     """
     names: Tuple[str, ...]
@@ -58,6 +64,8 @@ class Command:
     fail: Optional[Callable[[BaseException], Any]] = None
     needs_ledger: bool = True
     runs_in_worker: bool = False
+    control: Optional[bool] = None
+    echo: Optional[Callable[[str], str]] = None
     examples: Tuple[str, ...] = ()
     module: str = field(default="", compare=False)
 
@@ -91,6 +99,21 @@ class Command:
     @property
     def name(self):
         return self.names[0]
+
+    @property
+    def is_control(self):
+        """It changes something: `control` when set, else a command of the 'controls' section."""
+        return self.section == "controls" if self.control is None else bool(self.control)
+
+    def echo_of(self, text):
+        """What may be repeated of `text` (a log line, a reply): echo(text) when the command declares one, else the
+        text as typed. A failing echo gives only the command's main name (never the words: they may hold the secret)."""
+        if self.echo is None:
+            return str(text or self.names[0])
+        try:
+            return str(self.echo(str(text or "")))
+        except Exception:                                       # noqa: BLE001
+            return self.names[0]
 
     def kind_of(self, name=None):
         """The chart kind after `name` (default the main name), or None."""

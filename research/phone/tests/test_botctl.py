@@ -50,7 +50,9 @@ def fake_spawn(cmdline, cwd):
 L.SPAWN = fake_spawn
 L.WAIT = lambda pid, timeout_s: 0
 B.time = types.SimpleNamespace(sleep=lambda s: SLEPT.append(s), time=time.time)
-K.control = lambda ctx, which: CONTROLS.append(which) or ("CONTROL " + which)
+K.control = lambda ctx, which, h=None: CONTROLS.append(which) or ("CONTROL " + which)
+# v-tg-startyes: the pin bot's START reads its state first (ctx.health); planted here as a running, unhalted bot
+HEALTH = {"alive": True, "pid": 4141, "quiet_s": 5, "flag": None, "open": {}, "watchdog_s": 10, "halt": None}
 
 
 def open_bets(count=1, at_risk=4.40, ok=True):
@@ -59,7 +61,7 @@ def open_bets(count=1, at_risk=4.40, ok=True):
 
 def ctx(text, now=T, procs=(JB_LIVE, FX_LIVE), bs=None, chat=7):
     return FakeCtx(text=text, now=now, chat_id=chat, procs_fn=lambda p=procs: list(p),
-                   bs_get=bs or open_bets(), state=types.SimpleNamespace(busy=False))
+                   bs_get=bs or open_bets(), state=types.SimpleNamespace(busy=False), health=dict(HEALTH))
 
 
 def run(text, **kw):
@@ -106,6 +108,24 @@ def test_plain_pause_and_start_stay_the_pin_bots():
         r, _c = run(text)
         assert CONTROLS == [which] and r == "CONTROL " + which, (text, CONTROLS, r)
     assert os.listdir(TMP) == [], "the pin bot's controls write no phone stop file"
+
+
+def test_resume_pin_on_a_halt_asks_first():
+    """v-tg-startyes: '/resume pin' and '/play pin' are the pin bot's START, so a halt asks there too."""
+    clean()
+    dd = dict(HEALTH, alive=False, pid=None, halt={"kind": "halt", "t": T - 60,
+                                                    "why": "DRAWDOWN brake: bank $810.59 is 22.5% below its high of "
+                                                           "$1,046.43, limit 20%"})
+    for text in ("/resume pin", "/play pin", "/start pin", "/start"):
+        c = FakeCtx(text=text, now=T, chat_id=7, procs_fn=lambda: [], bs_get=open_bets(),
+                    state=types.SimpleNamespace(busy=False), health=dict(dd))
+        r = str(CM.by_name(c.cmd).run(c))
+        assert "HALTED" in r and CONTROLS == [], (text, r, CONTROLS)
+    for text in ("/resume pin yes", "/play pin yes", "/start yes"):
+        del CONTROLS[:]
+        c = FakeCtx(text=text, now=T, chat_id=7, procs_fn=lambda: [], bs_get=open_bets(),
+                    state=types.SimpleNamespace(busy=False), health=dict(dd))
+        assert str(CM.by_name(c.cmd).run(c)) == "CONTROL start" and CONTROLS == ["start"], text
 
 
 def test_unknown_word_changes_nothing():

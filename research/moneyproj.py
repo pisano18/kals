@@ -60,6 +60,7 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
+import logfiles                                                    # noqa: E402  (archived logs: log_rotate.py)
 
 REPO = os.path.dirname(HERE)
 RESULTS = os.path.join(REPO, "results")
@@ -154,8 +155,8 @@ def _ep(t):
 def scan_logs(pattern):
     """(size_timeline [(epoch, size)], ladders {ticker: ladder}) from live logs."""
     sizes, ladders = [], {}
-    for f in sorted(glob.glob(pattern)):
-        with open(f, encoding="utf-8", errors="replace") as fh:
+    for f in logfiles.glob(pattern):
+        with logfiles.open(f, encoding="utf-8", errors="replace") as fh:
             for line in fh:
                 if '"autosize"' in line:
                     try:

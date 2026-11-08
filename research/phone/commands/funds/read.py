@@ -354,7 +354,9 @@ def funds_settled(getter, subs, now, clock=time.monotonic, deadline_s=FUNDS_HIST
                 break
         else:
             err = "more than %d pages of settlements in %d days; stopped" % (FUNDS_HIST_PAGES, days)
-        res = {"rows": list(rows.values()), "err": err, "oldest": oldest, "since": since, "cached": False}
+        # v-ledger-unreadable: booked rows only (pinledger.booked) -- an unreadable or voided market is in no total
+        res = {"rows": [s for s in rows.values() if pinledger.booked(s)], "err": err, "oldest": oldest, "since": since,
+               "cached": False}
         if err is None:
             memo[n] = {"t": clock(), "since": since, "res": res}
         out[n] = res

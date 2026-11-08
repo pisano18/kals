@@ -1670,9 +1670,9 @@ class Phone:
 
     def save_cfg(self):
         try:
-            _paths.check_write(self.cfg_path)        # v-tg-rebuild step 2: never C:\kals under KALS_TESTING=1
-            with open(self.cfg_path, "w", encoding="utf-8") as fh:
-                json.dump(self.cfg, fh, indent=2)
+            # v-tg-pairlock (2026-11-07): one step (a temp file, then os.replace) -- an in-place rewrite cut short left
+            # half a telegram.json; check_write inside (v-tg-rebuild step 2: never C:\kals under KALS_TESTING=1)
+            _paths.write_json_atomic(self.cfg_path, self.cfg, indent=2)
         except OSError as e:
             log("could not save config: %s" % e)
 

@@ -16,6 +16,10 @@ import urllib.request
 from phone.html import MAX_LEN, html_to_plain, split_html, split_text
 from phone.log import log
 
+# getUpdates hands over at most this many messages a poll (Telegram's own default and maximum, sent explicitly): a full
+# batch means more may be queued, so the poll after it is judged by the message date too (v-tg-stale, phone/app.py)
+POLL_LIMIT = 100
+
 
 # ===========================================================================
 # transport
@@ -31,8 +35,8 @@ class Telegram:
             return json.loads(r.read().decode("utf-8", "replace"))
 
     def get_updates(self, offset, timeout=25):
-        d = self._call("getUpdates", {"offset": offset, "timeout": timeout, "allowed_updates": '["message"]'},
-                       http_timeout=timeout + 15)
+        d = self._call("getUpdates", {"offset": offset, "timeout": timeout, "allowed_updates": '["message"]',
+                                      "limit": POLL_LIMIT}, http_timeout=timeout + 15)
         return d.get("result", []) if d.get("ok") else []
 
     def send(self, chat_id, text):
@@ -115,7 +119,7 @@ class FakeTelegram:
 
     def get_updates(self, offset, timeout=25):
         out = [u for u in self.incoming if u["update_id"] >= (offset or 0)]
-        return out
+        return out[:POLL_LIMIT]                     # as Telegram: at most POLL_LIMIT a poll, oldest first
 
     def send(self, chat_id, text):
         self.sent.append((chat_id, text))

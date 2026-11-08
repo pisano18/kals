@@ -82,7 +82,7 @@ def _money_block_raw(c, name, today, ctx=None):
         base["days_7"], base["days_30"], base["all_days"], base["markets"] = [], [], [], []
         base["error"] = base["error"] or "Kalshi has not been read yet"
         return base
-    rows = [s for sb, y in xs for s in (y.get("rows") or {}).values() if _tables.owner(s.get("ticker"), sb) == name]
+    rows = [s for sb, y in xs for s in _money.booked_rows(y) if _tables.owner(s.get("ticker"), sb) == name]
     ms = [_money.market(s) for s in rows]
     if _hedges_of(name):                               # v-hedge-split: the bet / the hedge / the buys after a flip
         hx = _hedgeplay.current()
@@ -115,7 +115,7 @@ def _earlier_block(c, hidden, today):
         base["error"] = base["error"] or ("nothing hidden" if not hidden else "Kalshi has not been read yet")
         return base
     hid = set(hidden)
-    ms = [_money.market(s) for sb, y in xs for s in (y.get("rows") or {}).values() if _tables.owner(s.get("ticker"), sb) in hid]
+    ms = [_money.market(s) for sb, y in xs for s in _money.booked_rows(y) if _tables.owner(s.get("ticker"), sb) in hid]
     ms.sort(key=lambda m: (m["t"] or 0), reverse=True)
     base.update(_money.windows(ms, today))
     return base

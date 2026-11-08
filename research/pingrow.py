@@ -32,6 +32,9 @@ import json
 import os
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))    # research/, so logfiles imports under python -I
+import logfiles                                                    # noqa: E402  (pin's archived logs: log_rotate.py)
+
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(REPO, "results", "GROWTH_TRACK.md")
 BRAKE = 5.88
@@ -167,9 +170,9 @@ def actuals():
     loseclose = collections.defaultdict(set)
     sizes = collections.defaultdict(list)
     banks = []
-    for p in sorted(glob.glob(os.path.join(REPO, "results", "pinrun-live-*.jsonl"))):
+    for p in logfiles.glob(os.path.join(REPO, "results", "pinrun-live-*.jsonl")):
         sig, order_day = {}, {}
-        for line in open(p, encoding="utf-8"):
+        for line in logfiles.open(p, encoding="utf-8"):
             try:
                 d = json.loads(line)
             except ValueError:

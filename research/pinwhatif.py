@@ -94,6 +94,14 @@ def read_run(path):
     return out
 
 
+def _mtime0(path):
+    """A file's modified time, 0 once it has gone (log_rotate.py archives old logs, 2026-11-07)."""
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return 0.0
+
+
 def latest(pattern):
     fs = sorted(glob.glob(os.path.join(RESULTS, pattern)),
                 key=os.path.getmtime)
@@ -453,8 +461,8 @@ def main():
         now = time.time()
         paths = [q for q in glob.glob(os.path.join(RESULTS,
                                                    "pinrun-paper-*.jsonl"))
-                 if now - os.path.getmtime(q) < a.stale_s]
-        paths.sort(key=os.path.getmtime)
+                 if now - _mtime0(q) < a.stale_s]
+        paths.sort(key=_mtime0)
         # AND ONE LOG PER CONFIGURATION, the newest. A restart leaves the old
         # run's log behind, still recent enough to pass the staleness test, and
         # its stale last-record collapses the shared window to nothing. Two

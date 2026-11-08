@@ -28,6 +28,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import logfiles                                                    # noqa: E402  (archived logs: log_rotate.py)
 
 RESULTS = os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "results")
@@ -48,7 +49,7 @@ def read_run(path):
     """One run file -> (start_record, [records])."""
     recs = []
     start = None
-    with open(path, encoding="utf-8", errors="ignore") as fh:
+    with logfiles.open(path, encoding="utf-8", errors="ignore") as fh:
         for line in fh:
             try:
                 r = json.loads(line)
@@ -67,11 +68,11 @@ def decision_key(start):
 def runs(results=RESULTS):
     """Every live run, oldest first, with its decision key."""
     out = []
-    for p in sorted(glob.glob(os.path.join(results, "pinrun-live-*.jsonl"))):
+    for p in logfiles.glob(os.path.join(results, "pinrun-live-*.jsonl")):
         st, recs = read_run(p)
         if st is None:
             continue
-        out.append({"path": p, "name": os.path.basename(p), "start": st,
+        out.append({"path": p, "name": logfiles.log_name(p), "start": st,
                     "key": decision_key(st), "recs": recs})
     return out
 

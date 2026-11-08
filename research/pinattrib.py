@@ -68,6 +68,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 os.environ.setdefault("KALS_SELFTESTED", "1")
+import logfiles                                                # noqa: E402  (archived logs: log_rotate.py)
 import pinrun                                                  # noqa: E402
 
 # The order the trade loop actually asks them, which is the only way to read
@@ -190,9 +191,9 @@ def load_log(paths):
     refusals, bought, settled = [], set(), {}
     starts, per_file, hedges = {}, {}, []
     for p in paths:
-        nm = os.path.basename(p)
+        nm = logfiles.log_name(p)
         n = 0
-        with open(p, encoding="utf-8", errors="replace") as fh:
+        with logfiles.open(p, encoding="utf-8", errors="replace") as fh:
             for ln in fh:
                 try:
                     m = json.loads(ln)
@@ -1070,7 +1071,7 @@ def main():
         rc = selftest()
         if rc:
             return rc
-    paths = sorted(glob.glob(os.path.join(a.logs, a.glob)))
+    paths = logfiles.glob(os.path.join(a.logs, a.glob))
     if not paths:
         print("pinattrib: loaded nothing -- no log matched %s" % a.glob)
         return 0

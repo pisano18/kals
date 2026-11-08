@@ -2,6 +2,9 @@
 
 v-tg-rebuild step 9 (2026-10-30, lane D7). Run:  C:\\Python314\\python.exe research\\phone\\tests\\test_pair_mute.py
 KALS_TESTING=1; the config is a temp file; active() is planted (no process table).
+v-tg-pairlock (2026-11-07): once paired, another chat's right secret only ASKS (the paired chat must reply /pair allow
+within 2 minutes), every try from another chat is reported to the paired chat, wrong secrets are rate-limited (5 a chat,
+20 from all other chats, an hour), and telegram.json is written in one step (a temp file, then os.replace).
 """
 import json
 import os
@@ -91,6 +94,169 @@ def test_pair_save_failure_is_logged_not_raised():
 def test_pair_declaration():
     c = CM.by_name("/pair")
     assert c.names == ("/pair",) and c.section is None and c.needs_ledger is False and c.kind_of() is None
+
+
+# ---- v-tg-pairlock (2026-11-07) ------------------------------------------------------------------------------------------
+def _pctx(text, chat, cfg, path, now=T):
+    return FakeCtx(text=text, now=now, active=("pin",), pp=pp, cfg=cfg, cfg_path=path, chat_id=chat)
+
+
+def _said(c, chat=None):
+    return [str(t) for cid, t in c.said if chat is None or cid == chat]
+
+
+def test_first_pairing_is_unchanged():
+    P.reset()
+    path = os.path.join(TMP, "first.json")
+    cfg = {"chat_id": None, "secret": "s3"}
+    c = _pctx("/pair s3", 42, cfg, path)
+    r = P.handle(c)
+    assert isinstance(r, Html) and str(r).startswith("<b>Paired.</b>") and cfg["chat_id"] == 42 and c.said == []
+    assert json.loads(_read(path))["chat_id"] == 42
+
+
+def test_another_chat_with_the_right_secret_only_asks():
+    P.reset()
+    path = os.path.join(TMP, "take.json")
+    cfg = {"chat_id": 1, "secret": "s3", "token": "keep"}
+    P.save_cfg(cfg, path)
+    c = _pctx("/pair s3", 9, cfg, path)
+    r = P.handle(c)
+    assert "already paired with another chat" in str(r) and "/pair allow</code> within 2 minutes" in str(r), r
+    assert cfg["chat_id"] == 1 and json.loads(_read(path))["chat_id"] == 1, "nothing re-paired"
+    told = _said(c, 1)
+    assert len(told) == 1 and "chat (id 9) sent /pair with the RIGHT secret" in told[0], c.said
+    assert "<code>/pair allow</code> within 2 minutes" in told[0] and "ET)" in told[0] and "do not allow it" in told[0]
+    # the paired chat allows: control moves, the new chat is told it is paired
+    a = _pctx("/pair allow", 1, cfg, path, now=T + 60)
+    r = P.handle(a)
+    assert "Control moved</b> to chat 9" in str(r) and cfg["chat_id"] == 9, r
+    assert json.loads(_read(path)) == {"chat_id": 9, "secret": "s3", "token": "keep"}, "saved whole"
+    assert any(str(t).startswith("<b>Paired.</b>") for cid, t in a.said if cid == 9), a.said
+    # nothing waits any more
+    r = P.handle(_pctx("/pair allow", 9, cfg, path, now=T + 61))
+    assert "No other chat is waiting" in str(r)
+
+
+def test_a_takeover_expires_and_can_be_denied():
+    P.reset()
+    path = os.path.join(TMP, "exp.json")
+    cfg = {"chat_id": 1, "secret": "s3"}
+    P.handle(_pctx("/pair s3", 9, cfg, path))
+    r = P.handle(_pctx("/pair allow", 1, cfg, path, now=T + P.TAKEOVER_S + 1))
+    assert "No other chat is waiting" in str(r) and cfg["chat_id"] == 1, r
+    P.handle(_pctx("/pair s3", 9, cfg, path, now=T + 500))
+    r = P.handle(_pctx("/pair deny", 1, cfg, path, now=T + 510))
+    assert "Refused: chat 9 does not get control" in str(r) and cfg["chat_id"] == 1
+    assert "No other chat is waiting" in str(P.handle(_pctx("/pair allow", 1, cfg, path, now=T + 511)))
+    # the paired chat's own /pair <secret> still pairs it again and shows /help, as before
+    r = P.handle(_pctx("/pair s3", 1, cfg, path, now=T + 512))
+    assert str(r).startswith("<b>Paired.</b>") and cfg["chat_id"] == 1
+    assert P.handle(_pctx("/pair nope", 1, cfg, path, now=T + 513)) is None, "the paired chat's wrong secret: nothing"
+
+
+def test_wrong_secrets_are_reported_then_limited():
+    P.reset()
+    path = os.path.join(TMP, "wrong.json")
+    cfg = {"chat_id": 1, "secret": "s3"}
+    told = []
+    for k in range(1, P.WRONG_MAX + 1):
+        c = _pctx("/pair guess%d" % k, 9, cfg, path, now=T + k)
+        assert P.handle(c) is None
+        told += _said(c, 1)
+    assert len(told) == P.WRONG_MAX, told
+    assert "wrong secret" in told[0] and "1 of 5" in told[0] and "4 of 5" in told[3], told
+    assert "sent 5 wrong /pair secrets in the last hour" in told[4] and "ignored until" in told[4], told[4]
+    # past the limit: ignored -- even the RIGHT secret -- and no more reports
+    for text in ("/pair guess6", "/pair s3"):
+        c = _pctx(text, 9, cfg, path, now=T + 30)
+        assert P.handle(c) is None and c.said == [] and cfg["chat_id"] == 1, (text, c.said)
+    assert P.limited(9, T + 30) == "chat" and P.limited(10, T + 30) is None, "one chat's limit is its own"
+    # an hour later it may try again
+    c = _pctx("/pair s3", 9, cfg, path, now=T + 1 + P.WRONG_WINDOW_S)
+    assert "already paired" in str(P.handle(c)), "after the hour the right secret asks again"
+
+
+def test_every_other_chat_together_is_limited():
+    P.reset()
+    path = os.path.join(TMP, "flood.json")
+    cfg = {"chat_id": 1, "secret": "s3"}
+    told = []
+    for k in range(P.WRONG_ALL_MAX):
+        c = _pctx("/pair x", 100 + k, cfg, path, now=T + k)
+        P.handle(c)
+        told += _said(c, 1)
+    assert len(told) == P.WRONG_ALL_MAX and "20 wrong /pair secrets from other chats" in told[-1], told[-1]
+    c = _pctx("/pair s3", 500, cfg, path, now=T + 40)
+    assert P.handle(c) is None and c.said == [] and P.limited(500, T + 40) == "all"
+    P.reset()
+
+
+def test_unpaired_wrong_secrets_are_limited_too():
+    P.reset()
+    path = os.path.join(TMP, "unp.json")
+    cfg = {"chat_id": None, "secret": "s3"}
+    for k in range(P.WRONG_MAX - 1):
+        assert P.handle(_pctx("/pair no%d" % k, 9, cfg, path, now=T + k)) is None, "a wrong secret: no answer, as before"
+    # FIRST SETUP: nobody is paired to be told, so the asking chat is -- the try that reaches the limit and every one
+    # after (the operator, phone only, could not otherwise tell why the right secret now does nothing)
+    r = P.handle(_pctx("/pair no4", 9, cfg, path, now=T + 4))
+    assert "Too many wrong /pair secrets</b> (5 from this chat in the last hour)" in str(r), r
+    import pindesk
+    assert "until %s ET" % pindesk.et_str(T + P.WRONG_WINDOW_S) in str(r), "free an hour after the oldest try (T)"
+    r = P.handle(_pctx("/pair s3", 9, cfg, path, now=T + 9))
+    assert cfg["chat_id"] is None and "Too many wrong /pair secrets" in str(r) and "Nothing is paired yet" in str(r), r
+    assert "s3" not in str(r).replace("secrets", ""), "the reply never repeats the secret"
+    assert P.free_at("chat", 9, T + 9) == T + P.WRONG_WINDOW_S
+    assert str(P.handle(_pctx("/pair s3", 8, cfg, path, now=T + 9))).startswith("<b>Paired.</b>"), "another chat may"
+    # an hour after the OLDEST try (not after the latest) the chat may pair again
+    cfg["chat_id"] = None
+    assert P.limited(9, T + P.WRONG_WINDOW_S + 0.5) is None
+    assert str(P.handle(_pctx("/pair s3", 9, cfg, path, now=T + P.WRONG_WINDOW_S + 0.5))).startswith("<b>Paired.</b>")
+    P.reset()
+
+
+def test_the_config_is_written_in_one_step():
+    path = os.path.join(TMP, "atomic.json")
+    P.save_cfg({"chat_id": 5, "secret": "a", "token": "t"}, path)
+    assert json.loads(_read(path)) == {"chat_id": 5, "secret": "a", "token": "t"}
+    assert not [f for f in os.listdir(TMP) if f.endswith(".tmp")], "no temp file is left behind"
+    before = _read(path)
+    try:
+        P.save_cfg({"chat_id": 6, "bad": object()}, path)          # cannot be written as JSON
+    except TypeError:
+        pass
+    assert _read(path) == before, "a write that fails leaves the old file whole (it used to leave half of one)"
+    # ONE STEP, proven by behaviour (not by a word in the source): with the final swap refused, the old file is still
+    # whole and no temp file is left -- an in-place rewrite (even one that builds the JSON first) changes the file
+    from botdata import paths as _paths
+    real_replace = os.replace
+
+    def refuse(a, b):
+        raise PermissionError(13, "planted: the swap is refused")
+    for label, save in (("pair.save_cfg", lambda cfg: P.save_cfg(cfg, path)),
+                        ("the fallback phone's save_cfg (pinphone_legacy)",
+                         lambda cfg: pp.Phone.save_cfg(types.SimpleNamespace(cfg=cfg, cfg_path=path)))):
+        swaps = []
+        _paths.os.replace = lambda a, b: (swaps.append((a, b)), real_replace(a, b))
+        try:
+            save({"chat_id": 7, "secret": "a", "token": "t"})
+        finally:
+            _paths.os.replace = real_replace
+        assert json.loads(_read(path))["chat_id"] == 7 and [b for _a, b in swaps] == [path], (label, swaps)
+        before = _read(path)
+        saved_sleep = _paths.time.sleep
+        _paths.os.replace, _paths.time.sleep = refuse, (lambda s: None)
+        try:
+            save({"chat_id": 8, "secret": "a", "token": "t"})          # logged, never raised
+        finally:
+            _paths.os.replace, _paths.time.sleep = real_replace, saved_sleep
+        assert _read(path) == before, "%s: a refused swap left the old file whole" % label
+        assert not [f for f in os.listdir(TMP) if f.endswith(".tmp")], "%s: no temp file left" % label
+    for mod in ("quiet_cmd", "alive_cmd"):
+        with open(os.path.join(os.path.dirname(P.__file__), mod + ".py"), encoding="utf-8") as fh:
+            s2 = fh.read()
+        assert "save_cfg(" in s2 and 'open(' not in s2, "%s writes telegram.json only through pair.save_cfg" % mod
 
 
 def test_mute_vs_phone():

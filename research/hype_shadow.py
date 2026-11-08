@@ -41,6 +41,9 @@ import tempfile
 from datetime import datetime, timedelta, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+import logfiles                                                     # noqa: E402  (archived logs: log_rotate.py)
 RESULTS = os.path.join(HERE, "..", "results")
 SERIES = "KXHYPE15M-"
 SINCE = "2026-10-05T14:24:02Z"          # v-skiphype live start record
@@ -88,9 +91,9 @@ def live_sizes(results=None):
     """[(t, size)] from every live log: each run's start (its --size, until the first
     autosize) and every autosize `new`. Only lines naming those kinds are parsed."""
     out = []
-    for f in sorted(glob.glob(os.path.join(results or RESULTS, "pinrun-live-*.jsonl"))):
+    for f in logfiles.glob(os.path.join(results or RESULTS, "pinrun-live-*.jsonl")):
         try:
-            fh = open(f, encoding="utf-8", errors="replace")
+            fh = logfiles.open(f, encoding="utf-8", errors="replace")
         except OSError:
             continue
         with fh:
@@ -116,7 +119,7 @@ def read_arm(path, since, until=None):
     t_first, legs, lost}} for HYPE tickers with a settled record in [since, until)."""
     meta = {"start": None, "code_sha": None, "last_t": None, "bad_lines": 0}
     sizes, mk, spent, first = [], {}, {}, {}
-    with open(path, encoding="utf-8", errors="replace") as fh:
+    with logfiles.open(path, encoding="utf-8", errors="replace") as fh:
         for line in fh:
             hyp = SERIES in line
             if not hyp and '"kind": "autosize"' not in line and '"kind": "start"' not in line:
@@ -213,8 +216,8 @@ def find_twin_log(results, start=TWIN_START):
     """The paper log whose name is within 30 s of `start`, else None."""
     want = ts(start)
     best = None
-    for f in glob.glob(os.path.join(results, "pinrun-paper-*.jsonl")):
-        n = os.path.basename(f)[len("pinrun-paper-"):-len(".jsonl")]
+    for f in logfiles.glob(os.path.join(results, "pinrun-paper-*.jsonl")):
+        n = logfiles.log_name(f)[len("pinrun-paper-"):-len(".jsonl")]
         try:
             t = datetime.strptime(n, "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
         except ValueError:

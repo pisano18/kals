@@ -13,6 +13,22 @@ WHAT RUNS WHERE
                      fails -- so neither a command nor the alerts behind it wait on a 10-35 s WMI read.
   workers            the controls (/pause /start /stop yes) and /update each run on their own daemon thread and report
                      through say().
+THE HEARTBEAT (v-tg-hung, 2026-11-07): results\pinphone.heartbeat is rewritten (one step: botdata.paths.write_atomic)
+before every long poll and before every tick, with the time and this process's pid. boot_all.ps1's keep-alive restarts a
+phone whose heartbeat is older than 5 minutes (a HUNG phone: the process there, the loop stuck) -- it kills that pid,
+proven by its command line, then starts a fresh one. Before this it restarted the phone only when the process was gone.
+(That keep-alive reaches the live boot_all.ps1 through results\boot_phone_hung.ps1, the /approve item 'phonehung': the
+live file carries edits git does not have, so git's boot_all.ps1 is never committed over it.)
+A swap Windows refuses (a reader holding the file open) falls back to a plain rewrite: boot_all reads only the file's
+time and the pid, so a working phone never looks hung because of a reader.
+THE MESSAGE DATE (v-tg-stale): each message's Telegram `date` goes to the router, which never runs a control older than
+5 minutes (router.STALE_S): the poll starts with offset None, so whatever queued while the phone was down arrives first.
+Only a poll that came after a GAP is judged by the date (the first poll of a run, one after a failed poll, one armed
+more than PROMPT_GAP_S after the last answered, or one after a FULL batch -- Telegram hands over at most
+transport.POLL_LIMIT (100) messages a poll, so the 101st queued message comes on the next poll and is judged too): a
+message delivered on a poll re-armed promptly after a short batch was sent moments ago by construction (Telegram hands
+it over at once), so a server clock running fast can never lock every control out -- that poll passes no date, and a
+prompt message dated over 5 minutes old is logged as a clock warning.
 State kept here between messages: the offset, muted, the five alert fields (last_state, last_rec, seen_losses,
 last_daily, disk_level), busy / _updating / _exit_now, /bars' numbers for its picture, the resend queue. The seams the
 self-test and the golden harness plant are the Phone attributes listed in __init__ (phone/context.py reads them).
@@ -115,9 +131,11 @@ from phone.commands import update as _update
 from phone.context import Ctx
 from phone.html import Html, esc, html_to_plain, split_html, split_text
 from phone.log import cprint, log
-from phone.transport import FakeTelegram, Telegram, net_error
+from phone.transport import POLL_LIMIT, FakeTelegram, Telegram, net_error
 from pindesk import Ledger, et_str
 import pindesk
+
+PROMPT_GAP_S = 60               # v-tg-stale: a poll armed within this long of the last answered one delivers fresh messages
 
 
 class Phone:
@@ -141,6 +159,8 @@ class Phone:
         self.now = now_fn or time.time
         self.offset = None
         self.polled_ok = False                  # a getUpdates has answered (the launcher's fallback stops counting)
+        self._poll_end = None                   # v-tg-stale: when the last getUpdates answered (monotonic); None = a gap
+        self._backlog = False                   # v-tg-stale: the last poll was a full batch (more may be queued)
         self.muted = False
         # the alerts tick's memory (phone/alerts.py reads and writes these five on the runtime)
         self.last_state = None
@@ -255,9 +275,10 @@ class Phone:
                 break                                     # the connection is still down: the rest wait too
 
     # ---- dispatch: phone/router.py ----
-    def handle(self, chat_id, text):
-        """Reply text for one incoming message, or None to ignore it (router.dispatch)."""
-        return _router.dispatch(self, chat_id, text)
+    def handle(self, chat_id, text, sent_at=None):
+        """Reply text for one incoming message, or None to ignore it (router.dispatch). `sent_at`: the message's
+        Telegram date (v-tg-stale: an old control is not run)."""
+        return _router.dispatch(self, chat_id, text, sent_at=sent_at)
 
     # ---- the ticks ----
     def update_flag_tick(self):
@@ -300,20 +321,35 @@ class Phone:
                 pass
             log("/update: exiting so boot_all starts the new code")
             os._exit(0)
+        armed = time.monotonic()
+        # a full batch before this poll means it may deliver what queued while the phone was down: judged by the date
+        prompt = self._poll_end is not None and armed - self._poll_end < PROMPT_GAP_S and not self._backlog
         try:
             updates = self.tg.get_updates(self.offset, timeout=timeout)
         except Exception as e:                            # noqa: BLE001
             log("getUpdates failed: %s" % e)
+            self._poll_end = None                         # a failed poll is a gap: the next one is judged by the date
             time.sleep(10)
             return
+        self._poll_end = time.monotonic()
+        self._backlog = len(updates or ()) >= POLL_LIMIT
         self.polled_ok = True
         for u in updates:
             self.offset = max(self.offset or 0, int(u.get("update_id", 0)) + 1)
             m = u.get("message") or {}
             chat = (m.get("chat") or {}).get("id")
             handled = True
+            sent_at = m.get("date")
+            if prompt:                                    # v-tg-stale: delivered at once, so fresh whatever its date says
+                try:
+                    if sent_at is not None and self.now() - float(sent_at) > _router.STALE_S:
+                        log("clock warning: a message delivered at once is dated %d s ago -- is the server clock "
+                            "off?" % (self.now() - float(sent_at)))
+                except (TypeError, ValueError):
+                    pass
+                sent_at = None
             try:
-                reply = self.handle(chat, m.get("text"))
+                reply = self.handle(chat, m.get("text"), sent_at=sent_at)
             except Exception as e:                        # noqa: BLE001
                 reply = "error: %s" % e
                 handled = False
@@ -324,13 +360,27 @@ class Phone:
                     self.chart_after(chat, m.get("text"))     # queued, never drawn here (see chart_after)
 
     def heartbeat(self):
-        """results/pinphone.heartbeat: the time now (boot_all and the operator read it)."""
+        """results/pinphone.heartbeat: the time now (UTC) and this process's pid, in one step (boot_all reads its age and
+        the pid: a heartbeat older than 5 minutes = a hung phone, ended and started again -- v-tg-hung). A swap Windows
+        refuses (a reader holds the file open) is written in place instead: a beat that does not land would get a working
+        phone ended and restarted. Never raises."""
+        text = "%s pid %d\n" % (time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), os.getpid())
         try:
-            _paths.check_write(S.HEARTBEAT)        # v-tg-rebuild step 2: never the live heartbeat under KALS_TESTING=1
+            # check_write inside: never the live heartbeat under KALS_TESTING=1 (v-tg-rebuild step 2)
+            _paths.write_atomic(S.HEARTBEAT, text)
+            return
+        except _paths.WriteFenced:
+            return
+        except OSError as e:
+            err = e
+        try:
             with open(S.HEARTBEAT, "w", encoding="utf-8") as fh:
-                fh.write(time.strftime("%Y-%m-%dT%H:%M:%S"))
-        except OSError:
-            pass
+                fh.write(text)
+        except OSError as e:
+            last = getattr(self, "_hb_warned", None)
+            if last is None or time.monotonic() - last > 3600:          # said once an hour at most
+                self._hb_warned = time.monotonic()
+                log("heartbeat not written (%s; then %s): boot_all may take this phone for hung" % (err, e))
 
     def start(self):
         """Everything before the loop: the command modules, the process-table refresher, the hello."""
@@ -345,10 +395,12 @@ class Phone:
 
     def loop_once(self):
         """One pass: the heartbeat, one long poll (every message answered), then the update flag, the alerts and the
-        sends the connection dropped. Each tick's failure is logged and the loop goes on."""
+        sends the connection dropped -- the heartbeat again before each (v-tg-hung: only a pass that is STUCK lets it
+        age). Each tick's failure is logged and the loop goes on."""
         self.heartbeat()
         self.poll_once()
         for tick in (self.update_flag_tick, self.alerts_tick, self.resend_tick):
+            self.heartbeat()
             try:
                 tick()
             except Exception:                            # noqa: BLE001

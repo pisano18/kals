@@ -58,6 +58,7 @@ from botdata.clock import utc_epoch as _epoch
 # pure at import: constants (TELEGRAM_CFG is only a path), the scorers and the Logs class; its Phone class is used
 # only inside tick(), which nothing here calls
 import pinrules_watch as _rw
+import logfiles as _lf                    # noqa: E402  (a fix tracked past 60 days reads archived logs)
 
 BASE_SHA = "ca156bf45704"                 # pin 0925r: D to J start at the first later start record with another sha
 UNKNOWN_AFTER_S = _rw.UNKNOWN_AFTER_S     # a market with no result 3 h after its close: "unknown", still open
@@ -142,8 +143,9 @@ def paths_since(paths, since):
 
 
 def pin_paths(since=SINCE_AB):
-    """pin's live logs for the tracker (botdata.logs.pin_logs: results\\pinrun-live-*.jsonl, RESULTS injectable)."""
-    return paths_since(_logs.pin_logs(), since)
+    """pin's live logs for the tracker (botdata.logs.pin_logs: results\\pinrun-live-*.jsonl, RESULTS injectable), the
+    ones log_rotate.py archived after 60 days included: a fix read 2 months after it went live still sees its first day."""
+    return paths_since(_logs.pin_logs(archived=True), since)
 
 
 def off_grid(p):
@@ -245,7 +247,7 @@ class Scan:
         quote = {}
         for path in paths:
             try:
-                fh = open(path, encoding="utf-8", errors="replace")
+                fh = _lf.open(path, encoding="utf-8", errors="replace")
             except OSError:
                 continue
             with fh:

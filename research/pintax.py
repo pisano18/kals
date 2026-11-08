@@ -46,6 +46,9 @@ from collections import defaultdict
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+import logfiles                                                    # noqa: E402  (the whole year: archived logs too)
 LIVE = os.path.join(REPO, "results", "pinrun-live-*.jsonl")
 
 COIN = {"KXBTC": "Bitcoin", "KXETH": "Ethereum", "KXSOL": "Solana",
@@ -100,8 +103,8 @@ def load(glob_pat=LIVE):
     """
     orders = {}
     settles = defaultdict(list)
-    for path in sorted(glob.glob(glob_pat), key=os.path.getmtime):
-        for line in open(path, encoding="utf-8", errors="replace"):
+    for path in sorted(logfiles.glob(glob_pat), key=logfiles.by_mtime):
+        for line in logfiles.open(path, encoding="utf-8", errors="replace"):
             try:
                 d = json.loads(line)
             except ValueError:

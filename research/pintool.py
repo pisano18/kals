@@ -34,6 +34,7 @@ from urllib.parse import urlparse, parse_qs
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import pinrules                                              # noqa: E402
+import logfiles                                              # noqa: E402  (by_mtime: log_rotate.py, 11-07)
 from pincross import cp_interval                              # noqa: E402
 # NOT pinsim, and NOT pinrun: pinrun imports pintake (the order module), so
 # importing the replay here would hand this process a path to the order API.
@@ -165,7 +166,7 @@ def bank():
 
 def newest_live_log():
     fs = sorted(glob.glob(os.path.join(RESULTS, "pinrun-live-*.jsonl")),
-                key=os.path.getmtime)
+                key=logfiles.by_mtime)
     return fs[-1] if fs else None
 
 
@@ -190,7 +191,7 @@ def live_state():
     errors = [r for r in recs if r.get("kind") == "error"]
     closes = [r for r in recs if r.get("kind") == "close_summary"]
     out["start"] = start
-    out["log_age_s"] = round(time.time() - os.path.getmtime(path), 1)
+    out["log_age_s"] = round(time.time() - logfiles.mtime(path, time.time()), 1)
     # the trader writes a close summary every 15 minutes; a log younger than
     # ~20 minutes is alive whatever the process check said
     fresh = out["log_age_s"] < 1200

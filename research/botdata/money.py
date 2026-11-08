@@ -85,6 +85,16 @@ def _market(s):
             "result": str(s.get("market_result") or "")}
 
 
+# v-ledger-unreadable (2026-11-07, the phone audit): pinledger.money reads a missing field as 0, so a renamed Kalshi field
+# would book a market as a total loss or as pure profit. EVERY reader of a pot's settled rows goes through booked_rows:
+# an unreadable row (pinledger.unreadable) or a voided one is left out of every total, and botdata/ledgercheck.py counts
+# and says them (the money pages' warning line, one phone alert). botdata/tests/test_unbooked.py fails on any other
+# read of a pot's rows in botdata / phone / bots.
+def booked_rows(x):
+    """Pot x's settled rows a money total may count (x = c['subs'][sub]; pinledger.booked: readable, not voided)."""
+    return [s for s in (x.get("rows") or {}).values() if pinledger.booked(s)]
+
+
 def window(ms, label, days=None):
     """Totals over the markets `ms` (already filtered). Worst/best are single markets."""
     won = [m for m in ms if m["money"] > 0.004]

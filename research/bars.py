@@ -68,6 +68,7 @@ import pinflat                                                       # noqa: E40
 from pindesk import et_str, money                                    # noqa: E402
 from botdata import clock as _clock                                  # noqa: E402
 from botdata import filefold as _fold                                # noqa: E402
+import logfiles                                                      # noqa: E402  (archived logs: log_rotate.py)
 
 RESULTS = pinphone.RESULTS
 DAY = 86400.0
@@ -169,7 +170,7 @@ def days_in(now, start_e):
 
 
 def _stamp_of(path):
-    m = re.search(r"(\d{8}T\d{6})Z\.jsonl$", str(path).replace("\\", "/"))
+    m = re.search(r"(\d{8}T\d{6})Z\.jsonl(?:\.gz)?$", str(path).replace("\\", "/"))
     if not m:
         return None
     try:
@@ -179,14 +180,19 @@ def _stamp_of(path):
 
 
 def _tail_t(path, span=65536):
-    """The `t` of the last readable record in a jsonl file, from its tail."""
+    """The `t` of the last readable record in a jsonl file, from its tail (an archived .gz -- log_rotate.py -- is
+    unpacked whole; load_run remembers the answer per file)."""
     try:
-        with open(path, "rb") as fh:
-            fh.seek(0, 2)
-            size = fh.tell()
-            fh.seek(max(0, size - span))
-            chunk = fh.read().decode("utf-8", "replace")
-    except OSError:
+        if logfiles.is_gz(path):
+            raw = logfiles.read_bytes(path)
+            chunk = raw[max(0, len(raw) - span):].decode("utf-8", "replace")
+        else:
+            with open(path, "rb") as fh:
+                fh.seek(0, 2)
+                size = fh.tell()
+                fh.seek(max(0, size - span))
+                chunk = fh.read().decode("utf-8", "replace")
+    except (OSError, EOFError):
         return None
     for line in reversed(chunk.splitlines()):
         line = line.strip()
@@ -296,7 +302,7 @@ def _recent(paths, since_e, slack_days=4):
 
 def live_runs(results, since_e, keep=()):
     runs = []
-    for p in _recent(glob.glob(os.path.join(results, "pinrun-live-*.jsonl")), since_e):
+    for p in _recent(logfiles.glob(os.path.join(results, "pinrun-live-*.jsonl")), since_e):
         x = load_run(p, since_e, keep)
         if x and x["start"] and x["hi"] is not None and x["hi"] >= since_e:
             runs.append(x)
@@ -339,7 +345,7 @@ def arm_groups(results, live, since_e, keep_for=None, count_for=None):
     keep_for = keep_for or {}
     count_for = count_for or {}
     groups = collections.OrderedDict()
-    for p in _recent(glob.glob(os.path.join(results, "pinrun-paper-*.jsonl")), since_e):
+    for p in _recent(logfiles.glob(os.path.join(results, "pinrun-paper-*.jsonl")), since_e):
         m = re.search(r"paper-(\d{8}T\d{6}Z)", p.replace("\\", "/"))
         nm = cur.get(m.group(1)) if m else None
         x = load_run(p, since_e, keep_for.get(nm, ()), count_for.get(nm))

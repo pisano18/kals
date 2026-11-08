@@ -33,6 +33,8 @@ import os
 import sys
 
 LIVE = r"C:\kals-repo\results\pinrun-live-*.jsonl"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))    # research/, so logfiles imports under python -I
+import logfiles                                                    # noqa: E402  (pin's archived logs: log_rotate.py)
 
 
 def reason_of(r):
@@ -46,8 +48,8 @@ def reason_of(r):
 
 def load(pattern=LIVE):
     out = []
-    for fp in sorted(glob.glob(pattern)):
-        for line in open(fp, encoding="utf-8", errors="replace"):
+    for fp in logfiles.glob(pattern):
+        for line in logfiles.open(fp, encoding="utf-8", errors="replace"):
             try:
                 out.append(json.loads(line))
             except ValueError:

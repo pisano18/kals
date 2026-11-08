@@ -54,6 +54,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 os.environ.setdefault("KALS_SELFTESTED", "1")
+import logfiles                                              # noqa: E402  (archived logs: log_rotate.py)
 import downtime                                              # noqa: E402
 
 OUT_MD = os.path.join(REPO, "results", "VALUE.md")
@@ -158,8 +159,8 @@ def load_trades():
 
     Returns (rows, warnings)."""
     orders, settled, warn = [], {}, []
-    for p in sorted(glob.glob(os.path.join(REPO, "results", "pinrun-live-*.jsonl"))):
-        for line in open(p, encoding="utf-8", errors="ignore"):
+    for p in logfiles.glob(os.path.join(REPO, "results", "pinrun-live-*.jsonl")):
+        for line in logfiles.open(p, encoding="utf-8", errors="ignore"):
             if '"order"' not in line and '"settled"' not in line:
                 continue
             try:
@@ -217,8 +218,8 @@ def load_trades():
 def bank_series():
     """[(epoch, bank)] from the bot's own autosize records."""
     out = []
-    for p in sorted(glob.glob(os.path.join(REPO, "results", "pinrun-live-*.jsonl"))):
-        for line in open(p, encoding="utf-8", errors="ignore"):
+    for p in logfiles.glob(os.path.join(REPO, "results", "pinrun-live-*.jsonl")):
+        for line in logfiles.open(p, encoding="utf-8", errors="ignore"):
             if '"autosize"' not in line:
                 continue
             try:

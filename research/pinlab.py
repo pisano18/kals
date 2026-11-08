@@ -30,6 +30,7 @@ from botdata import dirlist as _dirlist                              # noqa: E40
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
+import logfiles                                                      # noqa: E402  (archived logs: log_rotate.py)
 
 RESULTS = os.path.join(os.path.dirname(HERE), "results")
 
@@ -1400,8 +1401,9 @@ def _paper_logs():
     out = []
     for pat in ("pinrun-paper-*.jsonl", "cmdarm-*.jsonl", "cmdlive-*.jsonl",
                 "pinracearm-*.jsonl"):
-        out += _dirlist.glob(os.path.join(RESULTS, pat))
-    return sorted(out)
+        # 2026-11-07: + the paper logs log_rotate.py archived (results\archive\<name>.gz), in start order
+        out += logfiles.glob(os.path.join(RESULTS, pat), globber=_dirlist.glob)
+    return sorted(out, key=logfiles.sort_key)
 
 
 def _sel_ok(got, want):
@@ -1451,7 +1453,7 @@ def _first_record_kept(path):
 
 def _first_record(path):
     try:
-        with open(path, encoding="utf-8", errors="replace") as fh:
+        with logfiles.open(path, encoding="utf-8", errors="replace") as fh:
             for line in fh:
                 try:
                     return json.loads(line)
@@ -1536,7 +1538,7 @@ def _scan_span(path):
     lo = hi = None              # the earliest / latest stamp in the usual shape, as text
     elo = ehi = None            # every other stamp strptime reads, as epochs
     try:
-        fh = open(path, encoding="utf-8", errors="replace")
+        fh = logfiles.open(path, encoding="utf-8", errors="replace")
     except OSError:
         return False
     usual = _STAMP.match
@@ -1574,7 +1576,7 @@ def _scan_span_each(path):
     import time as _t
     lo = hi = None
     try:
-        fh = open(path, encoding="utf-8", errors="replace")
+        fh = logfiles.open(path, encoding="utf-8", errors="replace")
     except OSError:
         return False
     with fh:
@@ -1735,7 +1737,7 @@ def arm_series(path, since=None):
         return pts, contracts
     pts, contracts, by_tk = [], 0.0, {}
     try:
-        fh = open(path, encoding="utf-8", errors="replace")
+        fh = logfiles.open(path, encoding="utf-8", errors="replace")
     except OSError:
         return [], 0.0
     with fh:
@@ -2053,7 +2055,7 @@ def live_progress(cmdlines=None, logs=None):
             # thrown away by a restart. Runs started after the fix identify
             # themselves and never reach this branch.
             if known is None:
-                known = {os.path.basename(p): p for p in pool}
+                known = {logfiles.log_name(p): p for p in pool}
             for nm in e["legacy_logs"]:
                 if nm in known:
                     best = known[nm]
@@ -2072,13 +2074,13 @@ def live_progress(cmdlines=None, logs=None):
             if s:
                 info.update(s)
                 if isinstance(best, (list, tuple)):
-                    info["log"] = os.path.basename(best[-1])
-                    info["logs"] = [os.path.basename(p) for p in best]
+                    info["log"] = logfiles.log_name(best[-1])
+                    info["logs"] = [logfiles.log_name(p) for p in best]
                 else:
-                    info["log"] = os.path.basename(best)
+                    info["log"] = logfiles.log_name(best)
             if dropped:
                 # said out loud, never summed: two processes ran at once
-                info["overlap_dropped"] = [os.path.basename(p) for p in dropped]
+                info["overlap_dropped"] = [logfiles.log_name(p) for p in dropped]
         out[m] = info
     return out
 

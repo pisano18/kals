@@ -6,6 +6,7 @@ v-tg-rebuild step 7 (2026-10-30): split out of botstats.py verbatim (botstats.py
 import os
 
 import bots as _reg
+import logfiles as _lf
 import pinledger
 from bots import jumpband as _b_jb
 from botdata import logs as _logs
@@ -35,7 +36,8 @@ def activity(name, since):
     written since `since`)."""
     b = _reg.get(name)
     if b.logs.glob:
-        paths = [p for p in _logs.pin_logs() if os.path.getmtime(p) >= since]
+        # 11-07: a log archived by log_rotate between the listing and this look is skipped, never a crash
+        paths = [p for p in _logs.pin_logs() if _lf.mtime(p, 0.0) >= since]
         if not _logs.pin_logs():
             paths = None
     else:

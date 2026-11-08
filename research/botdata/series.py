@@ -25,6 +25,7 @@ if _RESEARCH not in sys.path:
 from pindesk import Ledger, et_day, et_day_start                     # noqa: E402
 from botdata.clock import prev_day                                   # noqa: E402,F401  (tgcharts.prev_day, verbatim)
 from botdata import hedgeplay as _hedgeplay                          # noqa: E402
+from botdata import money as _money                                  # noqa: E402
 import bots                                                          # noqa: E402
 
 # ---- the 7-day average (operator 10-23: "The 7 day average should be on the other charts too where possible.
@@ -343,9 +344,9 @@ def race_rows(bs, c, name="race"):
     v-tg-rebuild step 8 (2026-10-30): the race's pot and its markets come from the registry (its pot's subaccount,
     bots.owner) -- the same subaccount 0 and the same owner rule botstats.owner had."""
     sub = bots.bot_subs(name)[0]
-    rows = ((c.get("subs") or {}).get(sub) or {}).get("rows") or {}
+    rows = _money.booked_rows((c.get("subs") or {}).get(sub) or {})     # v-ledger-unreadable: booked rows only
     ev = {}
-    for s in rows.values():
+    for s in rows:
         if bots.owner(s.get("ticker"), sub) != name:
             continue
         m = bs.market(s)

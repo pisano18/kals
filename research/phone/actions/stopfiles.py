@@ -9,6 +9,10 @@ pause from the phone is exactly that file, and a resume is removing it (boot_all
 
 Paths are botdata.paths.RESULTS at call time (a test points it at a temp folder); every write passes
 botdata.paths.check_write (KALS_TESTING=1 refuses the live results folder).
+
+v-kwatch (2026-11-07): the Kalshi watch's off switch lives here too (watch_*): results\\kalshi_watch.stop, which
+research\\kalshi_watch.py obeys (every scheduled scan exits at once while it is there). It is not a registry bot; the
+/watch module (phone/commands/watch_cmd.py) is its only caller.
 """
 import os
 import time
@@ -67,6 +71,44 @@ def remove(name):
     if name == PIN:
         raise ValueError("the pin bot's flag is pindesk's (/start), not a phone stop file")
     p = path_of(name)
+    _paths.check_write(p)
+    try:
+        os.remove(p)
+    except FileNotFoundError:
+        return False
+    return True
+
+
+# ---- the Kalshi watch's off switch (v-kwatch) --------------------------------------------------------------------------
+WATCH = "kalshi_watch.stop"                     # research/kalshi_watch.py STOP_NAME
+
+
+def watch_path():
+    return os.path.join(_paths.RESULTS, WATCH)
+
+
+def watch_since():
+    """When /watch off was sent (the file's mtime, epoch), or None: the watch is on."""
+    try:
+        return os.path.getmtime(watch_path())
+    except OSError:
+        return None
+
+
+def watch_write(why, now=None):
+    """Write the Kalshi watch's stop file. Returns its path. Raises on failure (the caller says it)."""
+    p = watch_path()
+    _paths.check_write(p)
+    t = time.time() if now is None else float(now)
+    with open(p, "w", encoding="utf-8") as fh:
+        fh.write("%s -- written by the phone (/watch off) %s. Send /watch on (or delete this file) to turn the Kalshi "
+                 "watch back on.\n" % (why, time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))))
+    return p
+
+
+def watch_remove():
+    """Remove it: True when it was there and is gone, False when it was not there. Raises on failure."""
+    p = watch_path()
     _paths.check_write(p)
     try:
         os.remove(p)

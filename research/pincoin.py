@@ -82,6 +82,7 @@ from collections import defaultdict, deque
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+import logfiles                                              # noqa: E402  (archived logs: log_rotate.py)
 import pinrun                                                # noqa: E402
 import pinsim                                                # noqa: E402
 import pindata                                               # noqa: E402
@@ -1085,9 +1086,9 @@ def parse_live_entries(records):
 
 
 def live_records():
-    for fp in sorted(glob.glob(os.path.join(RESULTS, "pinrun-live-*.jsonl"))):
+    for fp in logfiles.glob(os.path.join(RESULTS, "pinrun-live-*.jsonl")):
         try:
-            fh = open(fp, encoding="utf-8")
+            fh = logfiles.open(fp, encoding="utf-8")
         except OSError:
             continue
         with fh:
@@ -1488,12 +1489,12 @@ def load_live():
     """
     rows = []
     drop = defaultdict(int)
-    for fp in sorted(glob.glob(os.path.join(RESULTS, "pinrun-live-*.jsonl"))):
+    for fp in logfiles.glob(os.path.join(RESULTS, "pinrun-live-*.jsonl")):
         pin = None
         skip = {}
         recs = []
         try:
-            fh = open(fp, encoding="utf-8")
+            fh = logfiles.open(fp, encoding="utf-8")
         except OSError:
             continue
         with fh:

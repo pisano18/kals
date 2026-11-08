@@ -354,7 +354,12 @@ def server_facts(repo, results, now=None):
     f["watchdog_s"] = age(_os.path.join(results, "watch_bot.heartbeat"))
     f["phone_s"] = age(_os.path.join(results, "pinphone.heartbeat"))
     lives = _glob.glob(_os.path.join(results, "pinrun-live-*.jsonl"))
-    newest = max(lives, key=_os.path.getmtime) if lives else None
+    def mt(p):                                     # 11-07: an old log archived since the listing sorts oldest
+        try:
+            return _os.path.getmtime(p)
+        except OSError:
+            return 0.0
+    newest = max(lives, key=mt) if lives else None
     ages = [a for a in (age(newest) if newest else None, age(_os.path.join(results, "pinrun-live.out")))
             if a is not None]
     f["quiet_s"] = min(ages) if ages else None

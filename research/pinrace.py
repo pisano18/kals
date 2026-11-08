@@ -27,6 +27,7 @@ from collections import defaultdict
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+import logfiles                                               # noqa: E402  (archived logs: log_rotate.py)
 from pincross import cp_interval                              # noqa: E402
 
 RESULTS = r"C:\kals-repo\results"
@@ -52,9 +53,9 @@ def main():
             mk[r["ticker"]] = r
 
     attempts = []
-    for f in sorted(glob.glob(os.path.join(RESULTS, "pinrun-live-*.jsonl"))):
+    for f in logfiles.glob(os.path.join(RESULTS, "pinrun-live-*.jsonl")):
         sig = {}
-        for line in open(f, encoding="utf-8"):
+        for line in logfiles.open(f, encoding="utf-8"):
             try:
                 d = json.loads(line)
             except Exception:
@@ -92,7 +93,7 @@ def main():
                     "book_age_ms": s.get("book_age_ms"),
                     "latency_ms": d.get("latency_ms"),
                     "status": d.get("status_code"),
-                    "won": won, "file": os.path.basename(f)})
+                    "won": won, "file": logfiles.log_name(f)})
     if not attempts:
         print("  loaded nothing")
         return

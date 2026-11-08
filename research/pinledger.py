@@ -31,6 +31,19 @@ whole history once.
 WHAT THIS FILE IS NOT. It is not a substitute for the trade logs. Those carry
 WHY we traded -- the gates, the model's belief, the book we saw. This carries
 only WHAT HAPPENED, and it is the authority on that.
+
+UNREADABLE AND VOIDED ROWS (v-ledger-unreadable, 2026-11-07, the phone audit).
+`money()` reads a missing field as 0.0, so if Kalshi ever RENAMED a count or
+cost field, `pnl()` would book every market as a total loss (no contracts
+paid) or as pure profit (nothing cost anything), with no error anywhere --
+the same class as the 68,976,084 unparsed deltas in CLAUDE.md. `unreadable(s)`
+names such a row (every real row carries all five numbers: 0 of 2,550 main-
+account rows and 0 of 1,186 subaccount rows trip it, measured 11-07), and
+`booked(s)` is the rule every money total uses: an unreadable row is LEFT OUT
+of the totals and counted (botdata/ledgercheck.py), never booked. A VOIDED
+market (`market_result` void) is not a loss either: Kalshi gives the stake
+back, so `payout()` returns what both sides cost (the fee is still taken off,
+so the guess never flatters), and the money pages leave it out and say so.
 """
 import argparse
 import calendar
@@ -88,6 +101,11 @@ def payout(s):
     contracts of each side we held.
     """
     res = str(s.get("market_result") or "").strip().lower()
+    # v-ledger-unreadable (2026-11-07): A VOIDED MARKET IS NOT A LOSS. Kalshi
+    # gives the stake back, so it pays what both sides cost; before this it
+    # fell through to "pays nothing" and booked the whole stake as lost.
+    if res in VOID_RESULTS:
+        return money(s, "yes_total_cost_dollars") + money(s, "no_total_cost_dollars")
     # 2026-09-23: A TIE PAYS HALF, AND THIS FUNCTION BOOKED IT AS ZERO.
     # KXCRYPTOLEAD15M-26SEP230715 settled `market_result: "scalar"` with
     # `value: 50` -- two coins tied for the lead, so every contract paid 50c.
@@ -111,6 +129,94 @@ def payout(s):
     # A result we do not understand and no usable `value`: pay nothing and be
     # visible about it rather than guessing a payout.
     return 0.0
+
+
+# ---- v-ledger-unreadable (2026-11-07): rows a money total must not book ----
+VOID_RESULTS = ("void", "voided", "cancelled", "canceled")
+NEEDED = ("yes_count_fp", "no_count_fp", "yes_total_cost_dollars",
+          "no_total_cost_dollars", "fee_cost")
+_BAD = object()
+_STATE_FIELDS = ("market_result", "value") + NEEDED
+_STATE_MEMO = {}
+_STATE_MAX = 200_000
+
+
+def _num(s, name):
+    """A field as a finite float; None when absent (or null); _BAD when it is
+    there but not a number."""
+    v = s.get(name)
+    if v is None:
+        return None
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return _BAD
+    return x if x == x and x not in (float("inf"), float("-inf")) else _BAD
+
+
+def is_void(s):
+    """Kalshi voided the market (it gives the stake back)."""
+    return isinstance(s, dict) and \
+        str(s.get("market_result") or "").strip().lower() in VOID_RESULTS
+
+
+def _unreadable(s):
+    for f in NEEDED:
+        x = _num(s, f)
+        if x is None:
+            return "no %s" % f
+        if x is _BAD:
+            return "%s is not a number (%r)" % (f, str(s.get(f))[:20])
+    if is_void(s):
+        return None
+    res = str(s.get("market_result") or "").strip().lower()
+    v = _num(s, "value")
+    if v is not None and v is not _BAD and 0.0 <= v <= 100.0:
+        return None
+    if res in ("yes", "no"):
+        return None
+    return "result %r with no usable value: what it paid is unknown" % res
+
+
+def unreadable(s):
+    """Why this settled row cannot be booked, in words -- a count, a cost or
+    the fee missing or not a number, or a result that says nothing about what
+    it paid -- or None when every number its money needs is there. Remembered
+    on the fields' values (a page reads thousands of rows a tap)."""
+    if not isinstance(s, dict):
+        return "not a settlement record"
+    try:
+        key = tuple(s.get(f, _BAD) for f in _STATE_FIELDS)
+        hash(key)
+    except TypeError:
+        return _unreadable(s)
+    got = _STATE_MEMO.get(key, _BAD)
+    if got is _BAD:
+        got = _unreadable(s)
+        if len(_STATE_MEMO) >= _STATE_MAX:
+            _STATE_MEMO.clear()
+        _STATE_MEMO[key] = got
+    return got
+
+
+def booked(s):
+    """May a money total count this row? Readable and not voided."""
+    return unreadable(s) is None and not is_void(s)
+
+
+def unbooked(rows):
+    """{"unreadable": [(ticker, why)], "void": [ticker]} over `rows` (a dict
+    of rows or a list) -- what booked() leaves out."""
+    vals = rows.values() if isinstance(rows, dict) else rows
+    out = {"unreadable": [], "void": []}
+    for s in vals:
+        why = unreadable(s)
+        tk = s.get("ticker") if isinstance(s, dict) else None
+        if why is not None:
+            out["unreadable"].append((tk, why))
+        elif is_void(s):
+            out["void"].append(tk)
+    return out
 
 
 def pnl(s):
@@ -162,10 +268,14 @@ def merge(rows, page):
 
 
 def by_et_day(rows):
-    """{'YYYY-MM-DD': {'n', 'dollars', 'losses', 'series'}} on the ET clock."""
+    """{'YYYY-MM-DD': {'n', 'dollars', 'losses', 'series'}} on the ET clock.
+    v-ledger-unreadable (2026-11-07): only booked() rows -- an unreadable or a
+    voided one is in no day's total (unbooked() counts them; main() says so)."""
     out = collections.defaultdict(
         lambda: {"n": 0, "dollars": 0.0, "losses": 0, "series": collections.Counter()})
     for s in rows.values():
+        if not booked(s):
+            continue
         tk = s.get("ticker") or ""
         d = pinday.et_day_of_ticker(tk)
         if d is None:
@@ -277,11 +387,51 @@ def selftest():
        "and a `scalar` result pays nothing rather than inventing a payout")
     ck(pnl({}) == 0.0 and payout({}) == 0.0,
        "NULL: an empty settlement is worth nothing, not a crash")
-    ck(payout(dict(s, market_result="")) == 0.0
-       and payout(dict(s, market_result="void")) == 0.0,
+    ck(payout(dict(s, market_result="")) == 0.0,
        "NULL: a market with no yes/no result pays nothing rather than guessing")
+    # v-ledger-unreadable: a VOIDED market gives the stake back -- never a full loss
+    void = dict(s, market_result="void", value=None)
+    ck(abs(payout(void) - 3.92) < 1e-9 and abs(pnl(void) + 0.0055) < 1e-9
+       and abs(pnl(dict(void, value=0)) + 0.0055) < 1e-9,
+       "a VOIDED market pays back what it cost ($3.92), so it books -$0.0055 (the "
+       "fee), not -$3.9255 (the whole stake) -- whatever its `value` says")
     ck(pnl(dict(s, no_count_fp="junk", fee_cost=None)) == -3.92,
        "unparseable numbers read as zero rather than poisoning the total")
+
+    # v-ledger-unreadable: a row a renamed Kalshi field would book as a total
+    # loss or as pure profit is UNREADABLE, never booked
+    full = dict(s, yes_count_fp="0.00", value=0)
+    ck(unreadable(full) is None and booked(full),
+       "a whole real row (all five numbers there) is readable and booked")
+    for f in NEEDED:
+        gone = {k: v for k, v in full.items() if k != f}
+        ck(unreadable(gone) == "no %s" % f and not booked(gone),
+           "a row with no %s is unreadable (a renamed field), not $0 of it" % f)
+    ck(abs(pnl({k: v for k, v in full.items() if k != "no_count_fp"}) + 3.9255) < 1e-9,
+       "...which is the bug it stops: pnl() alone books that row as the whole "
+       "stake lost (-$3.93) though the market was WON")
+    ck(abs(pnl({k: v for k, v in full.items() if k != "no_total_cost_dollars"})
+           - 3.9945) < 1e-9,
+       "...and with no cost field as pure profit (+$3.99, the whole payout)")
+    ck("not a number" in unreadable(dict(full, fee_cost="junk"))
+       and "not a number" in unreadable(dict(full, no_count_fp="nan")),
+       "a number field that is not a number is unreadable")
+    ck("no usable value" in unreadable(dict(full, market_result="scalar", value=None))
+       and "no usable value" in unreadable(dict(full, market_result="", value=None))
+       and unreadable(dict(full, market_result="scalar", value=50)) is None
+       and unreadable(dict(full, market_result="no", value=None)) is None,
+       "a result that says nothing about what it paid (no usable value) is "
+       "unreadable; a tie's value, or a plain yes/no, is enough")
+    ck(unreadable(dict(full, market_result="void")) is None
+       and not booked(dict(full, market_result="void")),
+       "a voided row is readable but not booked (the money pages leave it out "
+       "and say so)")
+    ub = unbooked({"a": full, "b": dict(full, ticker="T2", fee_cost=None),
+                   "c": dict(full, ticker="T3", market_result="voided")})
+    ck(ub == {"unreadable": [("T2", "no fee_cost")], "void": ["T3"]},
+       "unbooked() lists what booked() leaves out, with why")
+    ck(unreadable(None) == "not a settlement record" and unreadable([]) == "not a settlement record",
+       "NULL: something that is not a row is unreadable, not a crash")
 
     # append-only, and a re-run cannot double-count
     rows = {}
@@ -293,7 +443,9 @@ def selftest():
        "but the SAME ticker settling at a different time is a different "
        "settlement -- this is exactly what (ticker, t) de-duplication broke")
 
-    # the ET day comes from the ticker, not the settled_time
+    # the ET day comes from the ticker, not the settled_time (whole rows: the
+    # toy row above has no yes_count_fp, and by_et_day books only whole ones)
+    rows = {k: dict(v, yes_count_fp="0.00") for k, v in rows.items()}
     d = by_et_day(rows)
     ck("2026-09-17" in d and "2026-09-18" not in d,
        "a market closing 23:45 ET on the 17th belongs to the 17th, though "
@@ -301,6 +453,10 @@ def selftest():
     ck(d["2026-09-17"]["n"] == 2 and d["2026-09-17"]["series"]["KXNEAR15M"] == 2,
        "both settlements land on that day and are counted by series")
     ck(by_et_day({}) == {}, "NULL: no settlements, no invented days")
+    d2 = by_et_day(dict(rows, gone={k: v for k, v in full.items() if k != "fee_cost"},
+                        void=dict(full, settled_time="2026-09-18T05:00:00Z", market_result="void")))
+    ck(d2["2026-09-17"]["n"] == 2 and abs(d2["2026-09-17"]["dollars"] - d["2026-09-17"]["dollars"]) < 1e-9,
+       "an unreadable row and a voided one are in no day's total (the report's days and ALL TIME)")
 
     # the pager stops at the first page it already has, unless backfilling
     pages = [{"settlements": [s], "cursor": "c1"},
@@ -361,6 +517,11 @@ def main():
         print("loaded nothing")
         return 0
     days = by_et_day(rows)
+    ub = unbooked(rows)
+    if ub["unreadable"] or ub["void"]:
+        print("\n  LEFT OUT of every total below: %d markets unreadable (Kalshi field change?)%s, %d voided"
+              % (len(ub["unreadable"]), (" -- e.g. %s: %s" % ub["unreadable"][0]) if ub["unreadable"] else "",
+                 len(ub["void"])))
     print("\n  FROM KALSHI'S OWN BOOKS -- revenue minus cost minus fees, by EASTERN day")
     print("  %-12s %6s %11s %8s   %s" % ("ET day", "markets", "made", "losses", "series"))
     for d in sorted(days)[-a.days:]:

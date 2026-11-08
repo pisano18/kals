@@ -16,6 +16,7 @@ import time
 import pindesk
 import pinday
 from botdata import dirlist as _dirlist
+import logfiles                                                      # archived pin logs (log_rotate.py)
 from botdata.fmt import cnt as _cnt, dollars, dot, nof as _nof, of100 as _of100, pct_of, ret, usd
 from phone.html import esc, i_
 from phone.commands.server.aws import AWS_BILLED_FROM_EPOCH, aws_estimate
@@ -46,7 +47,7 @@ def is_maintenance(start, length_s):
 def pin_rows(results, kind, t0):
     """Every `kind` row of the pin logs that could hold a row at or after t0 (a log last written before t0 cannot)."""
     out = []
-    for p in sorted(_dirlist.glob(os.path.join(results, "pinrun-live-*.jsonl"))):
+    for p in logfiles.glob(os.path.join(results, "pinrun-live-*.jsonl"), globber=_dirlist.glob):
         try:
             if os.path.getmtime(p) < t0:
                 continue

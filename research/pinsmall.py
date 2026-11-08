@@ -30,6 +30,8 @@ import os
 import sys
 
 LIVE = r"C:\kals-repo\results\pinrun-live-*.jsonl"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))    # research/, so logfiles imports under python -I
+import logfiles                                                    # noqa: E402  (pin's archived logs: log_rotate.py)
 BUCKETS = [(0, 2), (2, 10), (10, 30), (30, 60), (60, 1e9)]
 
 
@@ -48,9 +50,9 @@ def label(b):
 def load(pattern=LIVE):
     """[(ticker, filled, entry_price, realised_delta)] from live logs only."""
     out = []
-    for fp in sorted(glob.glob(pattern)):
+    for fp in logfiles.glob(pattern):
         rows = []
-        for line in open(fp, encoding="utf-8", errors="replace"):
+        for line in logfiles.open(fp, encoding="utf-8", errors="replace"):
             try:
                 rows.append(json.loads(line))
             except ValueError:

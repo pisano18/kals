@@ -37,10 +37,13 @@ import argparse
 import collections
 import glob
 import json
+import os
 import statistics
 import sys
 
 LIVE = r"C:\kals-repo\results\pinrun-live-*.jsonl"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))    # research/, so logfiles imports under python -I
+import logfiles                                                    # noqa: E402  (pin's archived logs: log_rotate.py)
 EDGE_BANDS = [(0, 1), (1, 2), (2, 4), (4, 8), (8, 1e9)]
 
 
@@ -87,9 +90,9 @@ def scan(rows):
 
 def load():
     out = []
-    for fp in sorted(glob.glob(LIVE)):
+    for fp in logfiles.glob(LIVE):
         rows = []
-        for line in open(fp, encoding="utf-8", errors="replace"):
+        for line in logfiles.open(fp, encoding="utf-8", errors="replace"):
             try:
                 rows.append(json.loads(line))
             except ValueError:

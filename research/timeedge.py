@@ -55,6 +55,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
+import logfiles                                                    # noqa: E402  (archived logs: log_rotate.py)
 
 RESULTS = os.path.join(os.path.dirname(HERE), "results")
 LEDGER = os.path.join(RESULTS, "kalshi_ledger.json")
@@ -201,10 +202,10 @@ def live_records(pattern=LIVE_GLOB, since_file="20260912"):
     """(close_summaries {close: rec}, orders [rec], halts [rec]) from live logs,
     de-duplicated (the logs overlap across restarts)."""
     cs, orders, halts = {}, {}, {}
-    for f in sorted(glob.glob(pattern)):
+    for f in logfiles.glob(pattern):
         if os.path.basename(f)[12:20] < since_file:
             continue
-        with open(f, encoding="utf-8", errors="replace") as fh:
+        with logfiles.open(f, encoding="utf-8", errors="replace") as fh:
             for line in fh:
                 if '"kind"' not in line:
                     continue

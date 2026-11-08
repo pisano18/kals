@@ -68,8 +68,22 @@ def handle(ctx):
     return page(ctx, "🛰 <b>Outside check: %s</b>" % ("ON" if _alive.url_of(cfg) else "OFF -- no URL set"))
 
 
+def echo(text):
+    """What a log line or a reply may repeat of an /alive message (Command.echo): the verb, and the URL masked -- the URL
+    is the operator's secret (anyone holding it could keep the outside check green while the server is dead)."""
+    words = str(text or "").split()
+    verb = words[1].lower() if len(words) > 1 else ""
+    out = ["/alive"]
+    if verb in ("set", "off"):
+        out.append(verb)
+        if verb == "set" and len(words) > 2:
+            out.append(_alive.masked(words[2]))
+    return " ".join(out)
+
+
 COMMAND = declare(Command(
     names=("/alive",), section="server", order=30,
     help_line="/alive: the outside 'is it alive' check -- a ping every 5 min to a monitoring service that texts you when "
               "the pings stop (<code>/alive set &lt;url&gt;</code>)",
-    chart=None, handle=handle, needs_ledger=False, examples=("/alive off", "/alive set nonsense")))
+    chart=None, handle=handle, needs_ledger=False, control=True,       # v-tg-stale: set / off change the config
+    echo=echo, examples=("/alive off", "/alive set nonsense")))

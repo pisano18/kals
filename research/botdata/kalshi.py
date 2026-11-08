@@ -22,6 +22,7 @@ import threading
 import time
 
 import pinledger
+from botdata import money as _money
 from botdata import paths as _paths
 from botdata import pots as _pots
 from botdata import tables as _tables
@@ -369,7 +370,7 @@ def pot_settlements(now=None, getter=None):
         elif not x.get("complete"):
             why[sub] = "its history is still loading"
         else:
-            rows[sub] = list((x.get("rows") or {}).values())
+            rows[sub] = _money.booked_rows(x)            # v-ledger-unreadable: booked rows only
     return rows, why
 
 

@@ -41,6 +41,9 @@ import json
 import os
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))    # research/, so logfiles imports under python -I
+import logfiles                                                    # noqa: E402  (pin's archived logs: log_rotate.py)
+
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SIZES = (25, 50, 125, 250, 500, 750, 1000, 2000)
 FILL_BAR = 0.50          # "most moments" = this share of buyable moments
@@ -70,8 +73,8 @@ def cap_at(kept, bar=FILL_BAR):
 
 def load():
     out = []
-    for p in sorted(glob.glob(os.path.join(REPO, "results", "pinrun-live-*.jsonl"))):
-        for line in open(p, encoding="utf-8"):
+    for p in logfiles.glob(os.path.join(REPO, "results", "pinrun-live-*.jsonl")):
+        for line in logfiles.open(p, encoding="utf-8"):
             try:
                 d = json.loads(line)
             except ValueError:

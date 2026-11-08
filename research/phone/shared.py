@@ -327,7 +327,8 @@ _RAW = {}
 
 
 def raw_ledger(path):
-    """Kalshi's settlement rows from `path`, re-read only when the file changes."""
+    """Kalshi's settlement rows from `path`, re-read only when the file changes. Booked rows only (v-ledger-unreadable,
+    2026-11-07): an unreadable or voided market is in no total -- botdata/ledgercheck.py counts and says them."""
     try:
         st = os.stat(path)
     except OSError:
@@ -336,7 +337,7 @@ def raw_ledger(path):
     hit = _RAW.get(path)
     if hit and hit[0] == key:
         return hit[1]
-    rows = [r for r in pinledger.load_cache(path).values() if isinstance(r, dict)]
+    rows = [r for r in pinledger.load_cache(path).values() if isinstance(r, dict) and pinledger.booked(r)]
     _RAW[path] = (key, rows)
     return rows
 

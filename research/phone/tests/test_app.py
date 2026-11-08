@@ -9,6 +9,10 @@ Run:  C:\\Python314\\python.exe research\\phone\\tests\\test_app.py   (exit 0 = 
   - a command's process read goes to botdata.procs' cached table (no synchronous read while the refresher keeps it
     fresh);
   - Phone.pp is phone.shared (what every Ctx reads as ctx.pp).
+  - v-tg-hung (2026-11-07): the heartbeat is written in one step (os.replace) with the time (UTC) and the pid, before
+    the poll and before every tick; a swap Windows refuses is written in place (the beat always lands); never the live
+    file under KALS_TESTING=1. boot_all.ps1's side is run by test_boot_phone.py.
+  - v-tg-stale: poll_once hands each message's Telegram date to the router.
 KALS_TESTING=1; no network, no real Telegram, nothing under results\\ written.
 """
 import os
@@ -68,6 +72,99 @@ def test_loop_once_answers_and_survives_a_failing_tick():
     assert [str(m) for _c, m in ph.tg.sent] == ["🔕 Alerts off. /unmute to turn them back on."]
     with open(log_path(), encoding="utf-8") as fh:
         assert "planted: must not be called" in fh.read(), "the failing tick was logged"
+
+
+def test_heartbeat_is_one_step_with_the_pid():
+    import re
+    import tempfile
+    td = tempfile.mkdtemp(prefix="test_app_hb_")
+    hb = os.path.join(td, "pinphone.heartbeat")
+    with patched((S, "HEARTBEAT", hb)), quiet():
+        _phone().heartbeat()
+        with open(hb, encoding="utf-8") as fh:
+            txt = fh.read()
+        m = re.match(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ pid (\d+)\n$", txt)
+        assert m and int(m.group(1)) == os.getpid(), txt
+        assert os.listdir(td) == ["pinphone.heartbeat"], "no temp file is left behind"
+        _phone().heartbeat()                                     # the second write replaces the first
+        assert os.listdir(td) == ["pinphone.heartbeat"]
+    with patched((S, "HEARTBEAT", os.path.join(td, "no-such-dir", "hb"))), quiet():
+        _phone().heartbeat()                                     # a failed write never raises
+    # ONE STEP: the beat is a temp file swapped in by os.replace (a reader never sees half of one) ...
+    from botdata import paths as _paths
+    swaps = []
+    real_replace = os.replace
+    with patched((S, "HEARTBEAT", hb), (_paths.os, "replace", lambda a, b: (swaps.append((a, b)), real_replace(a, b)))):
+        _phone().heartbeat()
+    assert len(swaps) == 1 and swaps[0][1] == hb and swaps[0][0] != hb and swaps[0][0].endswith(".tmp"), swaps
+    # ... and a swap Windows refuses (a reader holds the file open) is written in place instead: a beat that did not
+    # land would get a working phone killed by boot_all (the 2026-11-07 safety review)
+    with open(hb, "w", encoding="utf-8") as fh:
+        fh.write("2026-01-01T00:00:00Z pid 1\n")
+    with patched((S, "HEARTBEAT", hb), (_paths.os, "replace", lambda a, b: (_ for _ in ()).throw(PermissionError(13, "held"))),
+                 (_paths.time, "sleep", lambda s: None)), quiet():
+        _phone().heartbeat()
+    with open(hb, encoding="utf-8") as fh:
+        assert fh.read().endswith(" pid %d\n" % os.getpid()), "the refused swap still lands the beat"
+    assert os.listdir(td) == ["pinphone.heartbeat"], "and leaves no temp file"
+    # the test fence still holds, fallback or not: never the live heartbeat under KALS_TESTING=1
+    live = os.path.join(_paths.DEFAULT_RESULTS, "pinphone.heartbeat")
+    before = os.stat(live).st_mtime_ns if os.path.exists(live) else None
+    with patched((S, "HEARTBEAT", live)):
+        _phone().heartbeat()
+    assert (os.stat(live).st_mtime_ns if os.path.exists(live) else None) == before, "the live heartbeat was written"
+    # boot_all's side is RUN (lifted out of the parsed file) by test_boot_phone.py
+    assert os.path.exists(os.path.join(HERE, "test_boot_phone.py"))
+
+
+def test_loop_beats_before_the_poll_and_every_tick():
+    ph = _phone()
+    order = []
+    ph.heartbeat = lambda: order.append("beat")
+    ph.poll_once = lambda timeout=25: order.append("poll")
+    ph.update_flag_tick = lambda: order.append("update")
+    ph.alerts_tick = lambda: order.append("alerts")
+    ph.resend_tick = lambda: order.append("resend")
+    ph.loop_once()
+    assert order == ["beat", "poll", "beat", "update", "beat", "alerts", "beat", "resend"], order
+
+
+def test_poll_hands_the_message_date_to_the_router():
+    ph = _phone()
+    got = []
+    ph.handle = lambda chat, text, sent_at=None: got.append((chat, text, sent_at))
+    ph.tg.incoming.append({"update_id": 1, "message": {"chat": {"id": 7}, "text": "/help", "date": 1793447000}})
+    ph.tg.incoming.append({"update_id": 2, "message": {"chat": {"id": 7}, "text": "/help"}})
+    ph.poll_once(timeout=0)
+    assert got == [(7, "/help", 1793447000), (7, "/help", None)], got
+    # the next poll is armed at once: what it delivers is fresh by construction, whatever its date says (a server clock
+    # running fast can never lock every control out); a prompt message dated over 5 minutes old is a clock warning
+    del got[:]
+    ph.tg.incoming[:] = [{"update_id": 3, "message": {"chat": {"id": 7}, "text": "/stop yes", "date": T - 3600}}]
+    with quiet():
+        ph.poll_once(timeout=0)
+    assert got == [(7, "/stop yes", None)], got
+    with open(log_path(), encoding="utf-8") as fh:
+        assert "clock warning: a message delivered at once is dated 3600 s ago" in fh.read()
+    # a failed poll is a gap: the next one is judged by the date again
+    ph.tg.get_updates = lambda offset, timeout=25: (_ for _ in ()).throw(OSError("planted"))
+    saved = A.time.sleep
+    A.time.sleep = lambda s: None
+    try:
+        with quiet():
+            ph.poll_once(timeout=0)
+    finally:
+        A.time.sleep = saved
+    ph.tg.get_updates = lambda offset, timeout=25: [{"update_id": 4, "message": {"chat": {"id": 7}, "text": "/stop yes",
+                                                                                 "date": T - 3600}}]
+    del got[:]
+    ph.poll_once(timeout=0)
+    assert got == [(7, "/stop yes", T - 3600)], got
+    # and a poll armed more than PROMPT_GAP_S after the last answered one is judged by the date too
+    ph._poll_end -= A.PROMPT_GAP_S + 1
+    del got[:]
+    ph.poll_once(timeout=0)
+    assert got == [(7, "/stop yes", T - 3600)], got
 
 
 def test_alerts_never_read_the_process_table():

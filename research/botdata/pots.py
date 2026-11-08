@@ -113,8 +113,8 @@ def xfer_in_pot(r, sub):
 def pot_rows(x, sub, own=True):
     """Pot `sub`'s settled rows (x = c['subs'][sub]): all of them, except that a POT_POOL_ONLY pot's own view keeps
     only its bot's (subaccount 4: the FX pairs, not the old reward test's coin legs; subaccount 3: the jump band's coins,
-    not the weather dip-seller's brackets -- POT_OWNER)."""
-    rows = list((x.get("rows") or {}).values())
+    not the weather dip-seller's brackets -- POT_OWNER). Booked rows only (v-ledger-unreadable: money.booked_rows)."""
+    rows = _money.booked_rows(x)
     if own and sub in _tables.POT_POOL_ONLY:
         rows = [r for r in rows if _tables.owner(r.get("ticker"), sub) == _tables.POT_OWNER[sub]]
     return rows

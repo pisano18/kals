@@ -6,7 +6,8 @@ still holds botstats + botdata to that). The operator asked for controls from th
   - a POST to Kalshi, the two money-moving paths, ordercli and kauth's signing: phone/actions/money.py ONLY; the one
     other "POST" in the phone is /server's AWS Cost Explorer read (commands/server/aws.py: AWS, never Kalshi);
   - Win32_Process.Create (WMI) and subprocess in phone/actions: phone/actions/launch.py ONLY;
-  - a bot's stop file: phone/actions/stopfiles.py ONLY (imported by the /pause /resume module alone);
+  - a bot's stop file: phone/actions/stopfiles.py ONLY (imported by the /pause /resume module and, for the Kalshi
+    watch's off switch results\\kalshi_watch.stop, by /watch: v-kwatch 2026-11-07);
   - money.py names exactly two write paths and refuses every other one at run time (test_move.py runs that);
   - no Kalshi order, cancel or amend path anywhere in the phone.
 Run:  C:\\Python314\\python.exe research\\phone\\tests\\test_actions_safety.py
@@ -98,13 +99,14 @@ def test_process_start_only_in_launch():
 
 def test_stop_files_only_in_stopfiles():
     assert set(users(r"phone\.actions\.stopfiles|from phone\.actions import stopfiles|actions import .*\bstopfiles\b")) \
-        <= {"commands/botctl.py"}
+        <= {"commands/botctl.py", "commands/watch_cmd.py"}
     # a stop file name written anywhere else: an open(..., "w") on a *.stop path
     assert set(users(r"""\.stop["'][^\n]*["']w["']""")) <= {STOPFILES}
 
 
 def test_actions_package_only_imported_by_the_controls():
-    allowed = {"commands/botctl.py", "commands/approve.py", "commands/move.py", "commands/controls.py"}
+    allowed = {"commands/botctl.py", "commands/approve.py", "commands/move.py", "commands/controls.py",
+               "commands/watch_cmd.py"}                     # /watch off|on (v-kwatch): confirm, journal, stopfiles
     u = [k for k in users(r"\bphone\.actions\b|from phone import actions") if not k.startswith("actions/")]
     assert set(u) <= allowed, u
     assert set(users(r"phone\.actions\.money|actions import .*\bmoney\b")) <= {"commands/move.py"}

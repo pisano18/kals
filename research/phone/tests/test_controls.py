@@ -3,6 +3,8 @@
 v-tg-rebuild step 9 (2026-10-30, lane D7). Run:  C:\\Python314\\python.exe research\\phone\\tests\\test_controls.py
 NEVER the real controls: pindesk.do_start / do_pause / do_stop are replaced by recording stubs for the whole run (and the
 test refuses to start if that did not take). time.sleep is planted (the worker's 3 s pause). KALS_TESTING=1.
+v-tg-startyes (2026-11-07): a /start that would clear a halt (the drawdown brake, which also re-bases the high mark, or a
+loss brake) only asks; '/start yes' does it, with the very health reading it judged handed to pindesk.do_start.
 """
 import os
 import sys
@@ -183,6 +185,135 @@ def test_status_reply_falls_back_to_the_phone_until_d1_merges():
         assert K.status_reply(FakeCtx(text="/pause", state=st)) == "OLD STATUS"
     else:                                   # step 10: the /status Command runs, under the name /status
         assert CM.by_name("/status") is not None
+
+
+# ---- v-tg-startyes (2026-11-07) -----------------------------------------------------------------------------------------
+DD_WHY = "DRAWDOWN brake: bank $810.59 is 22.5% below its high of $1,046.43, limit 20%"
+H_DD = {"alive": False, "pid": None, "flag": None, "quiet_s": None, "watchdog_s": 10, "open": {},
+        "halt": {"kind": "halt", "t": T - 60, "why": DD_WHY}}
+H_LOSS = dict(H_DD, halt={"kind": "halt", "t": T - 60, "why": "DAY loss cap: -$201.40 today >= $200"})
+H_OK = {"alive": True, "pid": 4242, "flag": None, "quiet_s": 5, "watchdog_s": 10, "open": {}, "halt": None}
+H_PAUSED = dict(H_DD, flag="operator PAUSE at 9:00 PM", halt=None)
+
+
+def _start(text, health, st=None):
+    """The reply to `text` on a FakeCtx whose health() is `health` (a dict, or an exception to raise); (reply, the
+    arguments pindesk.do_start got, what was said)."""
+    got = []
+    saved = pindesk.do_start
+    pindesk.do_start = lambda log, *a, **k: got.append(a)
+    K.time = types.SimpleNamespace(sleep=fake_sleep)
+    saved_status = K.status_reply
+    K.status_reply = lambda ctx: "STATUS"
+    try:
+        st = st or types.SimpleNamespace(busy=False)
+        kw = {"health": health} if not isinstance(health, Exception) else {}
+        c = FakeCtx(text=text, now=T, state=st, **kw)
+        if isinstance(health, Exception):
+            c.health = lambda e=health: (_ for _ in ()).throw(e)
+        was_busy = st.busy
+        r = CM.by_name(c.cmd).run(c)
+        if not was_busy:
+            wait_free(st)
+        return r, got, [t for _c, t in c.said]
+    finally:
+        pindesk.do_start = saved
+        K.status_reply = saved_status
+        K.time = time
+
+
+def test_start_on_a_drawdown_halt_asks_first():
+    r, got, said = _start("/start", dict(H_DD))
+    w = str(r)
+    assert "HALTED at its 20% drawdown brake" in w and "the bank is $810.59, 77% of its $1,046.43 high mark" in w, w
+    assert "RE-BASES the high mark" in w and "<code>/start yes</code>" in w and "it stays halted" in w, w
+    assert got == [] and said == [], "nothing started, nothing said"
+    r, got, said = _start("/start yes", dict(H_DD))
+    assert r is K.CONTROL_REPLY["start"] and len(got) == 1 and got[0][0]["halt"]["why"] == DD_WHY, got
+    assert said[-1] == "STATUS"
+    r, got, _s = _start("/start pin yes", dict(H_DD))
+    assert r is K.CONTROL_REPLY["start"] and len(got) == 1, "'/start pin yes' is the same"
+    r, got, _s = _start("/start pin", dict(H_DD))
+    assert "HALTED" in str(r) and got == [], "'/start pin' asks too"
+
+
+def test_start_on_a_loss_brake_asks_first():
+    r, got, _s = _start("/start", dict(H_LOSS))
+    assert "stopped by a safety brake</b>: DAY loss cap: -$201.40 today &gt;= $200" in str(r) and got == [], r
+    r, got, _s = _start("/start yes", dict(H_LOSS))
+    assert r is K.CONTROL_REPLY["start"] and len(got) == 1
+
+
+def test_start_with_nothing_to_clear_starts_at_once():
+    for h in (H_OK, H_PAUSED, {"alive": False, "pid": None, "flag": None, "quiet_s": None, "watchdog_s": 30,
+                                "open": {}, "halt": None}):
+        r, got, _s = _start("/start", dict(h))
+        assert r is K.CONTROL_REPLY["start"] and len(got) == 1 and got[0][0] == h, (h, r)
+        r, got, _s = _start("/start yes", dict(h))
+        assert r is K.CONTROL_REPLY["start"] and len(got) == 1, "a 'yes' that was not needed starts as well"
+
+
+def test_start_asks_when_the_state_cannot_be_read():
+    with quiet_log():
+        r, got, _s = _start("/start", RuntimeError("planted"))
+        assert "could not read the pin bot's state" in str(r) and got == [], r
+        r, got, _s = _start("/start yes", RuntimeError("planted"))
+        assert r is K.CONTROL_REPLY["start"] and got == [()], "confirmed: do_start reads the state itself, as before"
+        r, got, _s = _start("/start", {"halt": None})                # a reading missing its fields
+        assert "could not read" in str(r) and got == []
+
+
+def test_do_start_acts_on_the_reading_it_was_given():
+    """The REAL pindesk.do_start, its world stubbed (no boot_all, no restart_bot, no flag touched): the re-base decision
+    follows the health reading handed to it -- the one the operator confirmed -- never a fresh read (the 2026-11-07 tests
+    review: do_start reading quick_health() whatever it was given passed every suite)."""
+    td = tempfile.mkdtemp(prefix="test_controls_dostart_")
+    flag = os.path.join(td, "pinrun-hwm.reset")
+    ran = []
+    stubs = {"_refuse_local": lambda what: None, "clear_flag": lambda: ran.append("clear_flag"),
+             "_ps": lambda script, *a, **k: (ran.append(os.path.basename(script)), (0, ""))[1],
+             "pinflat": types.SimpleNamespace(live_pid=lambda: 4242, pid_alive=lambda p: True),
+             "RESET_FLAG": flag, "quick_health": None}
+    saved = {n: getattr(pindesk, n) for n in stubs}
+    try:
+        for planted_quick, given, want in ((H_DD, dict(H_OK), False), (H_OK, dict(H_DD), True),
+                                           (H_DD, None, True), (H_OK, None, False)):
+            stubs["quick_health"] = (lambda q=planted_quick: dict(q))
+            for n, v in stubs.items():
+                setattr(pindesk, n, v)
+            assert pindesk._ps is stubs["_ps"] and pindesk.pinflat is stubs["pinflat"], "never the real boot_all"
+            if os.path.exists(flag):
+                os.remove(flag)
+            del ran[:]
+            said = []
+            assert _REAL["do_start"](said.append, given) is True
+            assert os.path.exists(flag) is want, (given and given.get("halt"), planted_quick.get("halt"), said)
+            assert ran == ["clear_flag", "boot_all.ps1"], ran
+            assert any("re-base flag written" in s for s in said) is want, said
+    finally:
+        for n, v in saved.items():
+            setattr(pindesk, n, v)
+
+
+def test_start_busy_answers_busy_first():
+    r, got, _s = _start("/start", dict(H_DD), st=types.SimpleNamespace(busy=True))
+    assert r is K.CONTROL_REPLY["busy"] and got == []
+
+
+def test_start_yes_is_not_a_bot_called_yes():
+    assert not K._other_bot(FakeCtx(text="/start yes")) and K._other_bot(FakeCtx(text="/start jb"))
+    assert K._other_bot(FakeCtx(text="/pause yes")), "only /start takes 'yes' for the pin bot"
+
+
+class quiet_log:
+    def __enter__(self):
+        import contextlib
+        import io
+        self._r = contextlib.redirect_stdout(io.StringIO())
+        self._r.__enter__()
+
+    def __exit__(self, *a):
+        self._r.__exit__(*a)
 
 
 def test_declarations():

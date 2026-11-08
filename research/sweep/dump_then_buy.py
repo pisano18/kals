@@ -1,7 +1,9 @@
 """Live fills only: did a buy that came within N s AFTER a 'dumped' record (price far under fair, someone
 dumping) on the same market lose more often than other buys? Outcome per market from the 'settled' records.
 Money per market = sum of ALL settled pnl_c on that ticker (buy legs + hedge legs)."""
-import glob, json, calendar, collections
+import glob, json, calendar, collections, sys
+sys.path.insert(0, r"C:\kals-repo\research")
+import logfiles                                         # pin's archived logs (log_rotate.py)
 
 def ts(t):
     return calendar.timegm(__import__("time").strptime(t[:19], "%Y-%m-%dT%H:%M:%S"))
@@ -9,9 +11,9 @@ def ts(t):
 dumped = {}      # (ticker) -> first dump time, per close via ticker (ticker includes the close)
 orders = collections.defaultdict(list)   # ticker -> [(t, tau, ask_seen, leg)]
 settled = {}     # ticker -> (result, want, pnl_c)
-files = sorted(glob.glob(r"C:\kals-repo\results\pinrun-live-*.jsonl"))
+files = logfiles.glob(r"C:\kals-repo\results\pinrun-live-*.jsonl")
 for f in files:
-    for l in open(f, encoding="utf-8", errors="replace"):
+    for l in logfiles.open(f, encoding="utf-8", errors="replace"):
         if '"kind": "dumped"' not in l and '"kind": "order"' not in l and '"kind": "settled"' not in l:
             continue
         try:

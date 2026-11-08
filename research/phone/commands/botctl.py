@@ -196,8 +196,8 @@ def resume_cmd(ctx):
     b = resolve(words[0])
     if b is None:
         return unknown_bot(words[0], "resume")
-    if b.name == PIN:
-        return controls.control(ctx, "start")
+    if b.name == PIN:                                           # v-tg-startyes: a halt asks first ('/resume pin yes')
+        return controls.start_pin(ctx, yes=len(words) > 1 and words[1].lower() == "yes")
     yes = len(words) > 1 and words[1].lower() == "yes"
     chat, now = ctx.chat_id, ctx.now()
     if b.retired:

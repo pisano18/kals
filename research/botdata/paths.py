@@ -15,9 +15,14 @@ REAL results folder or C:\\kals. Why: when a path moves during the rebuild, an o
 (pinphone.UPDATE_FLAG, pinphone.LOG, botstats.RESULTS) would otherwise touch the live files: delete
 results\\pinphone.update, append to pinphone.log, overwrite botstats_cache.json. With KALS_TESTING unset (the live phone,
 the desktop, server_sync) check_write does nothing at all.
+
+ATOMIC WRITES (2026-11-07): write_atomic / write_json_atomic -- a temp file then os.replace, so a config or heartbeat is
+never left half-written (the phone's telegram.json writers and its heartbeat use them).
 """
 import json
 import os
+import threading
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))               # <repo>\research\botdata
 RESEARCH = os.path.dirname(HERE)                                # <repo>\research
@@ -76,6 +81,40 @@ def check_write(path):
     """Raise WriteFenced when this is a test run (KALS_TESTING=1) and `path` is a live file; else nothing."""
     if testing() and is_live_path(path):
         raise WriteFenced("KALS_TESTING=1: refusing to write the live file %s" % path)
+
+
+def write_atomic(path, text, encoding="utf-8", tries=3):
+    """Write `text` to `path` as ONE step: a temp file beside it, then os.replace (2026-11-07, the phone audit: telegram.json
+    was rewritten in place, so a crash or a full disk mid-write left half a file -- no token, no pairing -- and the phone
+    could not start again). A reader sees the old file or the new one, never a part. check_write first (the test fence).
+    A replace refused because a reader holds the file open (Windows) is tried again `tries` times. Raises OSError on
+    failure; the temp file is removed then."""
+    check_write(path)
+    tmp = "%s.%d.%d.tmp" % (path, os.getpid(), threading.get_ident())      # one temp file per writer, never shared
+    try:
+        with open(tmp, "w", encoding=encoding) as fh:
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+        for k in range(tries):
+            try:
+                os.replace(tmp, path)
+                return
+            except PermissionError:
+                if k == tries - 1:
+                    raise
+                time.sleep(0.2)
+    except OSError:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def write_json_atomic(path, obj, **dump_kw):
+    """json.dumps(obj, **dump_kw) written by write_atomic (one step; raises OSError)."""
+    write_atomic(path, json.dumps(obj, **dump_kw))
 
 
 def read_json(path):

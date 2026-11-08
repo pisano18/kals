@@ -23,6 +23,7 @@ from collections import Counter, defaultdict
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+import logfiles                                              # noqa: E402  (archived logs: log_rotate.py)
 RESULTS = r"C:\kals-repo\results"
 CHROME = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 EDGE = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
@@ -338,11 +339,11 @@ def read_run_logs():
     """Everything the live runs actually did."""
     out = {"signals": [], "orders": [], "settled": [], "halts": [],
            "errors": [], "runs": []}
-    for p in sorted(glob.glob(os.path.join(RESULTS, "pinrun-live-*.jsonl")),
-                    key=os.path.getmtime):
+    for p in sorted(logfiles.glob(os.path.join(RESULTS, "pinrun-live-*.jsonl")),
+                    key=logfiles.by_mtime):
         ev = []
         try:
-            for ln in open(p, encoding="utf-8"):
+            for ln in logfiles.open(p, encoding="utf-8"):
                 ln = ln.strip()
                 if ln:
                     try:
@@ -351,7 +352,7 @@ def read_run_logs():
                         pass
         except Exception:
             continue
-        out["runs"].append({"file": os.path.basename(p), "n": len(ev),
+        out["runs"].append({"file": logfiles.log_name(p), "n": len(ev),
                             "kinds": dict(Counter(e.get("kind") for e in ev))})
         for e in ev:
             k = e.get("kind")

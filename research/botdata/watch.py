@@ -80,8 +80,8 @@ def compare(c, name, b, read_t):
     gap = kalshi - want
     tol = max(TOL_USD, TOL_FRAC * abs(kalshi)) + TOL_PER_MARKET * b.markets
     only = []
-    rows = ((c.get("subs") or {}).get(sub) or {}).get("rows") or {}
-    for s in rows.values():
+    rows = _money.booked_rows((c.get("subs") or {}).get(sub) or {})     # v-ledger-unreadable: booked rows only
+    for s in rows:
         t = _clock.utc_epoch(s.get("settled_time"))
         tk = str(s.get("ticker") or "")
         if t is None or not (b.t0 < t <= float(read_t)) or tk in b.tickers or _bots.owner(tk, sub) != name:

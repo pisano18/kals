@@ -87,6 +87,7 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+import logfiles                                                # noqa: E402  (archived logs: log_rotate.py)
 import gzsalvage                                               # noqa: E402
 from engine import var_factor, N_AVG                           # noqa: E402
 
@@ -557,12 +558,12 @@ def load_live(paths):
     """First filled entry per market with the signal that produced it, and
     the run's gates. Returns (entries, counts)."""
     entries, counts = {}, {"orders_filled": 0, "no_signal": 0, "files": 0}
-    for p in sorted(paths):
+    for p in sorted(paths, key=logfiles.sort_key):
         counts["files"] += 1
         gates = {"pin": None, "edge_floor": None}
         last_sig = {}
         try:
-            fh = open(p, encoding="utf-8", errors="replace")
+            fh = logfiles.open(p, encoding="utf-8", errors="replace")
         except OSError:
             continue
         with fh:
@@ -600,7 +601,7 @@ def load_live(paths):
                     entries[tk] = {"ticker": tk,
                                    "want": d.get("want") or sig.get("want"),
                                    "sig": sig, "order": d, "gates": dict(gates),
-                                   "file": os.path.basename(p)}
+                                   "file": logfiles.log_name(p)}
     return entries, counts
 
 
@@ -1039,7 +1040,7 @@ def main():
     say("")
     say("## Live entries")
     import pinday
-    paths = glob.glob(os.path.join(args.results, "pinrun-live-*.jsonl"))
+    paths = logfiles.glob(os.path.join(args.results, "pinrun-live-*.jsonl"))
     entries, cnt = load_live(paths)
     led, why = pinday.load_ledger(os.path.join(args.results, "kalshi_ledger.json"))
     if led is None:

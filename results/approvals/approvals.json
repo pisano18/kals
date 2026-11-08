@@ -90,6 +90,39 @@
    "added_by": "Claude (assistant), for the operator",
    "date": "2026-11-04",
    "sha256": "01586e121a57e72782051114de853576f0e61abf180f49dfd203d7e330b093bb"
+  },
+  {
+   "id": "kwatch",
+   "title": "Kalshi watch: install the 30-minute scan for Kalshi changes, with phone alarms (no trading change)",
+   "description": "Registers the server task KalsKalshiWatch, the way KalsPinRulesWatch was: every 30 minutes, as SYSTEM, research\\kalshi_watch.py makes one scan and sends the phone anything that changed, old value beside new; urgent ones ring even in quiet hours. It reads Kalshi's API changelog, 20 signed Kalshi reads a scan with pin's key (fees, price steps, rules text, settlement timer, shard, scheduled fee changes, trading paused, every field of every answer; the balance answer's shape only, never its amount), the CRYPTO15M contract PDF, CF Benchmarks' exchanges PDF and status page, the new lines of pin's log (the 0925v warning records, entries blocked, 6+ refused hedges in an hour, 10 minutes with no markets), free disk, package versions and the launchers' sha256. It places no order and changes nothing pin does. The script runs the watch's self-test first and installs nothing if it fails; the first scan sends one 'baseline set' note. /watch on the phone shows every check.",
+   "stop_rule": "Too noisy or wrong: /watch off on the phone (asks, then /watch off yes): every scan exits at once and sends nothing; /watch on starts it again. To remove the task itself (server): Unregister-ScheduledTask -TaskName KalsKalshiWatch -Confirm:$false. Read after 7 days: every alert it sent was real or explained.",
+   "script": "kalshi_watch_install.ps1",
+   "log": "kalshi_watch_install.out",
+   "added_by": "Claude (assistant), for the operator",
+   "date": "2026-11-07",
+   "sha256": "ab1d82db5b1bc34d05345de8b06fd3deb1dd44b1c50c206761b03bd3994d6f88"
+  },
+  {
+   "id": "phonehung",
+   "title": "Phone: boot_all restarts a phone that is running but stuck (no trading change)",
+   "description": "Adds the hung-phone keep-alive to the server's boot_all.ps1 (the keep-alive KalsBoot runs every 10 minutes). Today boot_all restarts the phone only when its process is gone; a phone that is still running but stuck (answering nothing, sending no alerts) stays stuck until someone notices. After this, a phone whose heartbeat file is more than 5 minutes old is stopped by its own process number and started fresh: at most once an hour, never a phone that started less than 5 minutes ago, never while Windows hides a python process's command line, and never a second phone beside one that did not stop. The script edits only three places in the live boot_all.ps1, each found by text that must appear exactly once, and keeps every other line as it is: the ladder's settings, the FX keep-alives and the retired arms stay exactly as they run today (a boot_all.ps1 taken from git would have undone them). It builds the edited file first, checks that it parses and that the keep-alive's own self-test passes (21 checks), keeps a backup (results\\boot_all.before-phonehung.ps1), writes it and reads it back; on any failure nothing is changed. It starts and stops no bot. Best after /update, so the phone already writes its process number into the heartbeat.",
+   "stop_rule": "If it ever restarts a phone that was answering (a 'phone link HUNG' line in results\\boot_all.log while the phone replied normally): put results\\boot_all.before-phonehung.ps1 back over C:\\kals-repo\\boot_all.ps1 on the server; nothing else depends on it. Read after 7 days: every 'phone link HUNG' line in boot_all.log matches a phone that had really stopped answering.",
+   "script": "boot_phone_hung.ps1",
+   "log": "boot_phone_hung.out",
+   "added_by": "Claude (assistant), for the operator",
+   "date": "2026-11-08",
+   "sha256": "93418222b210e0932d20a0491064f8c0c91e6a4ad4d8a8b9e112bfee75d4206a"
+  },
+  {
+   "id": "logrotate",
+   "title": "Server disk: pack old pin logs once a day so the disk never fills (no trading change)",
+   "description": "Registers the server task KalsLogRotate: once a day at 09:40 UTC (4:40 AM ET in winter, 5:40 AM ET in summer), as SYSTEM, research\\log_rotate.py packs FINISHED pin logs into results\\archive\\ (gzip): pin's trajectory logs and the paper arms' logs after 2 days, pin's live logs after 60 days. Never a bot's newest log, never a file changed in the last day, held open or kept in git; each packed file must read back the same before the plain one is removed. Why: 26.3 GB free on 11-07, about 1.46 GB more used every week and nothing ever removed, so the disk fills around March 2027 (a full disk stops the recorders). The phone, /fixes and the research tools read the packed logs too. The script runs the rotation's self-test first and installs nothing if it fails, writes into its log what the first run would pack (nothing is packed now), registers the task (first run at the NEXT 09:40 UTC, never at once), and asks the phone to reload so it reads the archive before anything moves (the phone is away up to ~10 minutes, then says hello). No bot is touched.",
+   "stop_rule": "If a page or a tool misses an old log, or the phone alerts about the rotation: remove the task (server: results\\log_rotate_install.ps1 -Uninstall); packed logs stay in results\\archive\\ and are still read. Read after the first run: /server shows the rotation line, and free disk stops falling week on week.",
+   "script": "log_rotate_install.ps1",
+   "log": "log_rotate_install.out",
+   "added_by": "Claude (assistant), for the operator",
+   "date": "2026-11-08",
+   "sha256": "b57c1d0729d6081eaecb11ba09f5c40324e9434638bbf3614ea08762a65e53b6"
   }
  ]
 }

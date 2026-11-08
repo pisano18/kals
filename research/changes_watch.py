@@ -65,6 +65,7 @@ RESULTS = os.path.join(REPO, "results")
 if RESEARCH not in sys.path:
     sys.path.insert(0, RESEARCH)
 import pinledger                                                   # noqa: E402
+import logfiles                                                    # noqa: E402  (archived logs: log_rotate.py)
 
 BAND_LIVE = "2026-10-21T11:01:51Z"
 NOPAUSE_LIVE = "2026-10-18T11:01:21Z"
@@ -154,8 +155,8 @@ def hedge_leg_net(k, our_side):
 # ---------------------------------------------------------------- logs [L]
 def live_files(since_s, results=RESULTS):
     out = []
-    for fn in glob.glob(os.path.join(results, "pinrun-live-*.jsonl")):
-        if os.path.getmtime(fn) >= since_s:
+    for fn in logfiles.glob(os.path.join(results, "pinrun-live-*.jsonl")):
+        if logfiles.mtime(fn, 0.0) >= since_s:      # 0: archived between the listing and this look
             out.append(fn)
     return sorted(out)
 
@@ -167,7 +168,11 @@ def read_logs(files):
     boosts, open_boost = [], {}
     pre = tuple('"kind": "%s"' % k for k in KINDS)
     for fn in files:
-        with open(fn, encoding="utf-8", errors="replace") as fh:
+        try:
+            fh = logfiles.open(fn, encoding="utf-8", errors="replace")
+        except OSError:
+            continue                    # being archived (held) or gone since the listing
+        with fh:
             for line in fh:
                 if not any(p in line for p in pre):
                     continue
@@ -341,10 +346,14 @@ def traj_result(tickers, results=RESULTS, since_s=0):
     want, best = set(tickers), {}
     if not want:
         return {}
-    for fn in glob.glob(os.path.join(results, "pintraj-live-*.jsonl")):
-        if os.path.getmtime(fn) < since_s:
+    for fn in logfiles.glob(os.path.join(results, "pintraj-live-*.jsonl")):
+        if logfiles.mtime(fn, 0.0) < since_s:
             continue
-        with open(fn, encoding="utf-8", errors="replace") as fh:
+        try:
+            fh = logfiles.open(fn, encoding="utf-8", errors="replace")
+        except OSError:
+            continue                    # being archived (held) or gone since the listing: the next run reads it
+        with fh:
             for line in fh:
                 tk0 = line[13:13 + 40]
                 if not any(t in tk0 for t in want):

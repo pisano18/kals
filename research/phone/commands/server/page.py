@@ -20,6 +20,7 @@ from phone.commands.server.aws import (AWS_AZ, AWS_BILLED_FROM_EPOCH, AWS_BUDGET
                                        aws_cost, aws_estimate)
 from phone.commands.server.machine import KALSHI_HOST
 from phone.commands.server.worth import server_worth, worth_lines
+from phone import rotation as _rotation
 
 SERVER_WARN_CPU, SERVER_WARN_MEM, SERVER_WARN_DISK_GB = 90.0, 90, 8.0
 
@@ -129,10 +130,12 @@ def _server_aws_lines(aws, est, total, now):
     return L
 
 
-def server_html(m, ping, pots, aws, est, now, pin_home=None, pin_srv=None, active=None, worth=None):
+def server_html(m, ping, pots, aws, est, now, pin_home=None, pin_srv=None, active=None, worth=None, rotation=None):
     """/server's screen: the machine (machine_read), the time to Kalshi (kalshi_ping), every pot's money (botstats'
     cache), the AWS bill (aws_cost, aws_estimate). Each part says what it could not read; none stops the others.
-    `worth` (11-05): server_worth's dict -- the "worth of the move" section under the header; None leaves it out."""
+    `worth` (11-05): server_worth's dict -- the "worth of the move" section under the header; None leaves it out.
+    `rotation` (11-07): log_rotate.health()'s dict -- the log rotation's line under the machine (phone/rotation.py);
+    None, or not installed, leaves it out."""
     best = min(ping["ms"]) if ping and ping.get("ms") else None
     used = (m["mem_total"] - m["mem_avail"]) if m.get("mem_total") is not None and m.get("mem_avail") is not None else None
     head = ["CPU %s" % _pct0(m.get("cpu")), "memory %s used" % _pct0(m.get("mem_load")),
@@ -175,6 +178,7 @@ def server_html(m, ping, pots, aws, est, now, pin_home=None, pin_srv=None, activ
         else ("no restart waiting" if m.get("reboot") is False else "could not tell (%s)" % esc(m.get("reboot_why") or "?"))))
     if m.get("errs"):
         L.append(i_("Could not read: %s" % "; ".join(m["errs"])))
+    L += _rotation.server_lines(rotation, now)
     L.append(i_("python = every python process (the bots, the recorders and this phone link): its share of the whole "
                 "machine and the memory it holds."))
     L.append("")
@@ -236,15 +240,17 @@ def load(ctx):
     except Exception as e:                              # noqa: BLE001
         log(traceback.format_exc())
         worth = {"err": str(e)[:120]}
+    # 11-07: the log rotation (two small files; never raises)
+    rot = _rotation.health(now)
     return {"m": m, "ping": ping, "pots": pots, "aws": aws, "est": est, "now": now, "home": home, "srv": srv,
-            "active": ctx.active(), "worth": worth}
+            "active": ctx.active(), "worth": worth, "rot": rot}
 
 
 def render(d):
     if d is None:
         return SERVER_HELP
     return server_html(d["m"], d["ping"], d["pots"], d["aws"], d["est"], d["now"], d["home"], d["srv"],
-                       active=d["active"], worth=d.get("worth"))
+                       active=d["active"], worth=d.get("worth"), rotation=d.get("rot"))
 
 
 def fail(e):

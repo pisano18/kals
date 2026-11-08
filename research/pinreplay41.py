@@ -36,6 +36,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 os.environ.setdefault("KALS_SELFTESTED", "1")
+import logfiles                                               # noqa: E402  (archived logs: log_rotate.py)
 import pinrun                                                 # noqa: E402
 import idxload                                                # noqa: E402
 import replay                                                 # noqa: E402
@@ -156,11 +157,11 @@ def load_fills(day_et):
     lo = (d0 + dt.timedelta(hours=4)).strftime("%Y-%m-%dT%H:%M")     # ET midnight = 04:00Z (EDT)
     hi = (d0 + dt.timedelta(hours=28)).strftime("%Y-%m-%dT%H:%M")
     out = []
-    for p in sorted(glob.glob(os.path.join(HERE, "..", "results", "pinrun-live-*.jsonl"))):
+    for p in logfiles.glob(os.path.join(HERE, "..", "results", "pinrun-live-*.jsonl")):
         sig, res, orders = {}, {}, []
         hedge = collections.defaultdict(float)
         settles = []
-        for line in open(p, encoding="utf-8"):
+        for line in logfiles.open(p, encoding="utf-8"):
             try:
                 d = json.loads(line)
             except ValueError:

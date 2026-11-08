@@ -85,6 +85,7 @@ import zlib
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from engine import var_factor, N_AVG                        # noqa: E402
+import logfiles                                             # noqa: E402  (archived logs: log_rotate.py)
 
 REPO = os.path.dirname(HERE)
 ROWS = os.path.join(REPO, "results", "pindata", "rows.jsonl")
@@ -167,15 +168,15 @@ def load_live(pattern=LIVEGLOB):
     process does not pick up an edit to the file.
     """
     runs, sigs, orders = {}, [], []
-    for f in sorted(glob.glob(pattern)):
-        base = os.path.basename(f)
+    for f in logfiles.glob(pattern):
+        base = logfiles.log_name(f)
         stamp = base.replace("pinrun-live-", "").replace(".jsonl", "")
         try:
             rs = calendar.timegm(time.strptime(stamp, "%Y%m%dT%H%M%SZ"))
         except ValueError:
             continue
         runs[f] = {"start": rs, "file": base, "n_sig": 0}
-        for line in open(f, encoding="utf-8"):
+        for line in logfiles.open(f, encoding="utf-8"):
             line = line.strip()
             if not line:
                 continue

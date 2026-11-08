@@ -171,6 +171,8 @@ def test_between_the_main_accounts_pools():
     fresh()
     r = run("/move 20 main pool0 pool2")
     assert "Move $20.00</b> from pool0 (Main account, weather pool) to main (Main account, crypto pool)?" in r, r
+    # v-move-big: $20 of pool0's $40 is over 25% of the source pot -- the first yes asks once more
+    assert "Last check" in run("/move yes 4821", now=T + 1) and K.posts == []
     assert "Moved $20.00" in run("/move yes 4821", now=T + 1)
     path, body = K.posts[-1]
     assert path == "/portfolio/intra_exchange_instance_transfer" and body == ordercli.build_transfer(20, 0, 2)
@@ -251,6 +253,7 @@ def test_code_expiry_and_no():
 def test_checked_again_on_fresh_cash():
     fresh()
     run("/move 40 jb main")
+    assert "Last check" in run("/move yes 4821", now=T + 1), "v-move-big: $40 of jb's $48.10 asks once more"
     K.cash[(3, 2)] = 30.0                        # it bought in the meantime
     r = run("/move yes 4821", now=T + 5)
     assert "Not moved" in r and "the source holds $30.00" in r and K.posts == [], r
@@ -344,13 +347,92 @@ def test_a_subaccounts_other_pool_by_name():
     K.cash[(5, 0)] = 0.0
     assert "<b>sub5pool0</b> · subaccount 5, weather pool: $0.00" in run("/move")
     run("/move 60 sub4 main")
+    assert "Last check" in run("/move yes 4821", now=T + 1)          # v-move-big: all of sub4's cash
     assert "Moved $60.00" in run("/move yes 4821", now=T + 1)
     r = run("/move 60 main sub5pool0", now=T + 2)
     assert "from pool0 (Main account, weather pool) to sub5pool0 (subaccount 5, weather pool)" in r, r
+    assert "Last check" in run("/move yes 4821", now=T + 3)
     assert "Moved $60.00" in run("/move yes 4821", now=T + 3)
     b = K.posts[-1][1]
     assert (b["from_subaccount"], b["to_subaccount"], b["exchange_index"]) == (0, 5, 0)
     assert K.cash[(4, 0)] == 0.0 and K.cash[(5, 0)] == 60.0 and K.cash[(5, 2)] == 120.0
+
+
+# ---- v-move-big (2026-11-07): uncapped, but a big move asks once more with its % of the bank -------------------------
+def test_big_move_asks_once_more_with_the_bank_share():
+    fresh()
+    K.cash[(0, 2)] = 2000.0
+    r = run("/move 600 main ladder")
+    assert "Move $600.00" in r and "Big move</b> (over $500 and over 25% of the source pot's cash)" in r, r
+    assert "asks once more before anything is sent" in r, r
+    bank = sum(K.cash.values()) + sum(sum(v) for v in K.open.values())
+    assert ("%.1f%% of the bank ($%s: every pot's cash + open bets)" % (60000.0 / bank, "{:,.2f}".format(bank))) in r, r
+    assert "30% of main's cash ($2,000.00)" in r, r
+    r = run("/move yes 4821", now=T + 30)
+    assert "Last check: move $600.00</b> from main" in r and "Nothing has been sent" in r and K.posts == [], r
+    assert "of the bank" in r and "/move yes 4821" in r
+    j = J.read(kinds=("move",))
+    assert j == [], "the first yes of a big move records no move"
+    r = run("/move yes 4821", now=T + 60)
+    assert "Moved $600.00" in r and len(K.posts) == 1 and K.posts[0][1]["amount_cents"] == 60000, r
+    assert "No move is waiting" in run("/move yes 4821", now=T + 61) and len(K.posts) == 1
+
+
+def test_big_move_second_question_has_its_own_code():
+    """The last check asks with a NEW code: the first code (already typed once) sends nothing then; only the new one
+    sends (the 2026-11-07 tests review: every test drew the same planted code, so 'a new code' was never checked)."""
+    fresh()
+    K.cash[(0, 2)] = 2000.0
+    codes = iter(["1111", "2222"])
+    saved = CF.CODE
+    CF.CODE = lambda: next(codes)
+    try:
+        r = run("/move 600 main ladder")
+        assert "/move yes 1111" in r and "Big move" in r, r
+        r = run("/move yes 1111", now=T + 10)
+        assert "Last check" in r and "/move yes 2222" in r and "1111" not in r and K.posts == [], r
+        assert "not the code" in run("/move yes 1111", now=T + 11) and K.posts == [], "the first code is spent"
+        assert "Moved $600.00" in run("/move yes 2222", now=T + 12) and len(K.posts) == 1
+    finally:
+        CF.CODE = saved
+
+
+def test_big_move_second_question_expires_and_can_be_forgotten():
+    fresh()
+    K.cash[(0, 2)] = 2000.0
+    run("/move 600 main ladder")
+    assert "Last check" in run("/move yes 4821", now=T + 10)
+    assert "expired" in run("/move yes 4821", now=T + 10 + MV.ASK_TTL_S + 1) and K.posts == []
+    run("/move 600 main ladder", now=T + 500)
+    assert "Last check" in run("/move yes 4821", now=T + 501)
+    assert "Forgotten" in run("/move no", now=T + 502)
+    assert "No move is waiting" in run("/move yes 4821", now=T + 503) and K.posts == []
+
+
+def test_big_move_lines():
+    """over $500 (not at it), over 25% of the source pot's cash (not at it); the bank is every pot's cash + open bets."""
+    plan = {"amount": 500.0, "src_cash": 4000.0}
+    assert M.big_reasons(plan) == []
+    assert M.big_reasons(dict(plan, amount=500.01)) == ["over $500"]
+    assert M.big_reasons({"amount": 100.0, "src_cash": 400.0}) == []
+    assert M.big_reasons({"amount": 100.01, "src_cash": 400.0}) == ["over 25% of the source pot's cash"]
+    assert M.big_reasons({"amount": 600.0, "src_cash": 1000.0}) == ["over $500", "over 25% of the source pot's cash"]
+    assert M.big_reasons({"amount": 1.0, "src_cash": None}) == ["over 25% of the source pot's cash"], "unknown = asks"
+    f = __import__("phone.commands.funds.read", fromlist=["funds_read"]).funds_read(FakeKalshi().get)
+    total, whole = M.bank_of(f)
+    assert whole and abs(total - (sum(CASH0.values()) + sum(sum(v) for v in OPEN0.values()))) < 0.005, (total, whole)
+    K2 = FakeKalshi()
+    K2.fail |= {("/portfolio/positions", 3)}
+    t2, w2 = M.bank_of(__import__("phone.commands.funds.read", fromlist=["funds_read"]).funds_read(K2.get))
+    assert not w2 and t2 < total, "an unread pot makes the bank a floor ('at least')"
+    assert M.bank_of({"subs": {}}) == (None, False)
+
+
+def test_a_small_move_still_goes_on_the_first_yes():
+    fresh()
+    run("/move 50 main jb")                       # $50 of $812.40: 6%, under $500
+    assert "Big move" not in run("/move 50 main jb")
+    assert "Moved $50.00" in run("/move yes 4821", now=T + 1)
 
 
 def test_declaration():

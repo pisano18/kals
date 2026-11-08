@@ -23,6 +23,8 @@ import io
 import os
 import zlib
 
+import logfiles as _lf
+
 SPAN = 65536                 # the first / last bytes re-checked for a file that did not grow
 MAX_ENTRIES = 4096           # remembered (path, spec) pairs; the oldest is dropped first
 
@@ -46,8 +48,34 @@ def _ends(fh, size):
     return a, zlib.crc32(fh.read(SPAN))
 
 
+def _fold_gz(key, path, new, feed, copy):
+    """fold() for an archived log (results\\archive\\<name>.gz, log_rotate.py): it never changes once written, so it
+    is unpacked and folded whole once per (size, modified time), every line its last included."""
+    try:
+        st = os.stat(path)
+    except OSError:
+        _E.pop(key, None)
+        return None, None
+    stat = (st.st_size, st.st_mtime_ns)
+    e = _E.pop(key, None)
+    if e is None or e.get("gz") != stat:
+        try:
+            raw = _lf.read_bytes(path)
+        except (OSError, EOFError, ValueError):
+            return None, None
+        e = {"end": len(raw), "crc": 0, "state": new(), "memo": {}, "stat": None, "ends": None, "gz": stat}
+        for line in lines(raw):
+            feed(e["state"], line)
+    while len(_E) >= MAX_ENTRIES:
+        _E.popitem(last=False)
+    _E[key] = e
+    return copy(e["state"]), e
+
+
 def fold(path, spec, new, feed, copy):
     key = (os.path.normcase(os.path.abspath(path)), spec)
+    if _lf.is_gz(path):
+        return _fold_gz(key, path, new, feed, copy)
     try:
         st = os.stat(path)
         fh = open(path, "rb")

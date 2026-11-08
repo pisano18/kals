@@ -11,6 +11,7 @@ from botdata import paths as _paths
 from botdata import tables as _tables
 from botdata.clock import utc_epoch as _epoch
 from botdata import dirlist as _dirlist
+import logfiles as _lf
 
 
 # ---- the bots' own logs (what they DID; never money) -------------------------
@@ -57,13 +58,21 @@ def _since_trim():
 
 def read_since(path, since, chunk=1 << 20):
     """Records with t >= since, reading backwards from the end so a 10 MB log costs only today's
-    part. None when the file is missing. (v-tg-fast: remembered per (path, since), see _SINCE.)"""
+    part. None when the file is missing. (v-tg-fast: remembered per (path, since), see _SINCE.)
+    An archived log (results\\archive\\<name>.gz, log_rotate.py) is unpacked and read forward, once per its size."""
     try:
         st = os.stat(path)
     except OSError:
         return None
     key = (path, float(since), chunk)
     e = _SINCE.pop(key, None)
+    if _lf.is_gz(path):
+        got = e if e is not None and e.get("gz") == (st.st_size, st.st_mtime_ns) else _since_gz(path, since, st)
+        if got is None:
+            return None
+        _SINCE[key] = got
+        _since_trim()
+        return got["recs"] + got["tail"]
     got = _since_grow(path, e, st.st_size, since) if e is not None and st.st_size >= e["size"] else None
     if got is None:
         got = _since_fresh(path, since, chunk)
@@ -72,6 +81,15 @@ def read_since(path, since, chunk=1 << 20):
     _SINCE[key] = got
     _since_trim()
     return got["recs"] + got["tail"]
+
+
+def _since_gz(path, since, st):
+    """read_since for an archived log: every record with t >= since, the whole file unpacked (it never changes)."""
+    try:
+        raw = _lf.read_bytes(path)
+    except (OSError, EOFError, ValueError):
+        return None
+    return {"gz": (st.st_size, st.st_mtime_ns), "recs": _parse_lines(raw.split(b"\n"), since, []), "tail": []}
 
 
 def _since_grow(path, e, size, since):
@@ -128,6 +146,22 @@ def _since_fresh(path, since, chunk):
             "recs": _parse_lines(body[:-1], since, []), "tail": _parse_lines(body[-1:], since, [])}
 
 
+class _Unpacked:
+    """An archived log's unpacked bytes behind the seek/read last_record reads backwards with (log_rotate.py)."""
+
+    def __init__(self, path):
+        import io
+        self._b = io.BytesIO(_lf.read_bytes(path))
+        self.size = len(self._b.getvalue())
+
+    def __enter__(self):
+        return self._b
+
+    def __exit__(self, *exc):
+        self._b.close()
+        return False
+
+
 def last_record(path, kinds, pred=None, max_bytes=64 << 20, chunk=1 << 20, memo=None):
     """The newest record whose kind/ev is in `kinds` (and passes `pred`), reading backwards.
     Memoised on (path, size, kinds) for the long-running phone process. With a `pred`, memoised only when the caller
@@ -139,9 +173,20 @@ def last_record(path, kinds, pred=None, max_bytes=64 << 20, chunk=1 << 20, memo=
     key = (path, size, tuple(kinds), pred is None if memo is None else ("memo", memo))
     if (pred is None or memo is not None) and key in _BACK:
         return _BACK[key]
+    src = None
+    if _lf.is_gz(path):
+        try:
+            src = _Unpacked(path)
+        except (OSError, EOFError, ValueError):
+            return None
+        size = src.size                                # the backward read below walks the UNPACKED bytes
     needles = [('"%s"' % k).encode() for k in kinds]
     found = None
-    with open(path, "rb") as fh:
+    try:
+        fh0 = open(path, "rb") if src is None else src
+    except OSError:
+        return None                                    # gone this moment (log_rotate moved it): no answer, not a crash
+    with fh0 as fh:
         pos, tail = size, b""
         while pos > 0 and size - pos < max_bytes and found is None:
             step = min(chunk, pos)
@@ -205,5 +250,12 @@ def settings_now(path, start, kinds, as_start=None):
     return out
 
 
-def pin_logs():
-    return sorted(_dirlist.glob(os.path.join(_paths.RESULTS, _tables.SPEC["pin"]["log_glob"])))
+def pin_logs(archived=False):
+    """The pin bot's live logs in results\\, oldest first. archived=True adds the ones log_rotate.py moved to
+    results\\archive\\ (only pinrun-live-* untouched for 60 days, so no window of 60 days or less needs them -- the
+    phone's longest is 45 days; botdata/tests/test_logfiles.py holds that line). Each .gz reads through read_since /
+    last_record / logfiles.open like a plain log."""
+    pat = os.path.join(_paths.RESULTS, _tables.SPEC["pin"]["log_glob"])
+    if archived:
+        return _lf.glob(pat, globber=_dirlist.glob)
+    return sorted(_dirlist.glob(pat))

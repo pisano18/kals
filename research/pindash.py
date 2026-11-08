@@ -45,6 +45,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 os.environ.setdefault("KALS_SELFTESTED", "1")
+import logfiles                                                # noqa: E402  (archived logs: log_rotate.py)
 import pinrun                                                  # noqa: E402
 
 ET_OFFSET_NOTE = "all times US Eastern"
@@ -97,9 +98,9 @@ def cents(x):
 # ---------------------------------------------------------------- loading
 def load(paths):
     ev = defaultdict(list)
-    for p in sorted(paths):
-        run = os.path.basename(p)
-        with open(p, encoding="utf-8", errors="replace") as fh:
+    for p in sorted(paths, key=logfiles.sort_key):
+        run = logfiles.log_name(p)
+        with logfiles.open(p, encoding="utf-8", errors="replace") as fh:
             for ln in fh:
                 try:
                     m = json.loads(ln)
@@ -1322,7 +1323,7 @@ def health_and_size(tr, cfg):
 
 
 def build(logs_glob, markets_json):
-    paths = sorted(glob.glob(logs_glob))
+    paths = logfiles.glob(logs_glob)
     ev = load(paths)
     outcomes = load_outcomes(markets_json)
     trades = build_trades(ev, outcomes)

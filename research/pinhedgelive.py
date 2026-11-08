@@ -32,6 +32,9 @@ import json
 import os
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))    # research/, so logfiles imports under python -I
+import logfiles                                                    # noqa: E402  (pin's archived logs: log_rotate.py)
+
 FEE = lambda p, n: 0.07 * float(p) * (1.0 - float(p)) * float(n)
 
 
@@ -126,9 +129,9 @@ def selftest():
 def load():
     """Every LIVE market that carried a hedge, with both legs and the result."""
     out = {}
-    for path in sorted(glob.glob(os.path.join("results", "pinrun-live-*.jsonl"))):
+    for path in logfiles.glob(os.path.join("results", "pinrun-live-*.jsonl")):
         sigs, orders, hedges, alarms, results = {}, [], [], {}, {}
-        for line in open(path, encoding="utf-8"):
+        for line in logfiles.open(path, encoding="utf-8"):
             try:
                 d = json.loads(line)
             except ValueError:

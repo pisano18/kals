@@ -53,6 +53,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 os.environ.setdefault("KALS_SELFTESTED", "1")
+import logfiles                                                # noqa: E402  (archived logs: log_rotate.py)
 
 import racebook                                                # noqa: E402
 
@@ -241,9 +242,8 @@ def build():
     import replay
 
     alarms, sigs, sett = {}, {}, collections.defaultdict(list)
-    for fp in sorted(glob.glob(os.path.join(REPO, "results",
-                                            "pinrun-live-*.jsonl"))):
-        for line in open(fp, encoding="utf-8"):
+    for fp in logfiles.glob(os.path.join(REPO, "results", "pinrun-live-*.jsonl")):
+        for line in logfiles.open(fp, encoding="utf-8"):
             line = line.strip()
             if not line:
                 continue

@@ -72,5 +72,41 @@ def test_every_text_open_names_its_encoding():
     ck(not bad, "every text open() in botstats + botdata names its encoding (missing: %s)" % bad)
 
 
+def test_write_atomic_is_one_step_and_fenced():
+    """2026-11-07 (the phone audit): paths.write_atomic writes a temp file then os.replace -- a reader sees the old file
+    or the new one, never part of one; a failure leaves the old file and no temp file; the test fence still refuses a
+    live path (telegram.json under C:\\kals, the live heartbeat)."""
+    import tempfile
+    from botdata import paths
+    td = tempfile.mkdtemp(prefix="botdata-atomic-")
+    p = os.path.join(td, "telegram.json")
+    paths.write_json_atomic(p, {"token": "t", "chat_id": 7}, indent=2)
+    with open(p, encoding="utf-8") as fh:
+        ck(fh.read() == '{\n  "token": "t",\n  "chat_id": 7\n}', "the JSON is written whole (indent 2, as before)")
+    ck(os.listdir(td) == ["telegram.json"], "no temp file is left behind")
+    saved = os.replace
+
+    def refuse(a, b):
+        raise PermissionError("planted: a reader holds it open")
+    os.replace = refuse
+    try:
+        paths.write_atomic(p, "NEW")
+        ok = False
+    except PermissionError:
+        ok = True
+    finally:
+        os.replace = saved
+    with open(p, encoding="utf-8") as fh:
+        ck(ok and fh.read().startswith("{") and os.listdir(td) == ["telegram.json"],
+           "a replace that keeps failing raises, leaves the old file whole and removes its temp file")
+    for live in (os.path.join(paths.KALS, "telegram.json"), os.path.join(paths.DEFAULT_RESULTS, "pinphone.heartbeat")):
+        try:
+            paths.write_atomic(live, "x")
+            fenced = False
+        except paths.WriteFenced:
+            fenced = True
+        ck(fenced, "KALS_TESTING=1: write_atomic refuses the live %s" % os.path.basename(live))
+
+
 if __name__ == "__main__":
     sys.exit(run(dict(globals()), "test_safety"))

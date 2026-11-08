@@ -1,0 +1,10 @@
+# requirements-server.txt -- the Python packages on the trading server (C:\Python314, Python 3.14.6) on 2026-11-07.
+# A RECORD for drift alarms: a watcher compares the server's installed versions with these pins and says when one
+# moved. NOT something to pip install blindly -- an upgrade or reinstall under running live bots can break them
+# mid-trade. A pin changes only after a deliberate upgrade on the server, in the same commit.
+certifi==2026.7.22
+cryptography==50.0.0
+numpy==2.5.4
+requests==2.34.2
+urllib3==2.7.0
+websockets==17.0.1

@@ -20,6 +20,7 @@ from collections import Counter
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+import logfiles                                              # noqa: E402  (archived logs: log_rotate.py)
 import pinreport as R                                        # noqa: E402
 
 RESULTS = r"C:\kals-repo\results"
@@ -67,11 +68,11 @@ FACTS = {
 
 def load_runs():
     runs = []
-    for p in sorted(glob.glob(os.path.join(RESULTS, "pinrun-live-*.jsonl")),
-                    key=os.path.getmtime):
+    for p in sorted(logfiles.glob(os.path.join(RESULTS, "pinrun-live-*.jsonl")),
+                    key=logfiles.by_mtime):
         ev = []
         try:
-            for ln in open(p, encoding="utf-8"):
+            for ln in logfiles.open(p, encoding="utf-8"):
                 ln = ln.strip()
                 if ln:
                     try:
@@ -80,7 +81,7 @@ def load_runs():
                         pass
         except Exception:
             continue
-        runs.append({"file": os.path.basename(p), "events": ev})
+        runs.append({"file": logfiles.log_name(p), "events": ev})
     return runs
 
 

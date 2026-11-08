@@ -4,13 +4,14 @@ lower bound on benefit); early-entry refusal share."""
 import glob, json, sys, time, collections
 sys.path.insert(0, r"C:\kals-repo\research")
 import kauth
+import logfiles                                         # pin's archived logs (log_rotate.py)
 
 START = "2026-09-27T05:08"
 ref = {}                     # ticker -> first refusal record
 early_orders, early_refused = set(), set()
 full_orders = set()
-for f in sorted(glob.glob(r"C:\kals-repo\results\pinrun-live-*.jsonl")):
-    for l in open(f, encoding="utf-8", errors="replace"):
+for f in logfiles.glob(r"C:\kals-repo\results\pinrun-live-*.jsonl"):
+    for l in logfiles.open(f, encoding="utf-8", errors="replace"):
         if '"kind": "refused"' not in l and '"kind": "order"' not in l:
             continue
         try:

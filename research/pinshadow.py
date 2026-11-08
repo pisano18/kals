@@ -37,6 +37,8 @@ import sys
 
 LIVE = r"C:\kals-repo\results\pinrun-live-*.jsonl"
 PAPER = r"C:\kals-repo\results\pinrun-paper-*.jsonl"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))    # research/, so logfiles imports under python -I
+import logfiles                                                    # noqa: E402  (archived logs: log_rotate.py)
 
 
 def config_of(rows):
@@ -74,7 +76,7 @@ def tally(rows):
 
 def read(fp):
     rows = []
-    for line in open(fp, encoding="utf-8", errors="replace"):
+    for line in logfiles.open(fp, encoding="utf-8", errors="replace"):
         try:
             rows.append(json.loads(line))
         except ValueError:
@@ -124,16 +126,16 @@ def main():
         return 0
 
     arms = []
-    for fp in sorted(glob.glob(LIVE)):
+    for fp in logfiles.glob(LIVE):
         rows = read(fp)
         t = tally(rows)
         if t["closes"] >= a.min_closes:
-            arms.append(("LIVE", os.path.basename(fp), config_of(rows), t))
-    for fp in sorted(glob.glob(PAPER)):
+            arms.append(("LIVE", logfiles.log_name(fp), config_of(rows), t))
+    for fp in logfiles.glob(PAPER):
         rows = read(fp)
         t = tally(rows)
         if t["closes"] >= a.min_closes:
-            arms.append(("paper", os.path.basename(fp), config_of(rows), t))
+            arms.append(("paper", logfiles.log_name(fp), config_of(rows), t))
     if not arms:
         print("no arm has settled a close yet. The shadows were started at")
         print("2026-09-16 20:46Z; give them a few closes.")

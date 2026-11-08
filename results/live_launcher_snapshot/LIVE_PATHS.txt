@@ -1,0 +1,7 @@
+# LIVE_PATHS.txt -- which LIVE file each snapshot here is a byte-exact copy of: "<snapshot name>  <live path>".
+# research\kalshi_watch.py (its "launchers" check, every 30 min) hashes each LIVE file and compares it with the sha256
+# SHA256SUMS.txt gives that snapshot name. Both live files are named restart_bot.ps1, in different folders, so a name
+# alone cannot say which one is meant. research\botdata\tests\test_ops.py fails if a name in SHA256SUMS.txt is missing
+# here (or one here is not in SHA256SUMS.txt), and checks the README's table says the same.
+restart_bot_repo.ps1  C:\kals-repo\restart_bot.ps1
+restart_bot_hand.ps1  C:\kals-live-0925n\restart_bot.ps1

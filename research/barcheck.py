@@ -64,6 +64,7 @@ if HERE not in sys.path:
 import pinledger                                                  # noqa: E402
 from pinflat import close_epoch                                   # noqa: E402
 from downtime import et_offset                                    # noqa: E402
+import logfiles                                                   # noqa: E402  (archived logs: log_rotate.py)
 
 REPO_RESULTS = os.path.join(os.path.dirname(HERE), "results")
 # The live logs and the ledger are READ from the live results folder, even
@@ -187,7 +188,7 @@ def top_share(ds):
 
 def read_jsonl(path):
     try:
-        fh = open(path, encoding="utf-8", errors="replace")
+        fh = logfiles.open(path, encoding="utf-8", errors="replace")
     except OSError:
         return
     with fh:
@@ -230,7 +231,7 @@ def load_live(data_dir, since_s):
     Every `start` record is kept whatever its date (the config trail)."""
     W = empty_live()
     quotes = collections.defaultdict(list)
-    for f in sorted(glob.glob(os.path.join(data_dir, "pinrun-live-*.jsonl"))):
+    for f in logfiles.glob(os.path.join(data_dir, "pinrun-live-*.jsonl")):
         try:
             if os.path.getmtime(f) < since_s - 3600:
                 continue                     # finished before the window opened
@@ -319,7 +320,7 @@ def late_per_close(data_dir, lo, hi):
     <= 30 s (not the 45 s leg) per watched close, closes lo..hi. Pre-freeze
     logs only; they no longer change, so this is fixed."""
     late, armed = 0.0, set()
-    for f in sorted(glob.glob(os.path.join(data_dir, "pinrun-live-*.jsonl"))):
+    for f in logfiles.glob(os.path.join(data_dir, "pinrun-live-*.jsonl")):
         try:
             if os.path.getmtime(f) < lo - 3600:
                 continue
@@ -382,7 +383,7 @@ def load_arms(data_dir, since_s, live_starts, rules):
     """{arm label: {early, runs: [{code, start, armed, pnl{tk}, n{tk}}], sig}}."""
     names = arm_names(data_dir, since_s)
     logs = []
-    for f in sorted(glob.glob(os.path.join(data_dir, "pinrun-paper-*.jsonl"))):
+    for f in logfiles.glob(os.path.join(data_dir, "pinrun-paper-*.jsonl")):
         try:
             if os.path.getmtime(f) < since_s:
                 continue
@@ -392,7 +393,7 @@ def load_arms(data_dir, since_s, live_starts, rules):
         if not first or first.get("kind") != "start":
             continue
         sig = signature(first, live_starts, rules["ignore_keys"])
-        logs.append((f, first, sig, names.get(os.path.basename(f))))
+        logs.append((f, first, sig, names.get(logfiles.log_name(f))))
     sig_name = {sig: nm for _f, _s, sig, nm in logs if nm}
     arms = {}
     for f, first, sig, nm in logs:

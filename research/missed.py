@@ -58,6 +58,9 @@ import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+import logfiles                                                    # noqa: E402  (archived logs: log_rotate.py)
 RESULTS = os.path.join(REPO, "results")
 LEDGER = os.path.join(RESULTS, "kalshi_ledger.json")
 CACHE = os.path.join(RESULTS, "missed_results_cache.json")
@@ -183,7 +186,7 @@ def load_logs(paths, since_ep, until_ep):
     signals = collections.defaultdict(list)
     for p in paths:
         try:
-            fh = open(p, encoding="utf-8")
+            fh = logfiles.open(p, encoding="utf-8")
         except OSError:
             continue
         with fh:
@@ -738,8 +741,8 @@ def main():
         since_ep = int(until_ep - a.hours * 3600)
     if since_ep is None or until_ep is None:
         sys.exit("bad --since/--until")
-    paths = [p for p in sorted(glob.glob(os.path.join(RESULTS, "pinrun-live-*.jsonl")))
-             if os.path.getmtime(p) >= since_ep - 3600]
+    paths = [p for p in logfiles.glob(os.path.join(RESULTS, "pinrun-live-*.jsonl"))
+             if logfiles.mtime(p, 0.0) >= since_ep - 3600]
     refusals, entries, failed = load_logs(paths, since_ep, until_ep)
 
     rows = ledger_rows(LEDGER)

@@ -253,7 +253,9 @@ def test_planted_world():
                                {"amount_cents": 12000, "created_ts": 6, "from_subaccount": 0, "to_subaccount": 5, "exchange_index": 2}],
                  "subaccount_balances": [{"subaccount_number": 4, "exchange_index": 0, "balance": "60.9681"},
                                          {"subaccount_number": 4, "exchange_index": 2, "balance": "0.0068"}]}
-        _x4 = {"rows": {"a": {"ticker": "KXUSDJPY15M-26OCT252145-30"}, "b": {"ticker": "KXBTC15M-26OCT230815-15"}}}
+        # (whole rows: v-ledger-unreadable leaves a row with no counts / costs / fee out of every pot)
+        _x4 = {"rows": {"a": S("KXUSDJPY15M-26OCT252145-30", "2026-10-26T01:45:05Z", "no", nn=1, nc=0.90),
+                        "b": S("KXBTC15M-26OCT230815-15", "2026-10-23T12:15:05Z", "yes", yn=1, yc=0.95)}}
         ck(abs(bs.flows(_led4, "4") - 60.0) < 1e-9 and abs(bs.flows(_led4, ("5", "4")) - 180.0) < 1e-9
            and abs(bs.flows(_led4, "0") - (-55.0 + 42.54 - 45.0 + 27.57 - 60.0 - 120.0)) < 1e-9
            and abs(bs._cash_all_pools(_led4, "4", 60.9681, own=True)[0] - 60.9681) < 1e-9

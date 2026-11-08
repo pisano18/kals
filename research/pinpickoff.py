@@ -67,6 +67,7 @@ import zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+import logfiles                                                  # noqa: E402  (archived logs: log_rotate.py)
 import pinflat                                                   # noqa: E402
 from downtime import et_offset                                   # noqa: E402
 
@@ -145,8 +146,8 @@ def load_our_fills(results=RESULTS):
     -- a number that looked like a finding and was a bug.
     """
     out = []
-    for f in sorted(glob.glob(os.path.join(results, "pinrun-live-*.jsonl"))):
-        for line in open(f, encoding="utf-8", errors="replace"):
+    for f in logfiles.glob(os.path.join(results, "pinrun-live-*.jsonl")):
+        for line in logfiles.open(f, encoding="utf-8", errors="replace"):
             if '"kind": "order"' not in line:
                 continue
             try:
