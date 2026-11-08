@@ -1235,9 +1235,65 @@ def _ago(sec):
     return "%ds ago" % sec if sec < 120 else "%d min ago" % (sec // 60)
 
 
+# v-0925v (2026-11-07): THE BOT CAN ALSO BE ALIVE, SEEING AND REFUSING TO BUY.
+# pin 0925v blocks NEW entries -- hedging and booking as normal -- whenever it
+# cannot see, book, hedge or account for what it holds, and says so in its own
+# log: a record whose `blocks` text starts "new entries" opens a block (its
+# `reason`), entries_resumed closes it, entries_still_blocked restates every
+# open one every 5 minutes (so a long block survives the 256 KB log tail). A
+# block this old is an alarm; the end of --minutes (expiry_drain) never is.
+BLOCKED_ALARM_S = 600
+_BLOCK_WORDS = {
+    "unbooked": "a closed market Kalshi has not settled yet counts as a possible loss that reaches the stop",
+    "hedge_broken": "its insurance (hedge) orders keep failing at Kalshi",
+    "clock_skew": "this computer's clock is off Kalshi's",
+    "log_write": "it cannot write its log (disk full?)",
+    "dayloss_write": "it cannot write its day-loss file",
+    "startup_bank": "it cannot read the account balance",
+    "guard_error": "one of its safety checks is failing",
+}
+
+
+def blocked_of(rows, now):
+    """None, or {"since", "bad", "why", "kind": "blocked", "reasons"}: the live
+    bot has refused NEW entries for BLOCKED_ALARM_S or longer for one of its
+    fail-safe reasons (it still hedges and books). `rows` as blind_of's."""
+    open_ = {}
+    n = 0
+    for d in rows:
+        t = parse_t(d.get("t") or "")
+        if t is None or t > now + 60:
+            continue
+        k = d.get("kind")
+        if k == "entries_still_blocked":
+            since = d.get("since") if isinstance(d.get("since"), dict) else {}
+            open_ = {}
+            for r in (d.get("reasons") or []):
+                try:
+                    open_[str(r)] = float(since.get(r, t))
+                except (TypeError, ValueError):
+                    open_[str(r)] = t
+            n += 1
+        elif k == "entries_resumed":
+            if d.get("reason"):
+                open_.pop(str(d["reason"]), None)
+        elif d.get("reason") and str(d.get("blocks") or "").startswith("new entries"):
+            open_.setdefault(str(d["reason"]), t)
+            n += 1
+    open_.pop("expiry_drain", None)
+    old = {r: s_ for r, s_ in open_.items() if now - s_ >= BLOCKED_ALARM_S}
+    if not old:
+        return None
+    order = sorted(old, key=lambda r: old[r])
+    return {"since": old[order[0]], "bad": n, "kind": "blocked", "reasons": order,
+            "why": "; ".join(_BLOCK_WORDS.get(r, "a fail-safe check (%s)" % r) for r in order)}
+
+
 def blind_of(rows, now):
     """None if the bot can see, else {"since", "bad", "why"}. `rows` are the
-    newest live log's records (dicts with an ISO `t`)."""
+    newest live log's records (dicts with an ISO `t`). v-0925v: when it CAN
+    see, a fail-safe block 10+ minutes old (blocked_of) is the answer."""
+    rows = list(rows)
     bad = good = 0
     net = stale = 0
     last_good = None
@@ -1264,7 +1320,7 @@ def blind_of(rows, now):
             else:
                 stale += 1
     if good or bad < BLIND_MIN_BAD:
-        return None
+        return blocked_of(rows, now)
     # blind SINCE the first failure after the last normal look -- so the
     # banner counts the whole outage, not just the window
     after = [t for t in bad_ts if last_good is None or t > last_good]
@@ -1520,6 +1576,12 @@ def _status_of(h, now=None):
             return ("STALE", "RUNNING BUT QUIET for %d min" % int(q / 60),
                     "Nothing written to its log. The watchdog restarts it after %d min of silence." % 25, C["watch"])
         b = h.get("blind")
+        if b and b.get("kind") == "blocked":
+            mins = int(max(0, now - b["since"]) / 60) if b.get("since") else 0
+            return ("BLIND", "RUNNING BUT NOT BUYING -- %s (%d min)" % (b["why"], mins),
+                    "The bot is up and still hedges and books what it holds, but it buys "
+                    "nothing new until this clears -- it clears by itself when the cause "
+                    "does. Blocked by: %s." % ", ".join(b.get("reasons") or []), C["loss"])
         if b:
             mins = int(max(0, now - b["since"]) / 60) if b.get("since") else 0
             return ("BLIND", "RUNNING BUT NOT TRADING -- %s (%d min)" % (b["why"], mins),
@@ -5888,6 +5950,34 @@ def selftest():
            "alive, writing its log, but blind -> BLIND, never TRADING (got %s)" % st_b[0])
         ck(status_of(dict(base, blind=b, flag="operator PAUSE at x", open={}))[0] == "PAUSING",
            "a pause still reads PAUSING while blind")
+        # v-0925v: a fail-safe block 10+ minutes old reads BLIND "NOT BUYING"
+        _bk = lambda s, kind="hedge_broken", **kw: dict(
+            {"t": iso(s), "kind": kind, "reason": "hedge_broken",
+             "blocks": "new entries only; hedges, cancels, settlement and exits run as before"}, **kw)
+        _bh = _bk(11 * 60)
+        _bb = blind_of(healthy + [_bh], t0)
+        ck(_bb is not None and _bb.get("kind") == "blocked" and _bb.get("reasons") == ["hedge_broken"]
+           and "insurance" in _bb["why"],
+           "v-0925v: hedge_broken 11 min ago, never resumed, with normal looks around it -> blocked (got %s)" % _bb)
+        _st = status_of(dict(base, blind=_bb), now=t0)
+        ck(_st[0] == "BLIND" and "NOT BUYING" in _st[1] and "hedge_broken" in _st[2] and "11 min" in _st[1],
+           "v-0925v: ...and the banner says RUNNING BUT NOT BUYING with the reason (got %s)" % (_st[:2],))
+        ck(blind_of(healthy + [_bk(5 * 60)], t0) is None,
+           "v-0925v NULL: a block 5 min old is not an alarm yet")
+        ck(blind_of(healthy + [_bh, {"t": iso(60), "kind": "entries_resumed", "reason": "hedge_broken"}], t0) is None,
+           "v-0925v NULL: a block that resumed is not an alarm")
+        _bs = {"t": iso(30), "kind": "entries_still_blocked", "reasons": ["unbooked"],
+               "since": {"unbooked": t0 - 40 * 60}, "blocks": "new entries only"}
+        _bs2 = blind_of(healthy + [_bs], t0)
+        ck(_bs2 is not None and _bs2.get("reasons") == ["unbooked"] and int((t0 - _bs2["since"]) / 60) == 40,
+           "v-0925v: a block whose first record has left the log tail is still seen through "
+           "entries_still_blocked (40 min, got %s)" % _bs2)
+        ck(blind_of(healthy + [dict(_bh, reason="expiry_drain")], t0) is None
+           and blind_of(healthy + [{"t": iso(11 * 60), "kind": "log_write_fail", "which": "traj",
+                                    "blocks": "nothing: the trajectory is an instrument"}], t0) is None,
+           "v-0925v NULL: the end of --minutes, and a record that blocks nothing, are not alarms")
+        ck(blind_of(outage, t0) == b and "kind" not in b,
+           "v-0925v NULL: the 09-21 outage reads exactly as before")
         rd = tempfile.mkdtemp()
         cur = time.strftime("%Y%m%dT%H", time.gmtime(t0)) + ".jsonl.gz"
         os.makedirs(os.path.join(rd, "cfbenchmarks_value"))

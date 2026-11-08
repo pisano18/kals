@@ -27,6 +27,10 @@
 $log = 'C:\kals-repo\results\pin_0925u.out'
 $rout = 'C:\kals-repo\results\pin_0925u_restart.out'
 function Say($m) { $l = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + ' ' + $m; Write-Output $l; Add-Content -Path $log -Value $l }
+# SUPERSEDED 2026-11-07 by results\pin_0925v.ps1, which goes from live 0925t straight to 0925v = this build's
+# cheap-window flag PLUS the fail-safe fixes. Run alone, this script would install 0925u and make pin_0925v.ps1
+# refuse for good (it refuses once C:\kals-live-0925u exists), stranding the fixes. Kept for the record; it refuses.
+Say "REFUSED: superseded by C:\kals-repo\results\pin_0925v.ps1 (0925t -> 0925v: --cheap-window 6 10 0.98 plus the v-0925v fail-safe fixes); nothing changed"; exit 1
 $py = 'C:\Python314\python.exe'
 $old = 'C:\kals-live-0925t'
 $new = 'C:\kals-live-0925u'
