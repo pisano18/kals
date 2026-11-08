@@ -22,6 +22,7 @@ os.environ["KALS_TESTING"] = "1"
 
 from _legacy import pp, NEW                                         # noqa: E402  (pp: pinphone_legacy + NEW)
 import botstats                                                      # noqa: E402
+from botdata import paths as _paths                                  # noqa: E402
 from phone import command as CM                                     # noqa: E402
 from phone import context as CX                                     # noqa: E402
 from phone.html import Html, tg_html_problems                       # noqa: E402
@@ -32,6 +33,12 @@ SV = SP.SERVER_SINCE_EPOCH
 T = SV + 3 * 86400
 TMP = tempfile.mkdtemp(prefix="test_server_")
 WTMP = tempfile.mkdtemp(prefix="test_server_worth_")               # the worth-of-the-move world's pin logs (11-05)
+# 2026-11-08: the page's log-rotation line (phone/rotation.py -> log_rotate.health) reads botdata.paths.RESULTS at call
+# time. Left at the default, it read the SERVER's real results\log_rotate_installed.json the moment the rotation was
+# installed there, the page grew a line the frozen legacy page has not, and the three "identical" tests failed on the
+# server alone: the phone's /update gate refused the new code. This world has no file under results\ -- so RESULTS
+# points at this test's own empty folder for the whole run.
+_paths.set_results(TMP)
 H0 = SV - SP.SPEED_HOME_DAYS * 86400
 THU = calendar.timegm((2026, 10, 22, 7, 0, 0))                     # a Thursday 07:00Z inside the home window
 pp.LOG = os.path.join(TMP, "pinphone.log")

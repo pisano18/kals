@@ -142,8 +142,8 @@ $py = "C:\Python314\python.exe"
 # with this full argv: SELF-TEST PASSED (.sweep\q-2026-10-23\clockbug\pinrun_0925m_selftest.out).
 # REVERT: copy results\restart_bot.before-etclock.ps1 over restart_bot.ps1
 # (= v-ladderboost, C:\kals-live-0925k, 32639cccc7f1) and rerun while flat.
-$code = "C:\kals-live-0925t"
-$codeSha = "9e04c0252ac9"
+$code = "C:\kals-live-0925v"
+$codeSha = "d51b131b55cf"
 # pinrun's code_sha cannot see ordercli / pintake (0925e and 0925g shared
 # it), so the launcher checks both of them as well, before anything stops.
 $ordercliSha = "467782077a23"
@@ -228,6 +228,16 @@ $botArgs = @(
     #   Always on in this build: the odds-line extra fires on belief under 0.40 whatever the alarm label (never a stale-index alarm); pintake judges the extra with the stake cap and the loss abort (extra=True, extra_stake_capped); hedge records carry the ask ladder and the grid fields; --max-positions 3 -> 5 above. In the build but OFF: the late-1.5x bypass fix (--late-bypass-fix, default off; as built it would trim 23 winning late adds to save one loss). Tracked by research\pinrules_watch.py and the phone's /fixes.
     #   Revert: delete this comment block and the flag line under it, "--max-positions" back to "3" above, $code/$codeSha/$pintakeSha back to C:\kals-live-0925r / ca156bf45704 / 9150d6b65968 (backups *.before-0925t-*), rerun restart_bot while flat.
     "--hedge-tick", "round", "--jump-hedge-min-ask", "0.05", "--boost-rail", "off",
+    # v-0925u 2026-11-07 (operator: "Sure. Make sure to log and track the difference it makes and what it would've been without the rule"): built as C:\kals-live-0925u = 0925t + results\patch_0925u.py, never deployed alone -- it rides in 0925v below. One flag, = 0925t when omitted:
+    #   --cheap-window 6 10 0.98: a FIRST buy (nothing held) under 98c in a market closing 06:00-10:00 ET is refused and the market skipped for the close; markets closing 06-10 ET were the only losing stretch of the day from 10-01 (-$273.18 vs +$1,767.17 the rest of the day), first buys under 98c there lost (287 markets -$73.31) and 98c+ made money (+$72.64); September went the other way, so it is a TRIAL WITH A SHADOW.
+    #   Every skip is shadowed in the log (refused gate cheap_window + cheap_window_settled: the size it would have asked, the belief hedge it would have bought, the result) and priced on the phone as /fixes change K, "without the rule" beside it; pinrules_watch alerts on any $10+ skip. Read 11-21: keep if K net >= $0.
+    #   Revert (this flag only): delete this comment block and the flag line under it, rerun restart_bot while flat (the 0925v build runs = 0925t + the fail-safe fixes with it off).
+    "--cheap-window", "6", "10", "0.98",
+    # v-0925v 2026-11-07/08 (operator: "Anything that could cause the 1k+ loss needs to be addressed immediately"): C:\kals-live-0925v = 0925t + patch_0925u.py + patch_0925v.py (pinrun d51b131b55cf; pintake and ordercli unchanged). The fail-safe fixes are always on; one new flag, --hedge-jump-shadow, ships OFF and is not passed here. Call B (the 3rd bet out, SIZE kept) is on the --extra-coin / --late-extra / --bank-brake lines below.
+    #   Round 3 (11-08), always on: the day cap and the run abort see a market's NET, never one leg (a hedged market's legs book ~15 s apart: 11-02 ZEC -$281.63 then +$253.07); a jump give-up no longer marks the position hedged (the belief hedge keeps its tries); hedge sends no longer spend the close's 24-send entry budget; --max-positions counts unhedged contracts; the paused loop re-checks hedges every 0.05 s.
+    #   Round 4 (11-08), always on: every leg of a market books from ONE read in ONE pass (the 15 s split was the GET throttle's), and while pintake's per-leg loss rail would refuse every buy new entries are blocked (leg_dip) instead of 2 refusals halting the run; the close's hedge cap on a jump-only second no longer marks a position hedged; hedge_broken needs failures on 2 markets; the jump shadow (off) reads every second until it would send; the startup self-test leaves no TEMP folder.
+    #   When pin cannot see, book, hedge or account for what it holds it BLOCKS NEW ENTRIES (never a hedge, a cancel or an exit) and writes a record: unbooked (a market not booked 15 min after its close is parked and read on; its worst case counts against the run / day stop), settle_changed, hedge_fail / hedge_broken (3 failed hedge sends in a row, on 2 markets), universe_empty (/events fallback), expiry_drain / expiry_exit (no exit holding a bet), startup_bank, clock_skew, log_write_fail, dayloss_write_fail, entries_blocked / entries_resumed, api_shape.
+    #   Revert: $code/$codeSha back to C:\kals-live-0925t / 9e04c0252ac9 and delete the two comment blocks and the --cheap-window line above (backups *.before-0925v-*), rerun restart_bot while flat (0925t untouched).
     # v-skiphype (2026-10-05..10-13): HYPE was out of the universe
     # ("--skip-coin", "KXHYPE15M"; live fills 09-20..10-04: HYPE 81 markets,
     # 4 lost, -$103.12). WITHDRAWN 2026-10-13 by v-coinfrac below: HYPE is
@@ -598,7 +608,8 @@ $botArgs = @(
     # A THIRD coin at a close may now spend one extra bet of budget. A coin
     # we ALREADY hold gets nothing extra -- the argument is about two COINS
     # never losing together, not about a second bet on the first coin.
-    "--extra-coin", "1",
+    # v-0925v call B 2026-11-08: 1 -> 0, a new coin no longer gets a 3rd bet in a close (the brake below keeps SIZE; revert: back to 1)
+    "--extra-coin", "0",
     # AMENDMENT 59 + 61, 2026-09-19. Inside --late-tau a close may spend one
     # extra bet whatever it already holds. That window is the best we have:
     # 94.8c median against 97.8c at 31-45 s, 5.4c a contract against 2.2c,
@@ -610,7 +621,8 @@ $botArgs = @(
     # (72 contracts at a $640 bank and a 3.00 brake, identical to before).
     # One extra bet, spendable by a new coin OR in the last seconds,
     # whichever arrives first.
-    "--late-extra", "1",
+    # v-0925v call B 2026-11-08: 1 -> 0, the last seconds no longer add a 3rd bet either (revert: back to 1)
+    "--late-extra", "0",
     # AMENDMENT 64, 2026-09-19, operator: "Then increase to 15 seconds if it
     # means better cheaper buys." The extra BUDGET reaches 15 s while the
     # 1.5x BOOST stays at 10 -- they were sharing --late-tau and should not.
@@ -652,7 +664,8 @@ $botArgs = @(
     # book has halved. 4.00 is three quarters of 3.00's bet: ~69 contracts at
     # the $821 bank instead of ~93. The ratio stays the brake.
     # v-size15 2026-10-30 (operator: "You decide on pin size"): 4.00 -> 3.00 = 1.33x bet (trial; operator asked for caution; jump hedge kept); +$2/day, 84% of resamples; back to 4.00 on a day under -$100 or a bad 11-10 read
-    "--bank-brake", "3.00",
+    # v-0925v call B 2026-11-08 (operator 11-07: "Anything that could cause the 1k+ loss needs to be addressed immediately ... And the answer isn't betting less"): 3.00 -> 4.5 with --extra-coin 1 -> 0 and --late-extra 1 -> 0 above. A close may now hold 2 x SIZE of main bets, not 3 x (the worst close $1,153 -> $768 at SIZE 392, two band-boosted coins no longer both fill), and SIZE does not move: it is floor(bank / (brake x bets x 98c)) = floor(bank / 8.82) both ways (3.00 x 3 = 4.5 x 2). The largest single order (1.5 x SIZE), the per-market cap, the stake cap and the day stop are identical; a 2nd boosted coin in the same close is now capped at 0.5 x SIZE (196 at SIZE 392, was 588) -- the 3rd bet's room. Cost: the 3rd bet's own trades, $1.26-$4.28/day at today's size (29 closes since 09-19, 0 lost); keep unless they run above $5/day over 30 days (the scan's bar). Revert: 4.5 -> 3.00 and both lines above back to 1.
+    "--bank-brake", "4.5",
     # AMENDMENT 65, same instruction. The loss abort has always been DERIVED
     # (-2 x SIZE x MAX_PER_CLOSE) and therefore GREW with the bank -- it had
     # already reached -$420 at 105 contracts. This is a hard dollar cap: the
