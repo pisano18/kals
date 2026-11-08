@@ -53,6 +53,7 @@ THE PROVIDERS (each one the old method's expression, verbatim)
   markets()        self._markets()
 """
 import os
+import re
 import sys
 import traceback
 
@@ -68,11 +69,21 @@ _SEAMS = ("health_fn", "procs_fn", "versions_path", "race30_epoch", "bs_getter",
 FIELDS = ("cmd", "arg", "text", "chat_id", "pp", "ledger", "results", "now_fn") + _SEAMS + ("say", "state")
 
 
+_LEAD_RX = re.compile(r"^[^\w/]+(?=/)")     # a keyboard button's emoji or bullet before the slash: '📊 /today', '• /today'
+_TAIL_PUNCT = ".,!;:"                       # a phone keyboard's full stop after the word: '/today.'
+
+
 def split_command(text):
-    """(text stripped, cmd, arg) exactly as Phone.handle splits a message: '/Stop@kalsbot yes' -> ('/stop', 'yes')."""
-    text = (text or "").strip()
+    """(text stripped, cmd, arg) exactly as Phone.handle splits a message: '/Stop@kalsbot yes' -> ('/stop', 'yes').
+    v-tg-unknown (2026-11-08): the forms a phone keyboard makes of a command are the command -- the case ('/Today'),
+    a trailing space, '@botname', a leading emoji or bullet from a keyboard button ('📊 /today', '📊/today'), a full
+    stop after the word ('/today.'). Never a guess: 'hello /today' stays unknown, '/?' is itself."""
+    text = _LEAD_RX.sub("", (text or "").strip(), count=1)
     cmd, _, arg = text.partition(" ")
-    return text, cmd.lower().split("@")[0], arg
+    cmd = cmd.lower().split("@")[0]
+    if len(cmd) > 2 and cmd[-1] in _TAIL_PUNCT:
+        cmd = cmd.rstrip(_TAIL_PUNCT)
+    return text, cmd, arg
 
 
 class Ctx:

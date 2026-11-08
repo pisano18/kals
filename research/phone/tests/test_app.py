@@ -132,7 +132,7 @@ def test_loop_beats_before_the_poll_and_every_tick():
 def test_poll_hands_the_message_date_to_the_router():
     ph = _phone()
     got = []
-    ph.handle = lambda chat, text, sent_at=None: got.append((chat, text, sent_at))
+    ph.handle = lambda chat, text, sent_at=None, about=None: got.append((chat, text, sent_at))
     ph.tg.incoming.append({"update_id": 1, "message": {"chat": {"id": 7}, "text": "/help", "date": 1793447000}})
     ph.tg.incoming.append({"update_id": 2, "message": {"chat": {"id": 7}, "text": "/help"}})
     ph.poll_once(timeout=0)
@@ -165,6 +165,44 @@ def test_poll_hands_the_message_date_to_the_router():
     del got[:]
     ph.poll_once(timeout=0)
     assert got == [(7, "/stop yes", T - 3600)], got
+
+
+def test_poll_describes_every_update_for_the_router():
+    """v-tg-unknown: the router gets each update described (phone/incoming.Incoming) with its text -- a caption counts
+    as the text, a sticker has none, an edited message is its own kind -- and the words sent are the router's."""
+    from phone import incoming as I
+    ph = _phone()
+    got = []
+    ph.handle = lambda chat, text, sent_at=None, about=None: got.append((chat, text, sent_at, about.kind, about.reply))
+    ph.tg.incoming += [
+        {"update_id": 1, "message": {"chat": {"id": 7}, "text": "/help", "date": 1793447000}},
+        {"update_id": 2, "message": {"chat": {"id": 7}, "photo": [{"file_id": "p"}], "caption": "/today",
+                                     "date": 1793447001}},
+        {"update_id": 3, "message": {"chat": {"id": 7}, "sticker": {"file_id": "s"}, "date": 1793447002,
+                                     "reply_to_message": {"from": {"is_bot": True}, "text": "x"}}},
+        {"update_id": 4, "edited_message": {"chat": {"id": 7}, "text": "/stop yes", "date": 1793447003}},
+        {"update_id": 5, "message": {"chat": {"id": 7}, "pinned_message": {"text": "x"}, "date": 1793447004}}]
+    ph.poll_once(timeout=0)
+    assert got == [(7, "/help", 1793447000, "text", False), (7, "/today", 1793447001, "caption", False),
+                   (7, "", 1793447002, "sticker", True), (7, "/stop yes", 1793447003, "edited", False),
+                   (7, "", 1793447004, "service", False)], got
+    assert ph.offset == 6
+    # the real router behind it: the sticker gets one line and the service message nothing, each logged
+    ph = _phone()
+    ph.tg.incoming += [{"update_id": 1, "message": {"chat": {"id": 7}, "sticker": {"file_id": "s"}}},
+                       {"update_id": 2, "message": {"chat": {"id": 7}, "pinned_message": {"text": "x"}}},
+                       {"update_id": 3, "message": {"chat": {"id": 7}, "text": "thanks"}}]
+    with quiet():
+        ph.poll_once(timeout=0)
+    sent = [str(m) for _c, m in ph.tg.sent]
+    assert sent[0] == "I got a sticker. I only read typed commands: /help lists them." and len(sent) == 2, sent
+    assert sent[1].startswith('I did not understand that. You sent "thanks".\n\n📱 <b>Commands</b>'), sent[1][:100]
+    with open(log_path(), encoding="utf-8") as fh:
+        text = fh.read()
+    for line in ("not understood from chat 7: sticker", "ignored from chat 7: service message (pinned_message) (no reply)",
+                 'not understood from chat 7: text "thanks"'):
+        assert line in text, line
+    assert I.describe(ph.tg.incoming[1]).silent
 
 
 def test_alerts_never_read_the_process_table():

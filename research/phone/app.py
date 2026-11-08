@@ -29,6 +29,12 @@ transport.POLL_LIMIT (100) messages a poll, so the 101st queued message comes on
 message delivered on a poll re-armed promptly after a short batch was sent moments ago by construction (Telegram hands
 it over at once), so a server clock running fast can never lock every control out -- that poll passes no date, and a
 prompt message dated over 5 minutes old is logged as a clock warning.
+WHAT ARRIVED (v-tg-unknown, 2026-11-08): each update is described first (phone/incoming.py: text, caption, sticker,
+photo, voice, an edited message, a reaction, a service message ...) and the router gets the description with the text
+(a caption counts as the text), so what it cannot understand is logged by kind and quoted back, a sticker or a photo
+gets one line instead of the /help list, and an edit, a reaction or a chat event (a pinned page) is ignored, logged.
+Before this only message.text was read: every other message in the paired chat got 'I did not understand that.' and
+the whole /help, and the log said nothing of what had come.
 State kept here between messages: the offset, muted, the five alert fields (last_state, last_rec, seen_losses,
 last_daily, disk_level), busy / _updating / _exit_now, /bars' numbers for its picture, the resend queue. The seams the
 self-test and the golden harness plant are the Phone attributes listed in __init__ (phone/context.py reads them).
@@ -124,6 +130,7 @@ from botdata import paths as _paths
 from botdata import procs as _procs
 from phone import alerts as _alerts
 from phone import chartq as _chartq
+from phone import incoming as _incoming
 from phone import router as _router
 from phone import shared as S
 from phone.chartq import ChartQueue
@@ -275,10 +282,11 @@ class Phone:
                 break                                     # the connection is still down: the rest wait too
 
     # ---- dispatch: phone/router.py ----
-    def handle(self, chat_id, text, sent_at=None):
+    def handle(self, chat_id, text, sent_at=None, about=None):
         """Reply text for one incoming message, or None to ignore it (router.dispatch). `sent_at`: the message's
-        Telegram date (v-tg-stale: an old control is not run)."""
-        return _router.dispatch(self, chat_id, text, sent_at=sent_at)
+        Telegram date (v-tg-stale: an old control is not run). `about`: the update described (v-tg-unknown,
+        phone/incoming.Incoming: its kind, reply, forwarded); None = plain text, as the self-tests send it."""
+        return _router.dispatch(self, chat_id, text, sent_at=sent_at, about=about)
 
     # ---- the ticks ----
     def update_flag_tick(self):
@@ -336,10 +344,12 @@ class Phone:
         self.polled_ok = True
         for u in updates:
             self.offset = max(self.offset or 0, int(u.get("update_id", 0)) + 1)
-            m = u.get("message") or {}
-            chat = (m.get("chat") or {}).get("id")
+            # v-tg-unknown: what arrived, whatever its kind (phone/incoming.py) -- the router gets its text (the
+            # message's, or a caption's) and the description, and logs what it could not understand
+            inc = _incoming.describe(u)
+            chat, text = inc.chat, inc.text
             handled = True
-            sent_at = m.get("date")
+            sent_at = inc.sent_at
             if prompt:                                    # v-tg-stale: delivered at once, so fresh whatever its date says
                 try:
                     if sent_at is not None and self.now() - float(sent_at) > _router.STALE_S:
@@ -349,7 +359,7 @@ class Phone:
                     pass
                 sent_at = None
             try:
-                reply = self.handle(chat, m.get("text"), sent_at=sent_at)
+                reply = self.handle(chat, text, sent_at=sent_at, about=inc)
             except Exception as e:                        # noqa: BLE001
                 reply = "error: %s" % e
                 handled = False
@@ -357,7 +367,7 @@ class Phone:
             if reply:
                 self.say(reply, chat_id=chat)
                 if handled:
-                    self.chart_after(chat, m.get("text"))     # queued, never drawn here (see chart_after)
+                    self.chart_after(chat, text)              # queued, never drawn here (see chart_after)
 
     def heartbeat(self):
         """results/pinphone.heartbeat: the time now (UTC) and this process's pid, in one step (boot_all reads its age and

@@ -18,7 +18,7 @@ Where the (section, order, help_line) rows come from:
 """
 import bots
 from phone.command import SECTIONS, Command, declare
-from phone.html import Html
+from phone.html import Html, esc
 
 TOP = "📱 <b>Commands</b>"
 HEADS = {
@@ -69,6 +69,12 @@ HELP_ENTRIES = (
 )
 
 UNKNOWN_HEAD = "I did not understand that.\n\n"
+# v-tg-unknown (2026-11-08): the answer quotes what the phone got, so the operator sees why ('I keep getting that
+# error'); the first words stay the legacy ones (the legacy self-test and the golden shadow look for them)
+UNKNOWN_QUOTED = 'I did not understand that. You sent "%s"%s.\n\n'
+UNKNOWN_AS_REPLY = " as a reply to my message"
+# a sticker, photo, voice ... from the paired chat: one line, no /help list (it was not an attempt at a command)
+MEDIA_REPLY = "I got %s. I only read typed commands: /help lists them."
 
 
 def entries(commands=None):
@@ -121,10 +127,24 @@ def render(active, ctx):
     return help_html(active, ctx.pp)
 
 
-def unknown_reply(ctx):
-    """The answer to any message no command claims (the router's last line; Phone.handle's last line): the words, then
-    /help."""
-    return Html(UNKNOWN_HEAD + help_html(ctx.active(), ctx.pp))
+def unknown_head(quote="", reply=False):
+    """The first line of the unknown-message answer: the legacy words alone when there is nothing to quote (an empty
+    message; every caller of before), else with the message quoted (`quote`: already cut and made safe by the router,
+    phone/incoming.quote + router.safe_text; escaped here) and 'as a reply to my message' when it answered one."""
+    if not quote:
+        return UNKNOWN_HEAD
+    return UNKNOWN_QUOTED % (esc(quote), UNKNOWN_AS_REPLY if reply else "")
+
+
+def unknown_reply(ctx, quote="", reply=False):
+    """The answer to any message no command claims (the router's last line; Phone.handle's last line): the words --
+    quoting the message when the router passes it (v-tg-unknown) -- then /help."""
+    return Html(unknown_head(quote, reply) + help_html(ctx.active(), ctx.pp))
+
+
+def media_reply(what):
+    """The one-line answer to a sticker, photo, voice ... (`what`: phone/incoming.words, 'a photo'): no /help list."""
+    return MEDIA_REPLY % what
 
 
 COMMAND = declare(Command(

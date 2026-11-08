@@ -23,6 +23,18 @@ secret, /alive's ping URL -- the reply and its log line both). An old /pair from
 it, and the paired chat is told (pair.stale). A message with no date is handled as fresh: the self-tests' FakeTelegram,
 and every message of a poll the runtime re-armed promptly after a short batch (phone/app.py PROMPT_GAP_S: delivered at
 once, so a fast server clock can never lock the controls out).
+v-tg-unknown (2026-11-08, the operator: "I keep getting that error in telegram" -- nine 'I did not understand that.'
+answers since 11-06, each seconds after a page or a photo, and no trace of what had arrived). The poll loop now
+describes every update (phone/incoming.py: its kind, text or caption, reply, forwarded) and hands it in as `about`;
+dispatch: a SILENT kind (an edited message, a reaction, a callback, a service message such as 'pinned_message', an
+unrecognised update) is never run and never answered, one log line ('ignored from chat 7: service message
+(pinned_message)'), BEFORE the /pair rule (an edited '/pair' or '/stop yes' never acts); a MEDIA message from the paired
+chat (a sticker, photo, voice ...) gets help_cmd.media_reply, one line without the /help list, logged; unknown text
+gets ONE log line ('not understood from chat 7: text "what" (a reply to the phone's message)') and an answer that
+quotes it (help_cmd.unknown_head). What a log line or a reply quotes is safe_text(): the pairing secret and every URL
+masked, and a message whose first word names a command with an echo (/pair, /alive) quoted as Command.echo gives it.
+The command forms a phone keyboard makes ('/Today', '/today ', '/today@bot', '📊 /today', '/today.') are the command
+(phone/context.py split_command).
 v-ledger-unreadable (2026-11-07): every money page (MONEY_SECTIONS, MONEY_PAGES) gets the warning line at the top when
 Kalshi rows were left out of its totals -- '3 markets unreadable (Kalshi field change?)' (money_note; the count is
 botdata/ledgercheck.py's, the words phone/render/unbooked.py's). Nothing is added when every row reads.
@@ -49,7 +61,8 @@ import traceback
 import bots as _bots
 from botdata import dirlist as _dirlist
 from phone import command as _cmd
-from phone.context import Ctx
+from phone import incoming as _inc
+from phone.context import Ctx, split_command
 from phone.html import Html, esc, i_
 from phone.log import log
 
@@ -59,6 +72,9 @@ PAIR = "/pair"
 STALE_S = 300                   # v-tg-stale: a control whose message is older than this is not run
 MONEY_SECTIONS = ("money", "one_bot")                                   # v-ledger-unreadable: every page of these ...
 MONEY_PAGES = ("/status", "/losses", "/hedges", "/fills", "/brief")     # ... and these gets the unreadable line
+_URL_RX = re.compile(r"(?i)\b(?:https?|wss?|ftp)://\S+")                # v-tg-unknown: never in a log line or a reply
+MASKED_URL = "[url]"
+MASKED_SECRET = "[secret]"
 
 _LOCK = threading.RLock()
 _STATE = {"done": False, "failed": {}}          # discover() ran; {module: the exception of its last import attempt}
@@ -289,30 +305,86 @@ def money_note(ctx, c, reply):
         return reply
 
 
-def unknown(ctx):
-    """Nothing claims the message: help_cmd.unknown_reply (the words, then /help); plain words if that module is
-    broken."""
+def safe_text(ctx, text):
+    """What a log line or a reply may quote of `text` (v-tg-unknown; Command.echo's rule for every message): the
+    pairing secret (ctx.cfg['secret'], as a whole word, any case) and every URL masked; a message whose first word
+    names a command with an echo (/pair, /alive -- with or without its slash: 'pair words' forgot it) is quoted as that
+    echo gives it, never as typed. Never raises: a failure quotes nothing."""
+    try:
+        s = str(text or "")
+        if not s.strip():
+            return ""
+        _t, cmd, _a = split_command(s)
+        if cmd and not cmd.startswith("/"):
+            cmd = "/" + cmd
+        c = _cmd.by_name(cmd)
+        if c is not None and c.echo is not None:
+            return c.echo_of(s)
+        s = _URL_RX.sub(MASKED_URL, s)
+        cfg = getattr(ctx, "cfg", None)
+        secret = cfg.get("secret") if isinstance(cfg, dict) else None
+        if isinstance(secret, str) and secret.strip():
+            s = re.sub(r"(?i)(?<!\w)%s(?!\w)" % re.escape(secret.strip()), MASKED_SECRET, s)
+        return s
+    except Exception:                                           # noqa: BLE001
+        return ""
+
+
+def _incoming(ctx, text, about):
+    """The Incoming for this message: the poll loop's (`about`), or a plain text one (Phone.handle(chat, text): the
+    self-tests, the smoke, --preview)."""
+    if isinstance(about, _inc.Incoming):
+        return about
+    return _inc.Incoming("text", str(text or ""), ctx.chat_id)
+
+
+def unknown(ctx, inc=None):
+    """Nothing claims the message: ONE log line saying what arrived (v-tg-unknown: its kind, the text quoted -- safe --
+    whether it answered a phone message), then help_cmd.unknown_reply (the words quoting it, then /help); plain words if
+    that module is broken."""
+    inc = inc if inc is not None else _incoming(ctx, ctx.text, None)
+    safe = safe_text(ctx, inc.text)
+    log("not understood from chat %s: %s" % (ctx.chat_id, _inc.line(inc, safe)))
+    quote = _inc.quote(safe, _inc.QUOTE_REPLY)
     try:
         help_cmd = importlib.import_module(HELP_MODULE)
     except Exception as e:                                      # noqa: BLE001
         log("help module failed to load: %s" % e)
         return "I did not understand that. (/help failed to load: %s)" % str(e)[:200]
-    return help_cmd.unknown_reply(ctx)
+    return help_cmd.unknown_reply(ctx, quote=quote, reply=inc.reply)
+
+
+def media_reply(ctx, inc):
+    """A sticker, photo, voice ... from the paired chat (v-tg-unknown): one log line, one plain line back, no /help
+    list; plain words if the help module is broken."""
+    log("not understood from chat %s: %s" % (ctx.chat_id, _inc.line(inc, None)))
+    what = _inc.words(inc)
+    try:
+        return importlib.import_module(HELP_MODULE).media_reply(what)
+    except Exception as e:                                      # noqa: BLE001
+        log("help module failed to load: %s" % e)
+        return "I got %s. I only read typed commands: /help lists them." % what
 
 
 # ---- dispatch -----------------------------------------------------------------------------------------------------------
-def dispatch(phone, chat_id, text, sent_at=None):
+def dispatch(phone, chat_id, text, sent_at=None, about=None):
     """The reply for one incoming message to `phone` (the runtime: phone.app.Phone), or None to ignore it. Phone.handle's
     rules, in its order (see the module note). A command with no `fail` may raise: the poll loop answers 'error: ...'.
     v-tg-fast2: one tap (botdata.dirlist.tap): the results folder is listed once for all of the reply's globs.
-    v-tg-stale: `sent_at` is the message's Telegram date (epoch seconds; None = fresh)."""
+    v-tg-stale: `sent_at` is the message's Telegram date (epoch seconds; None = fresh).
+    v-tg-unknown: `about` is the poll loop's description of the update (phone/incoming.Incoming); None = plain text."""
     with _dirlist.tap():
-        return _dispatch(phone, chat_id, text, sent_at)
+        return _dispatch(phone, chat_id, text, sent_at, about)
 
 
-def _dispatch(phone, chat_id, text, sent_at=None):
+def _dispatch(phone, chat_id, text, sent_at=None, about=None):
     ctx = Ctx.from_phone(phone, text, chat_id=chat_id)
     cmd = ctx.cmd
+    inc = _incoming(ctx, text, about)
+    if inc.silent:                                   # v-tg-unknown: an edit, a reaction, a callback, a chat event: never
+        if phone.chat_id is None or chat_id == phone.chat_id:       # run, never answered; one log line (ours only)
+            log("ignored from chat %s: %s (no reply)" % (chat_id, _inc.line(inc, safe_text(ctx, inc.text))))
+        return None
     if cmd == PAIR:
         c, broken = command_for(PAIR)
         if c is None:
@@ -328,6 +400,8 @@ def _dispatch(phone, chat_id, text, sent_at=None):
         return c.run(ctx)
     if phone.chat_id is None or chat_id != phone.chat_id:
         return None                                  # not ours: silence
+    if not inc.is_text:                              # v-tg-unknown: a sticker, photo, voice ... one line, no /help
+        return media_reply(ctx, inc)
     c, broken = command_for(cmd)
     if c is not None and c.is_control:              # v-tg-stale: a control queued while the phone was down
         age = message_age(ctx, sent_at)
@@ -343,4 +417,4 @@ def _dispatch(phone, chat_id, text, sent_at=None):
         return money_note(ctx, c, c.run(ctx))
     if broken:
         return failed_reply(cmd, *broken)
-    return unknown(ctx)
+    return unknown(ctx, inc)

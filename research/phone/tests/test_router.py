@@ -73,6 +73,17 @@ def _view(r):
     return (type(r).__name__, None if r is None else str(r))
 
 
+_QUOTED_RX = __import__("re").compile(r'^I did not understand that\. You sent ".*?"( as a reply to my message)?\.\n\n')
+
+
+def _legacy_head(r):
+    """The new unknown-message answer with its quote dropped (v-tg-unknown): the legacy first line, for the comparisons
+    against the frozen phone, which never quoted."""
+    if r is None:
+        return r
+    return type(r)(_QUOTED_RX.sub("I did not understand that.\n\n", str(r), count=1))
+
+
 def test_chart_kinds_are_the_charts_table():
     assert R.chart_kinds() == tgcharts.CMD_KIND, "the router's {name: kind} must be phone.charts.CMD_KIND"
     for name, kind in tgcharts.CMD_KIND.items():
@@ -100,6 +111,7 @@ def test_routing_rules_like_the_legacy_handle():
             old, new = _phones()
             a, b = old.handle(7, text), new.handle(7, text)
             b = type(b)(_legacy_only(b)) if b is not None else b             # step 12: new commands' /help lines
+            b = _legacy_head(b)                                               # v-tg-unknown: the quote is new
             assert _view(a) == _view(b), (text, _view(a), _view(b))
             assert old.muted == new.muted, text
             # another chat, and no paired chat: silence on both
@@ -228,6 +240,221 @@ def test_a_broken_bot_page_module_answers_for_its_registry_commands():
 def pindesk_log():
     from phone.log import log_path
     return log_path()
+
+
+def _log_tail(mark):
+    """The log lines written after `mark` (a byte offset: _log_mark())."""
+    with open(pindesk_log(), encoding="utf-8") as fh:
+        fh.seek(mark)
+        return fh.read()
+
+
+def _log_mark():
+    try:
+        return os.path.getsize(pindesk_log())
+    except OSError:
+        return 0
+
+
+# ---- v-tg-unknown (2026-11-08): what arrived is logged and quoted back; stickers get one line; edits are silent ----
+from phone import incoming as I                                     # noqa: E402
+
+HELP_TOP = "\n\n📱 <b>Commands</b>"
+
+
+def _msg(chat=7, **fields):
+    """One getUpdates entry holding a message with `fields` (a text, a photo, a sticker ...)."""
+    m = {"message_id": 5, "date": int(T), "chat": {"id": chat, "type": "private"}, "from": {"id": chat, "is_bot": False}}
+    m.update(fields)
+    return {"update_id": 1, "message": m}
+
+
+def _reply_to_phone(**fields):
+    """A message that answers one of the phone's (reply_to_message from a bot)."""
+    return dict(reply_to_message={"message_id": 4, "from": {"id": 1, "is_bot": True}, "text": "📊 Today"}, **fields)
+
+
+def test_unknown_text_is_quoted_back_and_logged():
+    with _world(("pin",)), quiet():
+        _old, new = _phones()
+        mark = _log_mark()
+        r = new.handle(7, "what")
+        assert isinstance(r, Html) and str(r).startswith('I did not understand that. You sent "what".' + HELP_TOP), r
+        assert "I did not understand that." in str(r), "the legacy words stay (legacy_selftest looks for them)"
+        assert 'not understood from chat 7: text "what"' in _log_tail(mark), _log_tail(mark)
+        # the poll loop's description: a reply to a phone message says so, in the words and in the log
+        mark = _log_mark()
+        inc = I.describe(_msg(**_reply_to_phone(text="why")))
+        r = new.handle(7, "why", about=inc)
+        assert str(r).startswith('I did not understand that. You sent "why" as a reply to my message.' + HELP_TOP), r
+        assert 'not understood from chat 7: text "why" (a reply to the phone\'s message)' in _log_tail(mark)
+        # long, multi-line, with markup: 60 characters in the reply, 80 in the log, newlines one space, HTML escaped
+        long = "<b>line one</b>\nline two " + "x" * 100
+        mark = _log_mark()
+        r = new.handle(7, long)
+        head = str(r).split("\n\n", 1)[0]
+        assert head == 'I did not understand that. You sent "&lt;b&gt;line one&lt;/b&gt; line two %s...".' % ("x" * 35), head
+        line = [x for x in _log_tail(mark).splitlines() if "not understood" in x][0]
+        assert '<b>line one</b> line two ' + "x" * 55 + '..."' in line and "\n" not in line and len(line) < 200, line
+        # an empty message: the legacy answer, byte for byte
+        _old, new = _phones()
+        assert str(new.handle(7, "")).startswith("I did not understand that." + HELP_TOP)
+        # a caption that is not a command: quoted like text, the log says what it captioned
+        mark = _log_mark()
+        inc = I.describe(_msg(photo=[{"file_id": "p"}], caption="look at this"))
+        r = new.handle(7, inc.text, about=inc)
+        assert str(r).startswith('I did not understand that. You sent "look at this".' + HELP_TOP), r
+        assert 'not understood from chat 7: caption "look at this" on a photo' in _log_tail(mark)
+        # a caption that IS a command runs it
+        inc = I.describe(_msg(photo=[{"file_id": "p"}], caption="/help"))
+        assert str(new.handle(7, inc.text, about=inc)).startswith("📱 <b>Commands</b>")
+
+
+def test_unknown_text_never_logs_or_repeats_a_secret():
+    with _world(("pin",)), quiet():
+        _old, new = _phones(cfg={"chat_id": 7, "secret": "open sesame"})
+        for text, shown in (("pair open sesame", "/pair"),                   # the slash forgotten: Command.echo's rule
+                            ("the words are open sesame ok", "the words are [secret] ok"),
+                            ("OPEN SESAME", "[secret]"),
+                            ("see https://hc-ping.com/abc-123/x and http://a.b/c", "see [url] and [url]"),
+                            ("alive set https://hc-ping.com/abcdef-uuid-1234", "/alive set hc-ping.com/…d-1234")):
+            mark = _log_mark()
+            r = new.handle(7, text)
+            assert str(r).startswith('I did not understand that. You sent "%s".' % shown), (text, str(r)[:120])
+            tail = _log_tail(mark)
+            assert 'text "%s"' % shown in tail, (text, tail)
+            for secret in ("sesame", "hc-ping.com/abc", "abcdef-uuid", "a.b/c"):
+                assert secret not in tail and secret not in str(r), (text, secret)
+        # /pair itself (any case, @bot) is the pairing rule's, not the unknown answer's
+        assert "I did not understand" not in str(new.handle(7, "/Pair@kalsbot open sesame") or "")
+        assert R.safe_text(new.ctx(), None) == "" and R.safe_text(new.ctx(), "  ") == ""
+
+
+def test_media_gets_one_line_without_the_help_list():
+    with _world(("pin",)), quiet():
+        for fields, what, logged in (
+                ({"sticker": {"file_id": "s", "emoji": "👍"}}, "a sticker", "sticker"),
+                ({"photo": [{"file_id": "p"}]}, "a photo", "photo"),
+                ({"photo": [{"file_id": "p"}], "forward_origin": {"type": "user"}}, "a forwarded photo",
+                 "photo (forwarded)"),
+                ({"voice": {"file_id": "v"}}, "a voice message", "voice"),
+                ({"document": {"file_id": "d"}}, "a file", "document"),
+                ({"video": {"file_id": "v"}}, "a video", "video"),
+                ({"location": {"latitude": 1, "longitude": 2}}, "a location", "location"),
+                (_reply_to_phone(sticker={"file_id": "s"}), "a sticker", "sticker (a reply to the phone's message)")):
+            _old, new = _phones()
+            n = []
+            new.ledger.refresh = lambda: n.append(1)
+            mark = _log_mark()
+            inc = I.describe(_msg(**fields))
+            r = new.handle(7, inc.text, about=inc)
+            assert r == "I got %s. I only read typed commands: /help lists them." % what, (fields, r)
+            assert "Commands" not in r and n == [], (fields, "no /help list, no ledger refresh")
+            assert "not understood from chat 7: %s" % logged in _log_tail(mark), (fields, _log_tail(mark))
+            # a stranger's sticker: silence, as every stranger's message
+            assert new.handle(8, inc.text, about=I.describe(_msg(chat=8, **fields))) is None
+            # the poll loop end to end: the one line is sent, no picture is queued
+            _old, new = _phones()
+            queued = []
+            new.chart_after = lambda chat, text: queued.append(text)
+            new.tg.incoming.append(_msg(**fields))
+            new.poll_once(timeout=0)
+            assert [str(m) for _c, m in new.tg.sent] == ["I got %s. I only read typed commands: /help lists them." % what]
+            assert queued == [""], queued                 # chart_after with no text: no picture (kind_of('') is None)
+
+
+def test_silent_kinds_are_never_run_or_answered_but_logged():
+    with _world(("pin",)), quiet():
+        updates = (
+            ("edited", {"update_id": 1, "edited_message": {"chat": {"id": 7}, "date": int(T), "edit_date": int(T),
+                                                           "text": "/stop yes"}}, 'edited message "/stop yes"'),
+            ("service", _msg(pinned_message={"message_id": 4, "text": "📊 Today"}), "service message (pinned_message)"),
+            ("callback", {"update_id": 1, "callback_query": {"id": "1", "data": "go", "message": {"chat": {"id": 7}}}},
+             'callback "go"'),
+            ("reaction", {"update_id": 1, "message_reaction": {"chat": {"id": 7}, "date": int(T), "new_reaction": []}},
+             "reaction"),
+            ("other", {"update_id": 1, "my_chat_member": {"chat": {"id": 7}}}, "unrecognised update (my_chat_member)"))
+        for kind, u, logged in updates:
+            inc = I.describe(u)
+            assert inc.kind == kind and inc.silent, (kind, inc)
+            _old, new = _phones()
+            n = []
+            new.ledger.refresh = lambda: n.append(1)
+            mark = _log_mark()
+            chat = inc.chat if inc.chat is not None else 7
+            assert new.handle(chat, inc.text, about=inc) is None, kind
+            assert n == [] and not new.busy, kind
+            tail = _log_tail(mark)
+            assert "ignored from chat %s: %s (no reply)" % (chat, logged) in tail, (kind, tail)
+            # end to end through the poll loop: nothing sent
+            new.tg.incoming.append(u)
+            new.poll_once(timeout=0)
+            assert new.tg.sent == [], kind
+        # an edited /pair from a stranger while unpaired never pairs; an edited /stop yes never stops (busy stays False)
+        _old, new = _phones(cfg={"chat_id": None, "secret": "s"})
+        u = {"update_id": 1, "edited_message": {"chat": {"id": 99}, "date": int(T), "text": "/pair s"}}
+        assert new.handle(99, "/pair s", about=I.describe(u)) is None and new.cfg.get("chat_id") is None
+        # the stranger's edit is not even logged (strangers were always silence); the paired chat's is
+        _old, new = _phones()
+        mark = _log_mark()
+        assert new.handle(8, "/stop yes", about=I.describe({"update_id": 1, "edited_message": {
+            "chat": {"id": 8}, "text": "/stop yes"}})) is None
+        assert "ignored from chat 8" not in _log_tail(mark)
+
+
+def test_describe_every_update_kind():
+    d = I.describe
+    t = d(_msg(text="/today"))
+    assert (t.kind, t.text, t.chat, t.sent_at, t.reply, t.forwarded) == ("text", "/today", 7, int(T), False, False)
+    assert d(_msg(**_reply_to_phone(text="x"))).reply is True
+    assert d(_msg(text="x", reply_to_message={"from": {"id": 7, "is_bot": False}, "text": "y"})).reply is False, \
+        "a reply to the operator's own message is not a reply to the phone's"
+    assert d(_msg(text="x", forward_date=1)).forwarded is True
+    c = d(_msg(video={"file_id": "v"}, caption="  hi "))
+    assert (c.kind, c.text, c.keys) == ("caption", "  hi ", ("video",))
+    assert d(_msg(video={"file_id": "v"}, caption="   ")).kind == "video", "a blank caption is no caption"
+    for key in ("sticker", "photo", "voice", "video_note", "video", "animation", "document", "audio", "contact",
+                "location", "venue", "poll", "dice", "game", "story"):
+        inc = d(_msg(**{key: {}}))
+        assert inc.kind == key and not inc.is_text and not inc.silent and I.words(inc).startswith(("a ", "an ")), key
+    assert I.words(d(_msg(photo=[], forward_origin={}))) == "a forwarded photo"
+    assert I.words(d(_msg(audio={}, forward_origin={}))) == "a forwarded audio file"
+    s = d(_msg(new_chat_members=[{"id": 1}]))
+    assert (s.kind, s.keys, s.silent) == ("service", ("new_chat_members",), True)
+    assert d(_msg()).kind == "other" and d({"update_id": 3}).kind == "other" and d(None).kind == "other"
+    assert d({"update_id": 3, "poll": {"id": "1"}}).keys == ("poll",), "an update-level poll is not a message's"
+    e = d({"update_id": 1, "edited_message": {"chat": {"id": 7}, "date": 5, "edit_date": 9, "text": "/x"}})
+    assert (e.kind, e.text, e.chat, e.sent_at) == ("edited", "/x", 7, 5)
+    assert d({"update_id": 1, "channel_post": {"chat": {"id": -1}, "text": "x"}}).kind == "text"
+    assert I.quote("a\n\n  b\tc", 60) == "a b c" and I.quote("x" * 70, 60) == "x" * 60 + "..." and I.quote(None) == ""
+    assert I.quote("abcd efgh", 5) == "abcd..."
+    assert I.line(d(_msg(text="")), "") == "text (empty)"
+    assert I.line(d(_msg(sticker={})), None) == "sticker"
+    assert I.line(d(_msg(**_reply_to_phone(voice={}, forward_date=1))), None) == \
+        "voice (forwarded; a reply to the phone's message)"
+    assert set(I.KINDS) >= {"text", "caption", "sticker", "photo", "edited", "callback", "reaction", "service", "other"}
+
+
+def test_keyboard_forms_of_a_command_are_the_command():
+    from phone.context import split_command
+    for text in ("/Today", "/today ", " /today", "/today@kalsbot", "/TODAY@KalsBot ", "📊 /today", "📊/today",
+                 "• /today", "/today.", "/Today!", "/today@kalsbot.", " 📊 /today"):
+        _t, cmd, arg = split_command(text)
+        assert cmd == "/today" and arg == "", (text, cmd, arg)
+    assert split_command("/Stop@kalsbot yes")[1:] == ("/stop", "yes")
+    assert split_command("⏹ /stop yes")[1:] == ("/stop", "yes")
+    assert split_command("/?")[1] == "/?" and split_command("/?.")[1] == "/?" and split_command("/")[1] == "/"
+    assert split_command("hello /today")[1] == "hello", "words before the slash are not guessed at"
+    assert split_command("📊 today")[1] == "📊", "no slash: not a command"
+    assert split_command("/server help")[1:] == ("/server", "help")
+    with _world(("pin",)), quiet():
+        _old, new = _phones()
+        want = str(new.handle(7, "/help"))
+        for text in ("/Help", "/help ", "/help@kalsbot", "📱 /help", "📱/help", "/help.", "/HELP@KalsBot."):
+            _old, new = _phones()
+            assert str(new.handle(7, text)) == want, text
+        _old, new = _phones()
+        assert "I did not understand that." in str(new.handle(7, "hello /help")), "still unknown"
 
 
 def test_error_without_a_wall_reaches_the_poll_loop():
