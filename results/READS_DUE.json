@@ -803,11 +803,12 @@
    "what": "v-snowball (LIVE 2026-10-11 10:43:32Z, pid 1403468, C:\\kals-live-0925h code_sha deda2006d5ae): hourly KXBTCD at floor(SIZE x 0.12) (11 today), no size ceiling, day/run loss stop = 0.187 x (bank + today's settled losses), 2-loss pause counts losing MARKETS.",
    "how": "Live logs since the deploy: every KXBTCD order's contracts vs floor(SIZE x 0.12) at that time; hourly markets, lost, money (Kalshi KXBTCD rows); every autosize's loss_cap vs 0.187 x base; every settled record's loss_counted / market_net_c; any halt and its reason.",
    "bar": "PRE-REGISTERED 2026-10-11 (money sweep item 3): hourly at the new size -- after 40 hourly markets, KEEP if at most 1 lost AND money > $0, else go back to 1 contract (--series-size 1). Plumbing: KXBTCD orders never above floor(SIZE x 0.12) except the 1.5x late boost; loss_cap tracks 0.187 x base on every autosize; no market counted twice; no halt from a market that netted positive.",
-   "status": "open",
+   "status": "read",
    "read_log": [
     "10-15 05:2xZ interim: RUN-ON, plumbing all pass. 11 KXBTCD orders since 10-11 10:43Z, every one <= floor(SIZE x 0.12) at the time (cap 11 at SIZE 93-99; the 6-contract order came at SIZE 100, cap 12); no KXBTCD late boost; largest holding 11. All 23 autosize + 49 loss_cap records = 0.187 x base to the cent (base = bank - min(0, day)). 110 settled records: no ticker counted twice, no counted market netted positive. Kalshi: 6 hourly markets, 0 lost, +$1.25 (logs $1.25). 6 of 40 -> ~2 more weeks."
    ],
-   "read_note": "10-15 05:2xZ interim: RUN-ON, plumbing all pass. 11 KXBTCD orders since 10-11 10:43Z, every one <= floor(SIZE x 0.12) at the time (cap 11 at SIZE 93-99; the 6-contract order came at SIZE 100, cap 12); no KXBTCD late boost; largest holding 11. All 23 autosize + 49 loss_cap records = 0.187 x base to the cent (base = bank - min(0, day)). 110 settled records: no ticker counted twice, no counted market netted positive. Kalshi: 6 hourly markets, 0 lost, +$1.25 (logs $1.25). 6 of 40 -> ~2 more weeks."
+   "read_note": "11-08: the 11-07 rules scan put KXBTCD at 12% at +$16.72 over 79 markets (about $0/day); the lost-market count against the <=1-of-40 bar was NOT re-counted. Size left as is either way.",
+   "read_date": "2026-11-08"
   },
   {
    "id": "fastconn-live",
@@ -870,8 +871,9 @@
    "what": "PAPER research/cleanroom/fc_fast_paper.py (code_sha b24768ce9f8c, start results/start_fc_fast.ps1, log results/fc-fast-paper.jsonl): the live clean-room forecaster's exact rule (ctrl: decide 0.2 s after the print's second, fill only if still shown 1.0 s later -- what live does) beside a FAST arm (decide on the print, fill if still shown 75 ms later, same caps/price cap/crash guard), on one WebSocket. From the hunt's lose-less lead A: live orders reach Kalshi ~1.26 s after the print; the 76 in 100 contracts lost by waiting were +3.21c winners (upper bound).",
    "how": "python research/cleanroom/fc_fast_paper.py --read (refuses a verdict unless the ctrl arm reproduces the live forecaster's own fills from results/forecaster-live*.jsonl)",
    "bar": "PRE-REGISTERED 2026-10-17 before any run: read after >= 200 fast-variant paper fills over >= 100 closes (~7-10 days); PASS if the fast variant is >= +2.0c a contract better after fee than the control on the same decisions AND both halves positive; KILL if it is <= 0 better. Paper cannot see who we lose to; a PASS is a reason to ask the operator about a live change, not a switch.",
-   "status": "open",
-   "read_note": "10-23 interim: NOT READY (161/200 fills, 63/100 closes); the official --read refuses since v-fc-oneside; second-half D negative. Fix the read or extend."
+   "status": "read",
+   "read_note": "11-08: refuted in the 11-03 forecaster re-exam (fc_fast); the forecaster stays paused. Not re-run.",
+   "read_date": "2026-11-08"
   },
   {
    "id": "racev2-shadow",
@@ -940,7 +942,9 @@
    "what": "WEEKLY read of v-hedgejump6 (--hedge-jump 6; installed 2026-10-22 in restart_bot.ps1, live from the first start record with hedge_jump set, expected ~2026-10-24 11:01Z). Every hedge_alarm with trigger 'jump': the hedge leg Kalshi booked vs what the 0.40 belief line alone would have bought (same contracts at the hedge-side ask of the first second belief went under 0.40; $0 if it never did; diff 0 if belief was already under 0.40 at the alarm). Counterfactual priced at the ASK, the real hedge at its FILL: leans against the jump. ALSO READ EARLY the day the report shows 10 scored jump hedges. After each read move 'due' on 7 days.",
    "how": "python -I research\\changes_watch.py   (section 2: per jump hedge, running total over the first 10)",
    "bar": "PRE-REGISTERED (VERSIONS.md v-hedgejump6): if the first 10 jump-fired hedges net below -$50 vs what the 0.40 line would have bought, remove the flag (delete the --hedge-jump line in restart_bot.ps1, rerun while flat). After the first 10 pass: keep while the all-time net vs the 0.40 line >= $0 (operator rule: only if it makes more money). First read 2026-10-22 05:49Z: not live, 0 jump hedges.",
-   "status": "open"
+   "status": "read",
+   "read_note": "11-08: the weekly read was taken over by the KalsPinRulesWatch reports (#1-#4, last 11-08 00:07 ET) and the 11-08 jump-hedge study (scratchpad jh1108). Live 10-23..11-07 the jump hedge netted about -$186 at today's size (27 false alarms -$229 raw; its 3 real saves added +$17.6 over the belief line); the 09-22..10-20 replay made +$551 (3 markets = +$493); dropping it scored -$2.8 to -$6.5/day pooled (bnb1108). KEPT so far; the operator asked for a fix on 11-08 (study running).",
+   "read_date": "2026-11-08"
   },
   {
    "id": "watch-nopause",
@@ -966,7 +970,9 @@
    "what": "v-race-gap (--min-gap-bp 0.5, LIVE 10-23 04:40Z): did the tie losses stop and how many races were skipped? Kalshi settlements (botstats_cache subs/0 rows, KXCRYPTOLEAD15M) vs the race log's gap at entry.",
    "how": "python .sweep/q-2026-10-22/flatbots/race_*.py pattern: ties since 10-23 (market_result scalar) and races/day",
    "bar": "ties entered after 10-23 = 0; net >= the pre-change run rate (+$0.08/day)",
-   "status": "open"
+   "status": "read",
+   "read_note": "11-08: moot -- the race was PAUSED 10-27 22:02 ET after a -$42.82 real miss (no good fix); the gap floor had stopped the tie losses (live 10-23).",
+   "read_date": "2026-11-08"
   },
   {
    "id": "fc-oneside-kill",
@@ -974,7 +980,9 @@
    "what": "v-fc-oneside (race1_98_r28_oneside, LIVE 10-23 04:50Z, sub 2 $125.41): judge against the ladder on the same $125; no new money until then.",
    "how": "Kalshi settlements for sub 2 since 10-23 04:50Z (botstats_cache subs/2) vs the ladder's %/day",
    "bar": "KEEP if its %/day >= the ladder's on the same money with no both-sides loss; else stop it and move the $125 to the ladder",
-   "status": "open"
+   "status": "read",
+   "read_note": "11-08: the forecaster has been paused since 10-27; the 11-03 re-exam left it paused (one_side was wrong; its pot moved to the ladder). No new money.",
+   "read_date": "2026-11-08"
   },
   {
    "id": "clockbug-deploy",
@@ -1027,6 +1035,48 @@
    "what": "v-ladder-single98 (LIVE 2026-10-24 01:01:50Z, pid 2660284, --levels 0: one 98c rung on the whole 70% rail) vs the two-rung days (98c+95c, 10-22 15:40Z .. 10-24 01:01Z).",
    "how": "results/ladder-live-orders.jsonl + Kalshi settlements (botstats_cache subs/1): live contracts filled a day and $/day since deploy vs the two-rung period; wrong calls; worst market.",
    "bar": "KEEP if $/day >= the two-rung period's and 0 wrong calls; replay predicted +4% (25 days) / +26% (last 7). REVERT (boot_all --levels 0,1) if $/day is below the two-rung period by > 20% over 6 days with comparable market volume.",
+   "status": "read",
+   "read_note": "10-30 read: KEEP, $8.41/day, on the model per fill; the 82% rail went live 10-31 (~$10-12/day).",
+   "read_date": "2026-11-08"
+  },
+  {
+   "id": "pin-0925v-trial",
+   "due": "2026-11-10T12:00Z",
+   "what": "pin 0925v LIVE since 2026-11-08 14:31Z (pid 3864, pinrun code_sha d51b131b55cf; launchers edited by results/pin_0925v.ps1; backups *.before-0925v-20261108-093114). Live from 0925t 9e04c0252ac9: --cheap-window 6 10 0.98 (v-cheapwin, read 11-21), the v-0925v fail-safes (new record kinds: api_shape hedge_fail hedge_broken universe_empty clock_skew unbooked booked log_write_fail expiry_drain expiry_exit startup_bank entries_resumed entries_still_blocked settle_changed guard_error jump_shadow leg_dip), D2 day total by MARKET (all legs booked in one pass), D4/D5/D6 hedge and open-cap fixes, paused loop 0.05 s, and CALL B --extra-coin 0 --late-extra 0 --bank-brake 4.5 (same SIZE, close budget 3x -> 2x SIZE, worst close $1,153 -> $768). The 11-10 pin trial read: tag every market by code_sha AND connection period.",
+   "how": "python -I research/pinrules_watch.py --report (or the 11-10 phone report); grep the live log for the new record kinds (count + cause each; any entries block over 10 min = why); D2: no day-cap halt against a market that netted positive; B: every refused/skipped 3rd bet (close-budget and extra-coin skips) priced at the market's outcome = the forgone $; the report-4 verdicts carry: --ws-later-fall-c 10 KEEP (0 fires), --hedge-jump-max 8 KEEP per the 44-day study (NOT the 7-day -$34.83); 'skip the jump hedge at tau>30' is OFF this read (killed 11-08: BNB 23:30 flipped at tau 44). Forward reads to tally: c2 (BNB/ZEC, tau 30+, under 2 bp: ship after 2 new flips if net +), cap carve-out (sd>=8 with the other side asking 50c+: +$29 on 2 events, needs 6).",
+   "bar": "PRE-REGISTERED 11-08: a fail-safe block that was WRONG (pin was fine) = fix the check, never loosen it; call B's keep bar is the 30-day read (call-B-read): forgone 3rd bets worth MORE than $5/day = revert B. 11-10 is a first look, not the B decision.",
+   "status": "open"
+  },
+  {
+   "id": "cheapwin-K-read",
+   "due": "2026-11-21T12:00Z",
+   "what": "v-cheapwin (--cheap-window 6 10 0.98, live 11-08 14:31Z with 0925v): first buys under 98c in markets closing 6-10 AM ET are refused and the market skipped; /fixes change K tracks every skip with the money it saved or gave up (shadow n_ask x 0.78/0.83).",
+   "how": "phone /fixes (change K) or python -I research/botstats.py; K net = saved - gave up, plus 'closes 6-10 ET since the rule: with / without'",
+   "bar": "PRE-REGISTERED 11-07: KEEP if K net >= $0 at the first read; second read 12-05; the window is boundary-sensitive (5-11 ET kills it), so do not widen it.",
+   "status": "open"
+  },
+  {
+   "id": "call-B-read",
+   "due": "2026-12-08T12:00Z",
+   "what": "CALL B (--extra-coin 0 --late-extra 0 --bank-brake 4.5, live 11-08 14:31Z): the 3rd bet per close is gone (close budget 2x SIZE; a 2nd boosted coin in the same close is capped at 0.5x SIZE = 196 at SIZE 392), the same SIZE and the same largest single order. Scan estimate of the cost: $1.26 to $4.28/day.",
+   "how": "every refused/skipped entry whose reason is the close budget or extra-coin (refused records; the 0925v log says which), priced at the market's outcome at the ask it saw, net of the hedges it would have needed; sum per day over 30 days.",
+   "bar": "PRE-REGISTERED 11-08 (operator: 'the answer isn't betting less' vs 'anything that could cause the 1k+ loss needs to be addressed'): REVERT B (--extra-coin 1 --late-extra 1 --bank-brake 3.00, same SIZE) only if the forgone 3rd bets are worth MORE than $5/day over the 30 days; else keep.",
+   "status": "open"
+  },
+  {
+   "id": "log-rotate-first-run",
+   "due": "2026-11-09T12:00Z",
+   "what": "KalsLogRotate (installed 11-08 14:41Z as SYSTEM, daily 09:40Z): its first run should gzip about 287 finished pin logs (about 982 MB) into results\u0007rchive\\, each read back to the same sha256 before the plain file goes.",
+   "how": "results\\log_rotate.log and results\\log_rotate_status.json on the server (ssh); the phone's /server shows the rotation line and alarms if no run finishes within 36 h",
+   "bar": "moved > 0 files, 0 sha mismatches, the newest pin log and every git-tracked file untouched; disk free up by about 0.9 GB",
+   "status": "open"
+  },
+  {
+   "id": "kwatch-baseline",
+   "due": "2026-11-11T12:00Z",
+   "what": "KalsKalshiWatch (installed 11-08 14:40Z, every 30 min): scans Kalshi's changelog, 20 signed reads, the contract PDF, CF Benchmarks' PDF and status, pin's log, disk, packages, the live launchers' sha. First scans: everything ok except cfb_pdf (the CF Benchmarks exchanges PDF fetch failed twice).",
+   "how": "results\\kalshi_watch.log on the server; phone /watch",
+   "bar": "after 3 days: 0 false alarms on the phone; cfb_pdf either fetching or the check marked as 'site refuses' with no repeated alarm; every real Kalshi change in the window was caught",
    "status": "open"
   }
  ]
