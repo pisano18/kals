@@ -1,4 +1,4 @@
-# Live launcher snapshot -- 2026-11-07
+# Live launcher snapshot -- 2026-11-08
 
 Byte-exact copies of the two files that start the live pin bot on the server, copied from the server on
 2026-11-07 at 11:46 AM ET, with their sha256 in `SHA256SUMS.txt`.
@@ -8,7 +8,7 @@ Byte-exact copies of the two files that start the live pin bot on the server, co
 | `restart_bot_repo.ps1` | `C:\kals-repo\restart_bot.ps1` | the KEEP-ALIVE copy: `watch_bot.ps1` runs it when pin is down |
 | `restart_bot_hand.ps1` | `C:\kals-live-0925n\restart_bot.ps1` | the HAND copy: every deploy script (`results\pin_<ver>.ps1`) and the phone's `/approve pinrestart` restart pin through it |
 
-Both start code `C:\kals-live-0925t` (code sha `9e04c0252ac9`, pintake sha `b3c7bb48abb5`) with the same flags.
+Both start code `C:\kals-live-0925v` (code sha `d51b131b55cf`, pintake sha `b3c7bb48abb5`) with the same flags; since 2026-11-08 the jump hedge runs as a SHADOW (`--hedge-jump-shadow 6`, v-jumpshadow: it records what it would have bought and sends nothing).
 
 `LIVE_PATHS.txt` holds the same two rows in the form the watcher reads (`<file here>  <server path>`): both live files
 are named `restart_bot.ps1`, so the name alone cannot say which one a snapshot copies. `research\botdata\tests\test_ops.py`
