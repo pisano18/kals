@@ -83,7 +83,7 @@ def test_page_over_the_synthetic_logs():
         assert "it skipped a hedge of 50 Yes" not in s and "\n  Nov" not in s, "no event lines once the blocks fill the page"
         # C: 5 engagements, 2 open
         assert "engaged 5 times, last Nov 5 1:44 AM ET · 2 open\n🟢 net <b>+$95.94</b>" in s, s
-        assert "<b>N hedge line 0.60</b>\n" in s and "not live yet (comes with the first pin start on --hedge-belief 0.60)" in s, s
+        assert "<b>N hedge line 0.60</b>\n" in s and "SHELVED 11-09, never deployed" in s, s
         for k in "ABCDEFGHIJ":
             blk = s.split("<b>%s " % k)[1].split("\n\n")[0]
             assert blk.count("\n  ") == 0, "the blocks whole, no event lines: %s\n%s" % (k, blk)
@@ -228,7 +228,7 @@ def test_before_the_new_build_and_empty_folder():
             os.remove(os.path.join(td, p))
         F._CACHE.clear()
         s = str(_run())                                        # the smoke's real folder may hold no pin log at all
-        assert s.count("not engaged yet") == 3 and s.count("not live yet") == 11 and "⚪ <b>All changes: net $0.00</b>" in s, s
+        assert s.count("not engaged yet") == 3 and s.count("not live yet") == 10 and s.count("SHELVED 11-09") == 1 and "⚪ <b>All changes: net $0.00</b>" in s, s
         assert "(+0.00% of the bank)" in s and "engaged 0 times" in s
     finally:
         paths.set_results(old)

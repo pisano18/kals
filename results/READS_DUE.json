@@ -1069,7 +1069,8 @@
    "what": "KalsLogRotate (installed 11-08 14:41Z as SYSTEM, daily 09:40Z): its first run should gzip about 287 finished pin logs (about 982 MB) into results\u0007rchive\\, each read back to the same sha256 before the plain file goes.",
    "how": "results\\log_rotate.log and results\\log_rotate_status.json on the server (ssh); the phone's /server shows the rotation line and alarms if no run finishes within 36 h",
    "bar": "moved > 0 files, 0 sha mismatches, the newest pin log and every git-tracked file untouched; disk free up by about 0.9 GB",
-   "status": "open"
+   "status": "read",
+   "read_note": "2026-11-09 PASS: first run 09:40Z moved 287 files, 1,091.1 MB -> 95.6 MB, each read back to the same sha256, 0 errors; kept 388 git-tracked files, the newest pin and traj logs, pin logs under 60 days; freed 995.5 MB (29.07 GB free right after). Free fell to 27.05 GB by 13:13Z and held there to 17:00Z (no new file over 50 MB but a 300 MB Windows event log; page file 1.4 GB): a one-time step, not a leak."
   },
   {
    "id": "kwatch-baseline",
@@ -1101,7 +1102,8 @@
    "what": "v-hedgeline60 (pin_hedge60.ps1, 11-08): the belief hedge line went 0.40 -> 0.60 (same build d51b131b55cf; the 1.25x extra fires with it at 0.40-0.60). Two-week read of /fixes change N 'hedge line 0.60': every hedge fired with belief over 0.40, priced against what the 0.40 line would have done at the trajectory's asks (+ = saved, - = premium paid for nothing). Replay basis: 11-04 sweep +$4/day at 322 (H1 +$233 / H2 -$77), 10-30..11-08 +$23/day on 3 flips (BNB x2, XRP) with 2 false fires ($16).",
    "how": "python research/botdata/fixes.py is the phone's /fixes (change N): its net, flips vs recoveries, and the 'not counted' line. Check (a) N's net; (b) how many false fires (bets that recovered) and what they cost vs the flips saved; (c) that the per-event $ match pin's own hedge records (settled pnl of the hedge side) on 2 events by hand; (d) the extra's share: hedge_extra records with belief 0.40-0.60. KILL RULE before the read: N's net under -$50 at any look -> back to 0.40 (copy the *.before-hedge60-* backups over both launchers, restart while flat).",
    "bar": "KEEP 0.60 if N's net >= $0 over the two weeks with at least 3 scored flips OR net >= +$30 on any count; back to 0.40 if net < $0; if under 3 flips and net between -$50 and $0, extend one week once. Not carried by one market: drop the largest single event and the sign must hold.",
-   "status": "open"
+   "status": "read",
+   "read_note": "2026-11-09: SHELVED before deploy (never live). The deep dive (scratchpad deep/synthesis/REPORT_full.md, 3,111 positions, ledger within $1.39) found the 0.60 line at -$1.79 to +$1.53 a day at today's size out of sample; the earlier replays' positive signs came from lag/fill/belief-source choices. Nothing to read on 11-22."
   }
  ]
 }

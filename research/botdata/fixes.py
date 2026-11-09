@@ -109,7 +109,8 @@ NAMES = {"A": "later-buy check", "B": "jump cap", "C": "bigger hedge", "D": "boo
          "N": "hedge line 0.60"}
 L_NOT_LIVE = "not live yet (comes with the next pin restart)"
 M_NOT_LIVE = "not live yet (comes with the first pin start on call B)"
-N_NOT_LIVE = "not live yet (comes with the first pin start on --hedge-belief 0.60)"
+N_NOT_LIVE = ("SHELVED 11-09, never deployed: the deep dive found no out-of-sample edge (-$1.79 to +$1.53 a day at "
+              "today's size); counted only if pin ever starts on --hedge-belief 0.60")
 N_OLD_LINE = 0.40                         # the line N is priced against (the live value 09-21..11-08)
 N_NEW_LINE = 0.60                         # N starts at the first start record whose hedge_belief is at least this
 N_READ = "the 11-22 read: back to 0.40 if N's net is under $0 (under -$50 at any look)"
