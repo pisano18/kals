@@ -102,12 +102,17 @@ from botdata import paths as _paths       # M: missed.py's result cache (results
 
 BASE_SHA = "ca156bf45704"                 # pin 0925r: D to J start at the first later start record with another sha
 UNKNOWN_AFTER_S = _rw.UNKNOWN_AFTER_S     # a market with no result 3 h after its close: "unknown", still open
-IDS = "ABCDEFGHIJKLM"
+IDS = "ABCDEFGHIJKLMN"
 NAMES = {"A": "later-buy check", "B": "jump cap", "C": "bigger hedge", "D": "boost rail", "E": "hedge tick",
          "F": "cheap jump skip", "G": "late-boost bypass fix", "H": "extra stake cap", "I": "max positions 5",
-         "J": "extra on odds", "K": "cheap morning skip", "L": "jump hedge shadow", "M": "3rd bet blocked"}
+         "J": "extra on odds", "K": "cheap morning skip", "L": "jump hedge shadow", "M": "3rd bet blocked",
+         "N": "hedge line 0.60"}
 L_NOT_LIVE = "not live yet (comes with the next pin restart)"
 M_NOT_LIVE = "not live yet (comes with the first pin start on call B)"
+N_NOT_LIVE = "not live yet (comes with the first pin start on --hedge-belief 0.60)"
+N_OLD_LINE = 0.40                         # the line N is priced against (the live value 09-21..11-08)
+N_NEW_LINE = 0.60                         # N starts at the first start record whose hedge_belief is at least this
+N_READ = "the 11-22 read: back to 0.40 if N's net is under $0 (under -$50 at any look)"
 M_EXTRA = 1.0                             # the old argv's allowance: ONE more SIZE a close (--extra-coin 1 / --late-extra 1
 #                                           share one bet, pinrun.close_budget_for: "one extra bet, spendable either by a
 #                                           new coin or in the last seconds, whichever arrives first")
@@ -595,6 +600,15 @@ class Scan:
         for t, r, _p in self.starts:
             ec, le = _f(r.get("extra_coin"), None), _f(r.get("late_extra"), None)
             if ec == 0.0 and le == 0.0:
+                return t, r
+        return None, None
+
+    def hl_since(self):
+        """N's start: (epoch, start record) of the first start record whose hedge_belief is N_NEW_LINE or more (the
+        launcher passes --hedge-belief 0.60; the field is pinrun's HEDGE_BELIEF), else (None, None)."""
+        for t, r, _p in self.starts:
+            hb = _f(r.get("hedge_belief"), None)
+            if hb is not None and hb >= N_NEW_LINE - 1e-9:
                 return t, r
         return None, None
 
@@ -1322,6 +1336,140 @@ def _m_what(start):
                 ("%.2f" % _f(brake)) if brake is not None else "4.50", int(_f(late, 15))))
 
 
+def _n_belief_our(row, our):
+    """The trajectory's belief in OUR side: its fair is the probability of its `want` side."""
+    fair = _f(row.get("fair"), None)
+    if fair is None:
+        return None
+    return fair if row.get("want") == our else 1.0 - fair
+
+
+def _n_hedge_ask(row, our):
+    """The hedge side's ask in a trajectory row: opp_ask when the row's want is our side, else ask."""
+    a = row.get("opp_ask") if row.get("want") == our else row.get("ask")
+    a = _f(a, None)
+    return a if a is not None and 0.0 < a < 1.0 else None
+
+
+def _n_old_line(S, h, our, line=N_OLD_LINE):
+    """What the OLD line would have done after hedge `h` fired: the first trajectory second after it with the model's
+    belief in our side under `line` and a hedge-side ask -> (epoch, tau, ask); None when belief never got there (the
+    old line would not have hedged). The trajectory log is per second inside the last 60 s of a close."""
+    cs = h.get("close_s")
+    if cs is None:
+        cs = close_of(h["ticker"])
+    if cs is None:
+        return None
+    rows = S.traj(h["_path"], cs).get(h["ticker"], [])
+    for row in rows:
+        if row["_epoch"] <= h["_epoch"]:
+            continue
+        b = _n_belief_our(row, our)
+        if b is None or b >= line:
+            continue
+        a = _n_hedge_ask(row, our)
+        if a is None:
+            continue
+        tau = row.get("tau")
+        tau = int(round(float(cs) - row["_epoch"])) if tau is None else int(_f(tau))
+        return row["_epoch"], tau, a
+    return None
+
+
+def _n(S, now, since, start):
+    """N: pin's belief hedge line at 0.60 (was 0.40), priced hedge by hedge against the old line. An event is a market
+    whose first executed hedge fired with belief OVER the old line (the old line had not fired yet): usd = what pin's
+    hedge legs really did (every executed hedge and extra of that side on that market, at their prices) minus what the
+    old line would have done (the same contracts, and its extra when 11+ s were left, at the hedge-side ask of the first
+    trajectory second with belief under 0.40; nothing when belief never got there), fees in. + = the earlier hedge
+    saved money (a flip caught cheaper, or a save the old line would have missed), - = premium the old line would not
+    have paid (the bet recovered and won). Hedges fired at or under the old line are both lines' hedges: not counted.
+    Returns (events, {flipped, won, open, saved, paid, same, never})."""
+    out = []
+    tally = {"flipped": 0, "won": 0, "open": 0, "saved": 0.0, "paid": 0.0, "same": 0, "never": 0, "net": 0.0}
+    mult = _f((start or {}).get("hedge_odds_mult"), 1.0)
+    min_tau = _f((start or {}).get("hedge_odds_min_tau"), 11.0)
+    done = set()
+    for h in S.hedges:
+        if h["_epoch"] < since or h.get("status") != "executed" or h.get("price") is None or _f(h.get("n")) <= 0:
+            continue
+        tk, side = h["ticker"], h.get("side")
+        key = (h["_path"], tk, side)
+        if key in done:
+            continue
+        done.add(key)
+        bel = _f(h.get("belief"), None)
+        if bel is None or bel <= N_OLD_LINE + 1e-9:
+            tally["same"] += 1
+            continue
+        our = "no" if side == "yes" else "yes"
+        legs = [h2 for h2 in S.hedges if (h2["_path"], h2["ticker"], h2.get("side")) == key
+                and h2.get("status") == "executed" and h2.get("price") is not None and _f(h2.get("n")) > 0]
+        extras = [x for x in S.extras if (x["_path"], x["ticker"], x.get("side")) == key
+                  and x.get("status") == "executed" and x.get("price") is not None and _f(x.get("n")) > 0]
+        real = [(_f(x.get("n")), _f(x.get("price"))) for x in legs + extras]
+        n_hedge = sum(_f(x.get("n")) for x in legs)
+        old = _n_old_line(S, h, our)
+        res = S.result(tk)
+        st = _status(tk, res, now, h.get("close_s"))
+        words = "belief %.0f%% our way with %s s left: bought %.0f %s at %s" % (
+            100 * bel, h.get("tau", "?"), n_hedge, _side(side), _cents(h.get("price")))
+        if old is None:
+            words += "; the 0.40 line would never have fired"
+            tally["never"] += 1
+            cf = []
+        else:
+            _t40, tau40, a40 = old
+            cf = [(n_hedge, a40)]
+            if mult > 1.0 and tau40 >= min_tau:
+                cf.append((round((mult - 1.0) * n_hedge, 2), a40))
+            words += "; the 0.40 line would have bought at %s with %s s left" % (_cents(a40), tau40)
+        usd = None
+        if st == "scored":
+            flipped = res == side
+            rv = _rw.value(real, flipped)
+            cv = _rw.value(cf, flipped) if cf else 0.0
+            usd = rv - cv
+            if flipped:
+                tally["flipped"] += 1
+                tally["saved"] += usd
+                words += "; the bet FLIPPED: the hedge got back %s, the 0.40 line's %s, so the earlier line %s %s" % (
+                    _rw.usd(rv, False), (_rw.usd(cv, False) if cf else "nothing"), "saved" if usd >= 0 else "cost",
+                    _rw.usd(abs(usd), False))
+            else:
+                tally["won"] += 1
+                tally["paid"] += -usd
+                words += "; the bet won: the hedge paid %s, the 0.40 line's %s, so the earlier line %s %s" % (
+                    _rw.usd(-rv, False), (_rw.usd(-cv, False) if cf else "nothing"), "cost" if usd < 0 else "kept",
+                    _rw.usd(abs(usd), False))
+        else:
+            tally["open"] += 1
+        if usd is not None:
+            tally["net"] += round(usd, 2)
+        out.append(_event(h, words, usd, st))
+    return out, tally
+
+
+def _n_extra(tally):
+    """N's lines under the net: what the earlier line saved on flips and paid on recoveries, and the hedges both lines
+    share (not counted)."""
+    nf, nw = tally["flipped"], tally["won"]
+    first = "saved %s on %d flip%s hedged earlier · paid %s on %d bet%s that recovered%s" % (
+        _rw.usd(tally["saved"], False), nf, "" if nf == 1 else "s", _rw.usd(tally["paid"], False), nw,
+        "" if nw == 1 else "s", (" · %d still open" % tally["open"]) if tally["open"] else "")
+    second = "not counted: %d hedge%s fired at or under 0.40 (both lines the same); %d of the counted would never have " \
+             "been hedged at 0.40; %s" % (tally["same"], "" if tally["same"] == 1 else "s", tally["never"], N_READ)
+    return [first, second]
+
+
+def _n_what(st):
+    st = st or {}
+    hb = _f(st.get("hedge_belief"), None)
+    return ("the belief hedge fires under %s (was %s): each hedge bought between the lines is priced against what the %s "
+            "line would have done at the trajectory's asks" % (
+                ("%.2f" % hb) if hb is not None else "%.2f" % N_NEW_LINE, "%.2f" % N_OLD_LINE, "%.2f" % N_OLD_LINE))
+
+
 # ---------------------------------------------------------------------------
 def whats(start):
     """One plain line per change, read off the newest start record's flags where they matter."""
@@ -1344,6 +1492,7 @@ def whats(start):
         "J": "the extra hedge leg fires on odds under the line whatever fired the hedge alarm",
         "K": _k_what(start.get("cheap_window")),
         "L": _l_what(start),
+        "N": _n_what(start),
     }
 
 
@@ -1417,6 +1566,13 @@ def report(paths=None, now=None):
     else:
         evs, third, tally = _m(S, now, m_since, m_start)
         out.append(_change("M", _m_what(m_start), m_since, evs, extra=_m_extra(tally), third=third))
+    # N: from the first start record with hedge_belief at the new line (v-hedgeline60), its words off that record
+    n_since, n_start = S.hl_since()
+    if n_since is None:
+        out.append(_change("N", _n_what(None), None, [], not_live=N_NOT_LIVE))
+    else:
+        evs, tally = _n(S, now, n_since, n_start)
+        out.append(_change("N", _n_what(n_start), n_since, evs, extra=_n_extra(tally)))
     return out
 
 

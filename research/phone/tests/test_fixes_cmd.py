@@ -74,17 +74,19 @@ def test_page_over_the_synthetic_logs():
         assert s.startswith("🔧 <b>Pin changes</b>") and "\u2014" not in s, "no em dash on the phone"
         for cid in F.IDS:
             assert "<b>%s %s</b>" % (cid, F.NAMES[cid]) in s, cid
-        # A and B: one engagement each, with its line (the page is full, so each change shows its last event, cut)
+        # A and B: one engagement each. With fourteen changes (N, 11-08) the blocks with one 30-char event each run over
+        # one message (3,665 chars + the header and the total), so the full page is the blocks whole and NO event lines;
+        # the per-event words are on the watcher's $10+ alerts and in botdata.fixes (test_fixes); a two-message page is
+        # the next step
         assert "since Nov 1 3:37 PM ET\nengaged 1 time, last Nov 2 9:00 AM ET\n🟢 net <b>+$35.61</b> (+1.27% of the bank)" in s, s
         assert "engaged 1 time, last Nov 2 9:29 AM ET\n🟢 net <b>+$5.32</b> (+0.19% of the bank)" in s, s
-        assert "Nov 2 9:29 AM ET · NEAR · +$5.32 · it skipped a hedge of 50 Yes" in s, s
-        # C: 5 engagements, 2 open; its newest event (TRX, open) is listed, and J's too
+        assert "it skipped a hedge of 50 Yes" not in s and "\n  Nov" not in s, "no event lines once the blocks fill the page"
+        # C: 5 engagements, 2 open
         assert "engaged 5 times, last Nov 5 1:44 AM ET · 2 open\n🟢 net <b>+$95.94</b>" in s, s
-        cblock = s.split("<b>D ")[0].split("<b>C ")[1]
-        assert s.count("Nov 5 1:44 AM ET · TRX · open ·") == 2 and "ZEC" not in cblock and "SOL" not in cblock, s
+        assert "<b>N hedge line 0.60</b>\n" in s and "not live yet (comes with the first pin start on --hedge-belief 0.60)" in s, s
         for k in "ABCDEFGHIJ":
             blk = s.split("<b>%s " % k)[1].split("\n\n")[0]
-            assert blk.count("\n  ") == 1, "every engaged change shows its last event: %s\n%s" % (k, blk)
+            assert blk.count("\n  ") == 0, "the blocks whole, no event lines: %s\n%s" % (k, blk)
         # D..J: live since the new build, with their money
         assert "<b>D boost rail</b>\nthe 1.5x boost switches off only on a losing boosted-side leg" in s
         assert "since Nov 5 12:00 AM ET\nengaged 1 time, last Nov 5 12:30 AM ET\n🔴 net <b>-$9.55</b> (-0.34% of the bank)" in s, s
@@ -138,13 +140,19 @@ def test_l_jump_shadow_block():
         s = str(_run(now=TF.NOW_L))
         assert len(s) <= MAX_LEN, len(s)
         blk = s.split("<b>L jump hedge shadow</b>")[1]
-        assert blk.startswith("\nthe jump hedge is in shadow: it sends nothing; this is what it would have made (6 sd alarm, "
-                              "8 sd cap, 5.0c bar as before)\n"), blk[:300]
+        # the page is full (fourteen changes, K's and L's lines): the "what" lines are the first to go, then the lines are
+        # cut to 120 chars; L's money and the start of each of its lines are on the page whatever step it lands on
         assert "since Nov 8 2:00 PM ET\nengaged 4 times, last Nov 8 4:44 PM ET · 1 open\n🔴 net <b>-$54.17</b> (-1.93% of the bank)" in blk, blk
-        assert ("\nwould have paid $7.23 in premiums on 2 won markets · would have saved $51.05 on 1 flip (vs the odds hedge pin "
-                "really bought) · 1 still open\nso it would have made $54.17 (pin's odds hedge really paid $10.35 on those won "
-                "markets); not counted: 1 capped (8 sd or more), 1 under the 5.0c bar\n") in blk, blk
+        assert "\nwould have paid $7.23 in premiums on 2 won markets · would have saved $51.05 on 1 flip (vs the odds hedge pin" in blk, blk
+        assert "\nso it would have made $54.17 (pin's odds hedge really paid $10.35 on those won markets); not counted: 1 capped" in blk, blk
         assert "—" not in s and "not live yet" not in blk.split("\n\n")[0]
+        lblk = FC.block(next(c for c in F.report(now=TF.NOW_L) if c["id"] == "L"), BANK, 0)
+        assert lblk[1] == ("the jump hedge is in shadow: it sends nothing; this is what it would have made (6 sd alarm, 8 sd cap, "
+                           "5.0c bar as before)"), lblk[1]
+        assert lblk[-2:] == ["would have paid $7.23 in premiums on 2 won markets · would have saved $51.05 on 1 flip (vs the odds "
+                             "hedge pin really bought) · 1 still open",
+                             "so it would have made $54.17 (pin's odds hedge really paid $10.35 on those won markets); not counted: "
+                             "1 capped (8 sd or more), 1 under the 5.0c bar"], lblk[-2:]
         # the page is full here (K's and L's lines), so the events are the first to go; L's own block is what matters
         blk_only = "\n".join(FC.block(next(c for c in F.report(now=TF.NOW_L) if c["id"] == "L"), BANK, 1, None))
         assert blk_only.endswith("\n  Nov 8 4:44 PM ET · SOL · open · a 6.4 sd jump against No with 30 s left: it would have bought "
@@ -171,15 +179,15 @@ def test_m_third_bet_block():
         s = str(_run(now=TF.NOW_M))
         assert len(s) <= MAX_LEN, len(s)
         blk = s.split("<b>M 3rd bet blocked</b>")[1]
-        assert blk.startswith("\na close spends 2 bets, never a 3rd (--extra-coin 0 --late-extra 0, brake 4.50, the same bet size; "
-                              "the old argv allowed one more on a new coin or inside 15 s); the net is what that held back on pin's "
-                              "own buys\n"), blk[:300]
         assert "since Nov 8 4:00 PM ET\nengaged 2 times, last Nov 8 5:59 PM ET\n🟢 net <b>+$96.29</b> (+3.44% of the bank)" in blk, blk
         assert "—" not in s and "not live yet" not in blk.split("\n\n")[0]
-        # with K, L and M all live and engaged the page is at its last step (no events, no extra lines: measured 3,379
-        # chars against 4,402 with the lines); M's own block carries the two lines and the events
-        assert "held back:" not in s and "a true 3rd bet" not in s and "\n  Nov" not in s, s
+        # with K, L, M (and N's block) live the full page has given up the "what" lines (N, 11-08: they go before any money
+        # line) and carries M's lines cut to 120 chars; M's own block carries its what, the two whole lines and the events
+        assert "yes" not in blk.split("\n\n")[0].split("\n")[1][:4] and "\nheld back: 2 full buys cut to the 2-bet budget" in blk, blk
         M = next(c for c in F.report(now=TF.NOW_M) if c["id"] == "M")
+        assert FC.block(M, BANK, 0)[1] == ("a close spends 2 bets, never a 3rd (--extra-coin 0 --late-extra 0, brake 4.50, the same "
+                                           "bet size; the old argv allowed one more on a new coin or inside 15 s); the net is what "
+                                           "that held back on pin's own buys"), FC.block(M, BANK, 0)[1]
         blk_only = "\n".join(FC.block(M, BANK, 1, None))
         assert ("\nheld back: 2 full buys cut to the 2-bet budget where the old argv had room for a 3rd; the contracts not bought "
                 "would have made $1.67 on 1 won, lost $97.96 on 1 flipped\n"
@@ -220,7 +228,7 @@ def test_before_the_new_build_and_empty_folder():
             os.remove(os.path.join(td, p))
         F._CACHE.clear()
         s = str(_run())                                        # the smoke's real folder may hold no pin log at all
-        assert s.count("not engaged yet") == 3 and s.count("not live yet") == 10 and "⚪ <b>All changes: net $0.00</b>" in s, s
+        assert s.count("not engaged yet") == 3 and s.count("not live yet") == 11 and "⚪ <b>All changes: net $0.00</b>" in s, s
         assert "(+0.00% of the bank)" in s and "engaged 0 times" in s
     finally:
         paths.set_results(old)
@@ -235,9 +243,10 @@ def test_size_limit_trims_events_first():
             c["events"] = [{"et": "Nov 5 1:00 AM ET", "coin": "ZEC", "usd": 1.0, "words": "w" * 400, "open": False}] * 9
         s = str(FC.render(d, _ctx()))
         assert len(s) <= MAX_LEN and "engaged 9 times" in s and "w" * 400 not in s, (len(s), s[:300])
-        # thirteen changes, every one engaged (M, 11-08): even one 30-char event each is over one message (the blocks
-        # alone are 3,361 chars), so the page is the blocks whole, no event lines; with twelve one 30-char event each fit
-        assert "w" * 29 not in s and "\n  Nov" not in s and s.count("\n\n<b>") == 13, "the thirteen blocks whole, no events"
+        # fourteen changes, every one engaged (N, 11-08): even one 30-char event each is over one message (the blocks
+        # alone were 3,361 chars at thirteen), so the page is the blocks whole, no event lines; with twelve one 30-char
+        # event each fit
+        assert "w" * 29 not in s and "\n  Nov" not in s and s.count("\n\n<b>") == 14, "the fourteen blocks whole, no events"
         d["changes"] = d["changes"][:12]
         s = str(FC.render(d, _ctx()))
         assert len(s) <= MAX_LEN and s.count("w" * 29 + "…") == 12 and "w" * 59 not in s, "twelve: one event each, cut to 30"
@@ -247,13 +256,15 @@ def test_size_limit_trims_events_first():
         s = str(FC.render(d, _ctx()))
         assert len(s) <= MAX_LEN and "x" * 2000 not in s and s.count("x" * 29 + "…") == 12, "one cut event each"
         for c in d["changes"]:
-            c["what"] = "y" * 300                              # the blocks alone are over the limit: no events at all
+            c["what"] = "y" * 300                              # the whats alone are over the limit: they go, the events return
         s = str(FC.render(d, _ctx()))
-        assert "xxxx" not in s and s.count("y" * 300) == 12, "when even one cut event each does not fit, the blocks alone"
+        assert len(s) <= MAX_LEN and "yyyy" not in s and s.count("x" * 29 + "…") == 12, \
+            "when the blocks with their whats do not fit, the whats go before any money line and the events come back"
         for c in d["changes"]:
             c["extra"] = ["z" * 200, "z" * 200]                # ...and the extra lines go last: cut to 120, then left out
-        s = str(FC.render(d, _ctx()))                          # (the 300-char whats alone are over one message here)
-        assert "z" * 200 not in s and "zzzz" not in s and s.count("y" * 300) == 12, "the long lines are left out, never whole"
+        s = str(FC.render(d, _ctx()))                          # (12 x 2 x 200-char lines are over one message with anything)
+        assert len(s) <= MAX_LEN and "z" * 200 not in s and "zzzz" not in s and "yyyy" not in s, \
+            "the long lines are left out, never whole"
         for c in d["changes"]:
             c["what"], c["extra"] = "short", []
         d["changes"][0]["extra"] = ["z" * 200, "z" * 200]

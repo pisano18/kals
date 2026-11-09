@@ -198,7 +198,7 @@ def _report(paths=None, now=NOW):
 def test_shape_and_sinces():
     d = tempfile.mkdtemp(prefix="fixes-test-")
     rep = _report(write_logs(d))
-    ck("".join(sorted(rep)) == F.IDS == "ABCDEFGHIJKLM", "thirteen changes A..M, one row each")
+    ck("".join(sorted(rep)) == F.IDS == "ABCDEFGHIJKLMN", "fourteen changes A..N, one row each")
     for c in rep.values():
         ck(set(c) >= {"id", "name", "what", "since", "engaged", "last_engaged", "open", "net_usd", "events", "extra",
                       "not_live", "third"}, "%s carries every field" % c["id"])
@@ -877,6 +877,133 @@ def test_helpers():
     ck(F.paths_since(ps, 0) == ps and F.paths_since([], F.SINCE_AB) == [], "paths_since edges")
     ck(F.et_words(F.SINCE_AB) == "Nov 1 3:37 PM ET" and F.et_words(F.SINCE_C) == "Nov 2 8:35 AM ET"
        and F.et_words(None) is None, "the ET words of the two live moments (EST after 11-01)")
+
+
+NA, NB, NC, ND = 1794181500, 1794182400, 1794183300, 1794184200      # 11-08 6:45 PM, 7:00, 7:15, 7:30 ET closes
+NOW_N = 1794184800.0                                                   # 7:40 PM ET: the 7:30 market is 10 min past its close
+
+
+def run_n(recs):
+    """The v-hedgeline60 run (11-08 6:30 PM ET on, --hedge-belief 0.60 in place of 0.40, the 1.25x extra with 11+ s left): N.
+    Every $ worked by hand with Kalshi's fee ceil(7 x p x (1 - p) x n) / 100 per fill."""
+    recs += [
+        _r("start", _ts(NA - 900), code_sha="d51b131b55cf", hedge_belief=0.6, hedge_panic=0.4, hedge_odds_mult=1.25,
+           hedge_odds_min_tau=11.0, hedge_jump=None, hedge_jump_shadow=6.0, hedge_jump_max=8.0, jump_hedge_min_ask=0.05,
+           cheap_window=[6.0, 10.0, 0.98], max_positions=5, boost_rail="off", hedge_tick="round", ws_later_fall_c=10.0,
+           extra_coin=0.0, late_extra=0.0, size=100.0),
+        # N1, FLIP (XRP 6:45 PM): belief 0.57 with 26 s left, 100 No at 40c + the 25 extra; the 0.40 line would have fired
+        # with 9 s left at 66c (no extra under 11 s). Flip: live 100 x 0.60 - fee 1.68 + 25 x 0.60 - fee 0.42 = 72.90;
+        # 0.40's 100 x 0.34 - fee 1.58 = 32.42; the earlier line saved 40.48
+        _r("hedge", _ts(NA - 26), ticker="KXXRP15M-26NOV081845-45", close_s=NA, side="no", price=0.40, n=100.0, asked=100.0,
+           ask=0.40, ask_size=400.0, limit_sent=0.50, entry=0.972, tau=26, belief=0.5712, status="executed", live=True),
+        _r("hedge_extra", _ts(NA - 26), ticker="KXXRP15M-26NOV081845-45", close_s=NA, side="no", price=0.40, n=25.0,
+           asked=25.0, extra_of=25.0, mult=1.25, min_tau=11.0, base_n=100.0, tau=26, belief=0.5712, trigger="belief",
+           status="executed", live=True),
+        _r("settled", _ts(NA + 20), ticker="KXXRP15M-26NOV081845-45", want="yes", result="no", cost=0.972, pnl_c=-9720.0),
+        _r("settled", _ts(NA + 20), ticker="KXXRP15M-26NOV081845-45", want="no", result="no", cost=0.40, pnl_c=7290.0),
+        # N2, WON (SOL 7:00 PM, we hold No): belief 0.55 with 20 s left, 50 Yes at 30c + the 12.5 extra; belief then went
+        # back up and the 0.40 line would never have fired. Won: live paid 15.00 + fee 0.74 + 3.75 + fee 0.19 = 19.68 for
+        # nothing; the earlier line cost 19.68
+        _r("hedge", _ts(NB - 20), ticker="KXSOL15M-26NOV081900-00", close_s=NB, side="yes", price=0.30, n=50.0, asked=50.0,
+           ask=0.30, ask_size=90.0, limit_sent=0.40, entry=0.97, tau=20, belief=0.55, status="executed", live=True),
+        _r("hedge_extra", _ts(NB - 20), ticker="KXSOL15M-26NOV081900-00", close_s=NB, side="yes", price=0.30, n=12.5,
+           asked=12.5, extra_of=12.5, mult=1.25, min_tau=11.0, base_n=50.0, tau=20, belief=0.55, trigger="belief",
+           status="executed", live=True),
+        _r("settled", _ts(NB + 20), ticker="KXSOL15M-26NOV081900-00", want="no", result="no", cost=0.97, pnl_c=150.0),
+        _r("settled", _ts(NB + 20), ticker="KXSOL15M-26NOV081900-00", want="yes", result="no", cost=0.30, pnl_c=-1968.0),
+        # N3, FLIP with the old line's extra (ETH 7:00 PM): belief 0.58 with 25 s left, 80 No at 35c + 20 extra; the 0.40
+        # line would have fired with exactly 11 s left (the extra's floor) at 50c WITH its 20 extra. Flip: live 80 x 0.65 - 1.28 + 20 x 0.65 - 0.32 =
+        # 63.40; 0.40's 80 x 0.50 - 1.40 + 20 x 0.50 - 0.35 = 48.25; saved 15.15
+        _r("hedge", _ts(NB - 25), ticker="KXETH15M-26NOV081900-00", close_s=NB, side="no", price=0.35, n=80.0, asked=80.0,
+           ask=0.35, ask_size=200.0, limit_sent=0.45, entry=0.975, tau=25, belief=0.58, status="executed", live=True),
+        _r("hedge_extra", _ts(NB - 25), ticker="KXETH15M-26NOV081900-00", close_s=NB, side="no", price=0.35, n=20.0,
+           asked=20.0, extra_of=20.0, mult=1.25, min_tau=11.0, base_n=80.0, tau=25, belief=0.58, trigger="belief",
+           status="executed", live=True),
+        _r("settled", _ts(NB + 20), ticker="KXETH15M-26NOV081900-00", want="yes", result="no", cost=0.975, pnl_c=-7800.0),
+        _r("settled", _ts(NB + 20), ticker="KXETH15M-26NOV081900-00", want="no", result="no", cost=0.35, pnl_c=6340.0),
+        # not counted: a hedge fired at belief 0.33 (both lines fire; BNB 7:15 PM), and a hedge that did not fill
+        _r("hedge", _ts(NC - 10), ticker="KXBNB15M-26NOV081915-15", close_s=NC, side="no", price=0.64, n=100.0, asked=100.0,
+           ask=0.64, ask_size=400.0, limit_sent=0.74, entry=0.97, tau=10, belief=0.33, status="executed", live=True),
+        _r("settled", _ts(NC + 20), ticker="KXBNB15M-26NOV081915-15", want="yes", result="no", cost=0.97, pnl_c=-9700.0),
+        _r("settled", _ts(NC + 20), ticker="KXBNB15M-26NOV081915-15", want="no", result="no", cost=0.64, pnl_c=3300.0),
+        _r("hedge", _ts(NC - 12), ticker="KXNEAR15M-26NOV081915-15", close_s=NC, side="no", price=0.45, n=0.0, asked=60.0,
+           status=None, order_id=None, live=True),
+        # N4, OPEN (DOGE 7:30 PM): belief 0.50 with 15 s left, 40 Yes at 35c; no settled record yet at NOW_N (pending)
+        _r("hedge", _ts(ND - 15), ticker="KXDOGE15M-26NOV081930-30", close_s=ND, side="yes", price=0.35, n=40.0, asked=40.0,
+           ask=0.35, ask_size=100.0, limit_sent=0.45, entry=0.96, tau=15, belief=0.50, status="executed", live=True),
+    ]
+    return recs
+
+
+def traj_n(recs):
+    """The trajectory log of run_n's closes, one record a second a market: fair is the probability of the row's want."""
+    def tj(tk, cs, tau, want, fair, ask, opp_ask):
+        return _r("traj", _ts(cs - tau), ticker=tk, close_s=cs, tau=tau, want=want, held=want, fair=fair, conf=fair,
+                  spot=1.0, strike=1.0, eff_strike=1.0, ask=ask, ask_size=100.0, opp_ask=opp_ask, opp_size=400.0,
+                  gate="held", near=True)
+    for tau in range(30, -1, -1):          # XRP: belief (want yes) 0.57, then 0.30 from 9 s; the No ask 40c, then 66c
+        recs.append(tj("KXXRP15M-26NOV081845-45", NA, tau, "yes", 0.57 if tau >= 10 else 0.30, 0.60 if tau >= 10 else 0.34,
+                       0.40 if tau >= 10 else 0.66))
+    for tau in range(30, -1, -1):          # SOL (want no): 0.55, back to 0.95 from 15 s: never under 0.40
+        recs.append(tj("KXSOL15M-26NOV081900-00", NB, tau, "no", 0.55 if tau >= 16 else 0.95, 0.60, 0.30 if tau >= 16 else 0.05))
+    for tau in range(30, -1, -1):          # ETH (want yes): 0.58, then 0.35 from 11 s; the No ask 35c, then 50c
+        recs.append(tj("KXETH15M-26NOV081900-00", NB, tau, "yes", 0.58 if tau >= 12 else 0.35, 0.65 if tau >= 12 else 0.50,
+                       0.35 if tau >= 12 else 0.50))
+    for tau in range(30, -1, -1):          # BNB: under the old line already (not counted either way)
+        recs.append(tj("KXBNB15M-26NOV081915-15", NC, tau, "yes", 0.33, 0.36, 0.64))
+    return recs
+
+
+def write_n(d):
+    pn = os.path.join(d, "pinrun-live-20261108T233000Z.jsonl")
+    with open(pn, "w", encoding="utf-8") as fh:
+        for r in run_n([]):
+            fh.write(json.dumps(r) + "\n")
+    with open(os.path.join(d, "pintraj-live-20261108T233000Z.jsonl"), "w", encoding="utf-8") as fh:
+        for r in traj_n([]):
+            fh.write(json.dumps(r) + "\n")
+    return pn
+
+
+def test_n_hedge_line():
+    d = tempfile.mkdtemp(prefix="fixes-test-")
+    pn = write_n(d)
+    rep = _report([pn], now=NOW_N)
+    n = rep["N"]
+    ck(n["name"] == "hedge line 0.60" and n["since"] == "Nov 8 6:30 PM ET" and n["not_live"] is None,
+       "N starts at the first start record with hedge_belief 0.60: %s" % n["since"])
+    ck("fires under 0.60 (was 0.40)" in n["what"], "N's words off the start record: %s" % n["what"])
+    ck(n["engaged"] == 4 and n["open"] == 1, "N: 4 hedges fired between the lines (1 open), the 0.33 hedge and the unfilled "
+       "one not counted: engaged %s open %s" % (n["engaged"], n["open"]))
+    ev = {e["coin"]: e for e in n["events"]}
+    ck(sorted(ev) == ["DOGE", "ETH", "SOL", "XRP"], "N's events by coin: %s" % sorted(ev))
+    ck(ev["XRP"]["usd"] == 40.48 and "bought 100 No at 40.0c" in ev["XRP"]["words"]
+       and "0.40 line would have bought at 66.0c with 9 s left" in ev["XRP"]["words"]
+       and "FLIPPED: the hedge got back $72.90, the 0.40 line's $32.42, so the earlier line saved $40.48" in ev["XRP"]["words"],
+       "N1 flip, no extra under 11 s at the old line: %s" % ev["XRP"]["words"])
+    ck(ev["SOL"]["usd"] == -19.68 and "0.40 line would never have fired" in ev["SOL"]["words"]
+       and "the bet won: the hedge paid $19.68, the 0.40 line's nothing, so the earlier line cost $19.68" in ev["SOL"]["words"],
+       "N2 recovered, the old line never fires: %s" % ev["SOL"]["words"])
+    ck(ev["ETH"]["usd"] == 15.15 and "0.40 line would have bought at 50.0c with 11 s left" in ev["ETH"]["words"]
+       and "got back $63.40, the 0.40 line's $48.25, so the earlier line saved $15.15" in ev["ETH"]["words"],
+       "N3 flip, the old line's extra priced at its own ask: %s" % ev["ETH"]["words"])
+    ck(ev["DOGE"]["usd"] is None and ev["DOGE"]["open"], "N4 open: no $ yet")
+    ck(n["net_usd"] == 35.95, "N net = 40.48 - 19.68 + 15.15: %s" % n["net_usd"])
+    ck(n["extra"][0] == "saved $55.63 on 2 flips hedged earlier · paid $19.68 on 1 bet that recovered · 1 still open",
+       "N's first line: %s" % n["extra"][0])
+    ck(n["extra"][1].startswith("not counted: 1 hedge fired at or under 0.40 (both lines the same); 2 of the counted would "
+                                "never have been hedged at 0.40; the 11-22 read"), "N's second line: %s" % n["extra"][1])
+    tot = F.totals(rep.values())
+    ck(abs(tot["net_usd"] - sum(c["net_usd"] for c in rep.values() if c["id"] != "J")) < 0.005 and tot["engaged"] >= 4,
+       "N is in the totals (real money)")
+    # the other changes are live (the start record carries their flags) with nothing to count
+    ck(rep["L"]["since"] and rep["L"]["engaged"] == 0 and rep["M"]["since"] and rep["M"]["engaged"] == 0
+       and rep["K"]["since"] and rep["K"]["engaged"] == 0, "K, L, M live on the same start record, nothing counted")
+    # before the line moved: N is not live
+    d2 = tempfile.mkdtemp(prefix="fixes-test-")
+    rep2 = _report(write_logs(d2))
+    ck(rep2["N"]["since"] is None and rep2["N"]["not_live"] == F.N_NOT_LIVE and rep2["N"]["engaged"] == 0,
+       "N before --hedge-belief 0.60: not live, its own words")
 
 
 if __name__ == "__main__":

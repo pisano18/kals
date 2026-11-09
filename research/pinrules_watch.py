@@ -103,10 +103,12 @@ RESTART_REMEDY = "A restart while flat puts it back on: /approve pinrestart"
 # in shadow: + = the premium it would have paid stayed in the bank (kept), - = the save it would have made was missed;
 # M (call B, 11-08) is a buy of pin's own the 2-bet budget held back: + = the bet lost, the held-back stake was saved,
 # - = the bet won, the held-back gain was given up (M's true-3rd-bet list is not an event list and never alerts)
+# N (v-hedgeline60, 11-08) is a hedge bought with belief between 0.40 and 0.60: + = it saved vs the 0.40 line (a flip
+# caught cheaper or a save 0.40 would have missed), - = premium 0.40 would not have paid (the bet recovered)
 FIX_POS = {"D": "MADE", "E": "MADE", "F": "SAVED", "G": "SAVED", "H": "SAVED", "I": "MADE", "J": "MADE", "K": "SAVED",
-           "L": "KEPT", "M": "SAVED"}
+           "L": "KEPT", "M": "SAVED", "N": "SAVED"}
 FIX_NEG = {"D": "LOST", "E": "COST", "F": "GAVE UP", "G": "GAVE UP", "H": "GAVE UP", "I": "LOST", "J": "LOST",
-           "K": "GAVE UP", "L": "GAVE UP", "M": "GAVE UP"}
+           "K": "GAVE UP", "L": "GAVE UP", "M": "GAVE UP", "N": "COST"}
 
 
 # ---------------------------------------------------------------------------

@@ -55,10 +55,12 @@ def _cut(words, n):
     return w if n is None or len(w) <= n else w[:max(1, n - 1)].rstrip() + "…"
 
 
-def block(c, bank, shown, cut=None, extra_cut=None):
-    """One change: name, what, since, engaged / last, net, its extra lines (cut to `extra_cut` chars; 0 = left out), the
-    last `shown` events (their words cut to `cut` chars)."""
-    out = ["<b>%s %s</b>" % (esc(c["id"]), esc(c["name"])), esc(c["what"])]
+def block(c, bank, shown, cut=None, extra_cut=None, what_cut=None):
+    """One change: name, what (cut to `what_cut` chars; 0 = left out), since, engaged / last, net, its extra lines (cut
+    to `extra_cut` chars; 0 = left out), the last `shown` events (their words cut to `cut` chars)."""
+    out = ["<b>%s %s</b>" % (esc(c["id"]), esc(c["name"]))]
+    if what_cut != 0:
+        out.append(esc(_cut(c["what"], what_cut)))
     if not c["since"]:
         out.append(c.get("not_live") or "not live yet (comes with the new build)")   # L: its own words (fixes.L_NOT_LIVE)
         return out
@@ -89,9 +91,13 @@ def block(c, bank, shown, cut=None, extra_cut=None):
 # change no longer fits one message, one 30-char event (the time, coin, $ and the first words) still does. The extra
 # cuts came with M (13 changes, 11-08): with K, L and M all live their six lines alone are a third of a message, so
 # measured on the 11-08 logs the blocks with whole lines and no events ran to 4,398 chars; cutting the lines to 120
-# chars keeps one 30-char event per change on the page (the test holds every step).
-PLAN = ((SHOWN, None, None), (2, None, None), (1, None, None), (1, 110, None), (1, 60, None), (1, 30, None),
-        (1, 30, 120), (0, None, None), (0, None, 120), (1, 30, 0), (0, None, 0))
+# chars keeps one 30-char event per change on the page (the test holds every step). The what-less steps came with N
+# (14 changes, 11-08): with K, L, M and N live the blocks with their lines no longer fit even without events, and the
+# money lines matter more than the one-line descriptions (the operator knows the changes; /fixes is read for the $), so
+# the "what" lines go (fourth element 0) before any money line is cut, and the events come back when that makes room.
+PLAN = ((SHOWN, None, None, None), (2, None, None, None), (1, None, None, None), (1, 110, None, None),
+        (1, 60, None, None), (1, 30, None, None), (1, 30, 120, None), (0, None, None, None), (0, None, 120, None),
+        (1, 30, 120, 0), (0, None, None, 0), (0, None, 120, 0), (1, 30, 0, None), (0, None, 0, None), (0, None, 0, 0))
 
 
 def render(d, ctx):
@@ -100,10 +106,10 @@ def render(d, ctx):
     total = "%s <b>All changes: net %s</b>%s · engaged %d time%s%s" % (
         _mark(T["net_usd"]), esc(usd(T["net_usd"])), esc(_pct(T["net_usd"], bank)), T["engaged"],
         "" if T["engaged"] == 1 else "s", (" · %d open" % T["open"]) if T["open"] else "")
-    for shown, cut, extra_cut in PLAN:
+    for shown, cut, extra_cut, what_cut in PLAN:
         out = [HEAD, i_(NOTE)]
         for c in changes:
-            out += [""] + block(c, bank, shown, cut, extra_cut)
+            out += [""] + block(c, bank, shown, cut, extra_cut, what_cut)
         out += ["", total]
         msg = "\n".join(out)
         if len(msg) <= MAX_LEN:
