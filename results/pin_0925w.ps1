@@ -403,19 +403,19 @@ function ConfirmOld($since, $vPid) {
   while ($true) {
     $f = Get-ChildItem 'C:\kals-repo\results\pinrun-live-*.jsonl' -ErrorAction SilentlyContinue | Where-Object { $_.CreationTime -ge $since } | Sort-Object CreationTime | Select-Object -First 1
     if ($f) {
-      $mode = $null
+      $runSeen = $null    # not named mode: PowerShell names are case-insensitive and RunMode reads the -Mode parameter
       try {
         $fs = [IO.File]::Open($f.FullName, 'Open', 'Read', 'ReadWrite')
         try { $sr = New-Object IO.StreamReader($fs); $lines = $sr.ReadToEnd() -split "`n" } finally { $fs.Close() }
-        foreach ($ln in $lines) { if ($ln -match '"kind": "start"') { try { $d = $ln | ConvertFrom-Json; $mode = RunMode $d } catch { $mode = '?' }; break } }
-      } catch { $mode = $null }
+        foreach ($ln in $lines) { if ($ln -match '"kind": "start"') { try { $d = $ln | ConvertFrom-Json; $runSeen = RunMode $d } catch { $runSeen = '?' }; break } }
+      } catch { $runSeen = $null }
       $ppid = $null
       $pidNew = $false
       if (Test-Path $pidf) { try { $ppid = [int](([IO.File]::ReadAllText($pidf)).Trim()); $pidNew = ((Get-Item $pidf).LastWriteTime -ge $since) } catch { $ppid = $null } }
       $alive = [bool]($ppid -and (Get-Process -Id $ppid -ErrorAction SilentlyContinue))
       $vGone = (-not $vPid) -or (-not (Get-Process -Id $vPid -ErrorAction SilentlyContinue))
-      if (-not $mode) { $why = "the next pin log $($f.Name) has no start record" }
-      elseif ($mode -ne 'old') { $why = "the next pin log $($f.Name) does not start 0925v as before ($mode)" }
+      if (-not $runSeen) { $why = "the next pin log $($f.Name) has no start record" }
+      elseif ($runSeen -ne 'old') { $why = "the next pin log $($f.Name) does not start 0925v as before ($runSeen)" }
       elseif (-not $pidNew) { $why = "results\pinrun-live.pid was not written after the rollback restart began" }
       elseif (-not $alive) { $why = "the pin in results\pinrun-live.pid (pid $ppid) is not running" }
       elseif ($vPid -and ($ppid -eq [int]$vPid)) { $why = "results\pinrun-live.pid still names the 0925w pin (pid $ppid)" }
@@ -471,9 +471,9 @@ function WatchNew($newPid, $since) {
       $k = [string]$d.kind
       $kinds[$k] = 1 + [int]$kinds[$k]
       if ($k -eq 'start') {
-        $mode = RunMode $d
-        $startSeen = ('code_sha ' + [string]$d.code_sha + ', ' + $mode)
-        if ($mode -eq 'new') { $start = $true }
+        $runSeen = RunMode $d
+        $startSeen = ('code_sha ' + [string]$d.code_sha + ', ' + $runSeen)
+        if ($runSeen -eq 'new') { $start = $true }
       }
       if ($k -eq 'feeds') {
         $feedsSeen = ('ticks ' + [string]$d.ticks + ', feeds ' + (@($d.feeds) -join ' '))
