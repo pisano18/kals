@@ -142,8 +142,8 @@ $py = "C:\Python314\python.exe"
 # with this full argv: SELF-TEST PASSED (.sweep\q-2026-10-23\clockbug\pinrun_0925m_selftest.out).
 # REVERT: copy results\restart_bot.before-etclock.ps1 over restart_bot.ps1
 # (= v-ladderboost, C:\kals-live-0925k, 32639cccc7f1) and rerun while flat.
-$code = "C:\kals-live-0925v"
-$codeSha = "d51b131b55cf"
+$code = "C:\kals-live-0925w"
+$codeSha = "05a01fbb5ed2"
 # pinrun's code_sha cannot see ordercli / pintake (0925e and 0925g shared
 # it), so the launcher checks both of them as well, before anything stops.
 $ordercliSha = "467782077a23"
@@ -212,6 +212,10 @@ $botArgs = @(
     #   --hedge-jump-shadow 6: the alarm is computed every second exactly as the jump hedge computed it and ONE jump_shadow record per outcome says what it would have bought (side, contracts, ask and size, belief, sd, tau, capped / cheap_skip / would_send); NOTHING is sent, no try is spent. --hedge-jump-max 8 and --jump-hedge-min-ask 0.05 below stay (the shadow records whether the cap and the 5c floor would have skipped each alarm). The 0.40 belief hedge, its 1.25x extra and every other flag are untouched; pinrun refuses --hedge-jump together with this flag. Reads (results\READS_DUE.json): 11-15 sanity (records being written, 0 orders sent by the shadow); 12-07 jumphedge-shadow-read: RE-ENABLE "--hedge-jump", "6", only if the shadow's would-have-been net vs the belief line is >= +$5/day over >= 30 days with both halves positive.
     #   Revert: this line pair back to "--hedge-jump", "6", (backups *.before-jumpshadow-*), rerun restart_bot while flat (same build, nothing else moves).
     "--hedge-jump-shadow", "6",
+    # v-hedge5 2026-11-10 (operator 11-09: "the bot needs to be as utterly fast as it can possibly be"; 11-10: "Why would being faster need to be a shadow?"): C:\kals-live-0925w = 0925v + results\patch_0925w.py (pinrun 05a01fbb5ed2; pintake and ordercli unchanged). The settlement index is streamed 5x a second for BTC ETH SOL XRP DOGE; pin read it once a second. Now it reads both: each whole-second print from whichever channel lands first (~40 ms sooner, identical values), sub-second prints never in settlement, and the hedge belief on the newest 5 Hz print too.
+    #   --index-5hz shadow: nothing is sent on the 5 Hz belief; ONE hedge5_shadow record per position says what the belief hedge would have bought the first second the 5 Hz belief was under 0.40 while the 1 Hz one was not. Switch to hedge when the read says the saves beat the false alarms.
+    #   Revert: this comment block and the line under it out, $code/$codeSha back to C:\kals-live-0925v / d51b131b55cf (backups *.before-0925w-*), rerun restart_bot while flat. Or change the mode only: "off" / "shadow" / "hedge".
+    "--index-5hz", "shadow",
     # v-wrongside (2026-10-27, operator: "Implement it"; IDEA_LEDGER LS20): a FIRST buy in a 15-minute market with
     # the index already across the strike from our side needs our side's market mid UP >= 1c over the last 5 s, or the
     # market is skipped for that close. Record 09-08..10-27: 22 such buys lost 6 (-$247.06); with the mid rising, 47 lost
