@@ -1104,6 +1104,22 @@
    "bar": "KEEP 0.60 if N's net >= $0 over the two weeks with at least 3 scored flips OR net >= +$30 on any count; back to 0.40 if net < $0; if under 3 flips and net between -$50 and $0, extend one week once. Not carried by one market: drop the largest single event and the sign must hold.",
    "status": "read",
    "read_note": "2026-11-09: SHELVED before deploy (never live). The deep dive (scratchpad deep/synthesis/REPORT_full.md, 3,111 positions, ledger within $1.39) found the 0.60 line at -$1.79 to +$1.53 a day at today's size out of sample; the earlier replays' positive signs came from lag/fill/belief-source choices. Nothing to read on 11-22."
+  },
+  {
+   "id": "hedge5-feed-sanity",
+   "due": "2026-11-11T18:00Z",
+   "what": "v-hedge5 (build 0925w, results/pin_0925w.ps1, patch_0925w.py): pin reads the settlement index's 5 Hz channel (BTC ETH SOL XRP DOGE) as well as the 1 Hz one; --index-5hz shadow or hedge, the operator's pick. Day-1 sanity: is the feed arriving and is nothing else disturbed?",
+   "how": "In results/pinrun-live-*.jsonl since the 0925w start record (code_sha 05a01fbb5ed2, index_5hz shadow|hedge): one index5_up record (fast_ticks > 0) and no index5_silent; hedge_quote rows on BTC/ETH/SOL/XRP/DOGE carry belief5 (not null on most held seconds), on BNB/ZEC/NEAR/HYPE belief5 null; the feeds record shows > 10 ticks; the next end record's index_stats has fast_ticks, fast_first, fast_dup, sub5 >= 1; compare entries per hour and index_stale hedge_blind records with the 3 days before (no new staleness); hedge_alarm records carry belief_1hz / belief5 / by_5hz.",
+   "bar": "PRE-REGISTERED 2026-11-10. OK = index5_up present, belief5 on the five coins' quotes, no rise in index_stale blind records or refused entries for index age. index5_silent or no belief5 = the subscription is not working: pin behaves as 0925v, read the socket errors (conn_stats / index_stats) before the 11-17 read.",
+   "status": "open"
+  },
+  {
+   "id": "hedge5-read",
+   "due": "2026-11-17T18:00Z",
+   "what": "v-hedge5 one-week read: do the 5 Hz-early hedges save more than the 5 Hz false alarms cost? (operator 11-10: 'Why would being faster need to be a shadow? If it's faster it can react quicker with more info')",
+   "how": "Every position whose 5 Hz belief crossed under 0.40 before the 1 Hz belief: shadow mode = the hedge5_shadow records; hedge mode = hedge_alarm with by_5hz true. FLIP (our side lost): saving = (price the 1 Hz line paid, from the real hedge record in shadow mode, or in hedge mode the first pintraj second with the 1 Hz belief under 0.40 at that row's hedge-side ask) minus the 5 Hz price (the shadow's ask and rungs swept for n, or the real fill), times n, plus the extra at tau >= 11, fees in. FALSE ALARM (our side won and the 1 Hz belief never crossed): cost = the premium (n x price + the extra, fees). Net = savings - false-alarm cost, at actual size, by coin, with the lead in ms (fast_ms vs the 1 Hz crossing).",
+   "bar": "PRE-REGISTERED 2026-11-10, before any record. shadow -> switch to --index-5hz hedge if net >= $0 over the week at actual size (argv only, same build). hedge -> keep if net >= $0; back to shadow if net < -$25 at any look. Fewer than 2 flips with a 5 Hz lead in the week = not decidable: extend one week, same bar.",
+   "status": "open"
   }
  ]
 }
