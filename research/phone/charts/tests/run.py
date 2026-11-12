@@ -14,7 +14,7 @@ if RESEARCH not in sys.path:
     sys.path.insert(0, RESEARCH)
 
 MODULES = ("test_main_account", "test_series", "test_botstats_charts", "test_kinds_palette_bars", "test_ctx",
-           "test_layout_rules")
+           "test_layout_rules", "test_share")
 
 
 def main():
