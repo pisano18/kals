@@ -7,10 +7,19 @@ botdata.series.account_series (was tgcharts._account_series).
 from botdata import series
 from phone.charts.base import (BLUE, BOT_COLOUR, INK, POT_WHAT, account_name, annotate_change, etdt, fig_new, headline,
                                mark_last, money_axis, png, time_axis, usd)
+from phone.charts import share as _share
 
 
-def chart_funds(ctx):
-    bs, c, prows, ok = ctx.bs_load()
+def chart_funds(ctx, share=False):
+    """share=True (v-tg-share: /share_funds /share_bots): the same picture with only what must be hidden hidden
+    (phone/charts/share.py): days since the first drawn moment, never dated; 'Account 1, 2', not the account or bot
+    names, no pot names; then the leak check."""
+    try:
+        bs, c, prows, ok = ctx.bs_load()
+    except Exception:                                   # noqa: BLE001
+        if share:                                       # botstats unreadable: nothing to share
+            return None
+        raise
     now = ctx.now
     drawn, stopped = [], []
     groups = {}
@@ -37,8 +46,10 @@ def chart_funds(ctx):
     # span (a pot live for 5 days gets 5 days), its start, its end and the change between them written on it
     fig, axs = fig_new(len(drawn), 2.7 * len(drawn) + 1.0)
     total, whole = 0.0, True
-    for ax, (key, live, pts, v, why, each) in zip(axs, drawn):
-        X = [etdt(t) for t, _y in pts]
+    t_first = min(d[2][0][0] for d in drawn)
+    tx = etdt if not share else (lambda t: (t - t_first) / 86400.0)    # share: days since the first moment drawn
+    for i, (ax, (key, live, pts, v, why, each)) in enumerate(zip(axs, drawn)):
+        X = [tx(t) for t, _y in pts]
         Y = [y for _t, y in pts]
         col = BOT_COLOUR.get(live[0], BLUE)             # the account's (first) bot's colour, as on /stats (10-26)
         nowv = v if v is not None else Y[-1]
@@ -47,15 +58,21 @@ def chart_funds(ctx):
         ax.plot(X, Y, color=col, lw=2.0, zorder=3)
         money_axis(ax, Y + [nowv], kind="balance", xs=X, room_top=0.12)
         ax.fill_between(X, Y, min(Y + [nowv]), color=col, alpha=0.07, lw=0)       # to the panel's own low, never $0
-        time_axis(ax, X[0], X[-1])
+        if share:
+            _share.days_axis(ax, X[0], X[-1], pad=0.02 * max(X[-1] - X[0], 1.0), label="days")
+        else:
+            time_axis(ax, X[0], X[-1])
         mark_last(ax, X[-1], nowv, usd(nowv, False), color=col)
         parts = (" + ".join("%s (%s) %s" % (POT_WHAT.get(k, "subaccount " + k), k, usd(x, False))
-                            for k, x in zip(key, each)),) if each and None not in each else ()   # each pot's part
-        annotate_change(ax, X, Y[:-1] + [nowv], extra=parts, ends=True)
-        ax.set_title("%s · %s: %s%s" % (account_name(key), " + ".join(bs.SPEC[b]["label"].lower() for b in live),
-                                        usd(nowv, False), " now" if v is not None else " (from the books)"),
+                            for k, x in zip(key, each)),) if each and None not in each and not share else ()
+        annotate_change(ax, ["day %d" % (int(X[0]) + 1)] if share else X, Y[:-1] + [nowv], extra=parts, ends=True)
+        name = ("Account %d" % (i + 1)) if share else "%s · %s" % (
+            account_name(key), " + ".join(bs.SPEC[b]["label"].lower() for b in live))
+        ax.set_title("%s: %s%s" % (name, usd(nowv, False), " now" if v is not None else " (from the books)"),
                      color=INK, fontsize=11)
     headline(fig, "Every running account: %s%s" % ("" if whole else "about ", usd(total, False)))
+    if share:
+        return _share.finish(fig, "funds")
     # v-tg-neutral (step 12, the operator: "Robinhood ... a withdrawal or deposit doesn't spike or change it at all"):
     # each line is the account now minus the trading after each hour (botdata.series.trading_only)
     cap = ("Each running account's money over time, %s: the account now (cash + open bets at cost) minus the trading "

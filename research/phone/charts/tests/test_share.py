@@ -34,14 +34,25 @@ def test_a_leaky_picture_is_not_sent():
 
 
 def test_share_pictures_from_botstats():
-    ck(kind_of("/share_today") == "share_today" and kind_of("/share_days") == "share_days"
-       and kind_of("/share_funds") == kind_of("/share_bots") == "share_funds" and kind_of("/share") is None,
-       "the share commands' picture kinds")
+    ck(kind_of("/share_today") == "share_today" and kind_of("/share_yesterday") == "share_yesterday"
+       and kind_of("/share_days") == "share_days" and kind_of("/share_funds") == kind_of("/share_bots") == "share_funds"
+       and kind_of("/share") is None, "the share commands' picture kinds")
     with planted_botstats(fx=False) as (_BS, _c, _procs, _td, ctx3):
-        for kind in ("share_today", "share_days", "share_funds"):
+        for kind in ("share_today", "share_yesterday", "share_days", "share_funds"):
             got = build(kind, ctx3)
             ck(is_png(got) and got[1] == share.CAPTION, "%s: a PNG with the safe caption (%r)"
                % (kind, got[1] if got else None))
+            orig = build(kind[6:], ctx3)
+            ck(is_png(orig) and orig[1] != share.CAPTION, "%s: the original still draws as before" % kind[6:])
 
 
-TESTS = (test_the_leak_check, test_a_leaky_picture_is_not_sent, test_share_pictures_from_botstats)
+def test_hourly_hides_each_market():
+    pts = [(600, 1.0), (1500, 3.0), (4000, 2.5), (4100, 6.0)]
+    ck(share.hourly(pts, 7200) == [(0, 0.0), (3600, 3.0), (7200, 6.0)],
+       "hourly: the running total on each full hour, never at a market's own minute: %r" % share.hourly(pts, 7200))
+    ck(share.hourly(pts, 5000) == [(0, 0.0), (3600, 3.0), (5000, 6.0)],
+       "hourly: money after the last full hour lands at the end: %r" % share.hourly(pts, 5000))
+
+
+TESTS = (test_the_leak_check, test_a_leaky_picture_is_not_sent, test_share_pictures_from_botstats,
+         test_hourly_hides_each_market)

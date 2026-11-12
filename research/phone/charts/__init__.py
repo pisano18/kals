@@ -22,8 +22,9 @@ WHAT EACH COMMAND GETS (one PNG, sent by pinphone with sendPhoto after the text)
   /losses                  losses.py: every bot's losing markets, coloured by bot
   /hedges /status /fills /bets /market   small.py: the pin bot's own log (each says "pin bot")
   /bars                    bars_chart.py: each RUNNING test's numbers against its pre-registered bar
-  /share_today /share_days /share_funds /share_bots   share.py: /today, /days and /funds safe to post publicly (no
-                           dates, times, bot/account/market names; a leak check refuses any picture that has one)
+  /share_today /share_yesterday /share_days /share_funds /share_bots   the /today /yesterday /days /funds pictures
+                           themselves (share=True), with only what must be hidden hidden (share.py: no dates, clock
+                           times, single markets or names; a leak check refuses any picture that has one)
   no picture: /open, /help, /pair, /pause /start /stop, /mute /unmute.
 
 RULES
@@ -52,9 +53,9 @@ _SHARED = (("/status", "status"), ("/s", "status"), ("/today", "today"), ("/yest
            ("/bots", "funds"), ("/funds", "funds"), ("/bank", "funds"), ("/accounts", "funds"))
 _PIN_LOG = (("/losses", "losses"), ("/hedges", "hedges"), ("/fills", "fills"), ("/bets", "fills"),
             ("/market", "market"), ("/bars", "bars"))
-# v-tg-share (2026-11-12): the same three pictures, safe to post publicly (share.py: no dates, times or names)
-_SHARE = (("/share_today", "share_today"), ("/share_days", "share_days"), ("/share_funds", "share_funds"),
-          ("/share_bots", "share_funds"))
+# v-tg-share (2026-11-12): the originals, safe to post publicly (share.py: what is hidden, and the leak check)
+_SHARE = (("/share_today", "share_today"), ("/share_yesterday", "share_yesterday"), ("/share_days", "share_days"),
+          ("/share_funds", "share_funds"), ("/share_bots", "share_funds"))
 CMD_KIND = dict(_SHARED + tuple(bots.CMD_KIND_BOTS.items()) + _PIN_LOG + _SHARE)
 # the pictures that read the ledger copy (pinphone puts ctx["ledger"] / ChartCtx.ledger only for these)
 LEDGER_KINDS = frozenset(["status", "today", "yesterday", "days", "stats", "losses", "hedges", "fills", "market"])
@@ -78,8 +79,12 @@ def build(kind, ctx):
         return funds.chart_funds(ctx)
     if kind.startswith("bot:"):
         return bot.chart_bot(ctx, kind[4:])
+    if kind in ("share_today", "share_yesterday"):      # v-tg-share: the original picture, share=True
+        return day.chart_day(ctx, kind[6:], share=True)
+    if kind == "share_days":
+        return days.chart_days(ctx, "days", share=True)
+    if kind == "share_funds":
+        return funds.chart_funds(ctx, share=True)
     fn = {"losses": losses.chart_losses, "hedges": small.chart_hedges, "status": small.chart_status,
-          "fills": small.chart_fills, "market": small.chart_market, "bars": bars_chart.chart_bars,
-          "share_today": share.chart_share_today, "share_days": share.chart_share_days,
-          "share_funds": share.chart_share_funds}.get(kind)
+          "fills": small.chart_fills, "market": small.chart_market, "bars": bars_chart.chart_bars}.get(kind)
     return fn(ctx) if fn else None

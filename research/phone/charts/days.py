@@ -11,19 +11,23 @@ from botdata.clock import prev_day
 from phone.charts.base import (AVG30, BLUE, MUTED, ORANGE, WINDOW_DAYS, annotate_change, etdt, fig_new, headline, made,
                                legend, mark_last, money_axis, note, pct_axis, pct_of_axis, pctx, png, time_axis,
                                ups_downs, usd, value_axis)
+from phone.charts import share as _share
 
 AVG_DAYS, LONG_DAYS = series.AVG_DAYS, series.LONG_DAYS
 
 
-def bars_by_day(ax, days, vals, fmt_last):
-    xs = [etdt(et_day_start(d) + 43200) for d in days]
+def bars_by_day(ax, days, vals, fmt_last, xs=None):
+    xs = xs or [etdt(et_day_start(d) + 43200) for d in days]
     ax.bar(xs, vals, width=0.78, color=ups_downs(vals), zorder=3)
     if xs:
         note(ax, xs[-1], vals[-1], fmt_last(vals[-1]), dy=6 if vals[-1] >= 0 else -6)
     return xs
 
 
-def chart_days(ctx, src):
+def chart_days(ctx, src, share=False):
+    """share=True (v-tg-share: /share_days): the same /days picture with only what must be hidden hidden
+    (phone/charts/share.py): days numbered (day 1 = the first drawn), never dated; 'the account', not pots or ET days;
+    then the leak check. Nothing when botstats is unreadable or partial (the main account's fallback names bots)."""
     led, now = ctx.ledger, ctx.now
     today = et_day(now)
     winrate = None
@@ -39,6 +43,8 @@ def chart_days(ctx, src):
             bs, pctx_, mrows, missing = series.all_day_markets(*ctx.bs_args())
         except Exception:                               # noqa: BLE001
             bs, mrows, missing = None, [], ["all"]
+        if share and (bs is None or not mrows or missing):
+            return None
         if bs is not None and mrows and not missing:
             per = {}
             for d_, _t, v_, _b in mrows:
@@ -111,7 +117,7 @@ def chart_days(ctx, src):
     a30_pct = series.avg_by_day(pct_by, days, LONG_DAYS)
     n = 4 if winrate is not None else 3
     fig, axs = fig_new(n, 3.0 * n + 1.2, sharex=True)
-    xs = bars_by_day(axs[0], days, nets, usd)
+    xs = bars_by_day(axs[0], days, nets, usd, xs=list(range(1, len(days) + 1)) if share else None)
     # the average line stops at yesterday: today's bar is half a day, and the last point then equals /today's
     # "average of the last 7 days"
     an = [avg_net.get(d) if d < today else None for d in days]
@@ -141,9 +147,9 @@ def chart_days(ctx, src):
                         label="%d-day average, to yesterday (%s a day)" % (min(LONG_DAYS, n_back(prev_day(today), LONG_DAYS)), usd(l30n)))
         legend(axs[0])
     money_axis(axs[0], nets + [a for a in an + a30n if a is not None], room_top=0.12)
-    axs[0].set_title("Money made each ET day")
+    axs[0].set_title("Money made each day" if share else "Money made each ET day")
     pc = [(100.0 * v / b) if b else 0.0 for v, b in zip(nets, b0s)]
-    bars_by_day(axs[1], days, pc, lambda v: "%+.2f%%" % v)
+    bars_by_day(axs[1], days, pc, lambda v: "%+.2f%%" % v, xs=xs if share else None)
     if lap is not None:
         axs[1].plot([x for x, a in zip(xs, ap) if a is not None], [a for a in ap if a is not None], color=ORANGE,
                     lw=1.8, ls="--", zorder=4, label="%d-day average, to yesterday (%+.2f%% a day)" % (AVG_DAYS, lap))
@@ -153,13 +159,13 @@ def chart_days(ctx, src):
                         label="%d-day average, to yesterday (%+.2f%% a day)" % (min(LONG_DAYS, n_back(prev_day(today), LONG_DAYS)), l30p))
         legend(axs[1])
     pct_axis(axs[1], pc + [a for a in ap + a30p if a is not None], room_top=0.12)
-    axs[1].set_title(pct_words)
+    axs[1].set_title("% of the account each day (what it held when that day began)" if share else pct_words)
     ax = axs[2]
     ax.plot(xs, run, color=BLUE, lw=2.2, zorder=3, marker="o", ms=3.5)
     ax.fill_between(xs, run, 0, color=BLUE, alpha=0.08, lw=0)      # a money-made axis always holds $0
     money_axis(ax, run, xs=xs, room_top=0.12)
     mark_last(ax, xs[-1], run[-1], usd(run[-1]))
-    annotate_change(ax, xs, [run[0] - nets[0]] + run[1:], base=dep or False)
+    annotate_change(ax, ["day %d" % xs[0]] if share else xs, [run[0] - nets[0]] + run[1:], base=dep or False)
     pct_of_axis(ax, dep, "%% of the %s put in" % usd(dep, False) if dep else "")
     ax.set_title("Money made, running total")
     if winrate is not None:
@@ -188,6 +194,10 @@ def chart_days(ctx, src):
         value_axis(ax, wv + bv + w7v, unit="%", kind="level", floor=0.0, cap=100.0)
         ax.set_title("Each day: won % of markets vs the break-even it needed")
         legend(ax)
+    if share:
+        _share.days_axis(axs[-1], xs[0], xs[-1], pad=0.6)
+        headline(fig, head)
+        return _share.finish(fig, src)
     time_axis(axs[-1], xs[0], xs[-1], pad_days=0.6)
     headline(fig, head)
     cap = ("%s: %s; the last %d days drawn, the running total counts all of them. Top: each day's money; then the "

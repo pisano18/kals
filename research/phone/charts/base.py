@@ -581,6 +581,22 @@ def category_axis(ax, labels, axis="x", positions=None, fontsize=9.5, top_first=
     setattr(ax, "_kals_" + axis, {"kind": "category"})
 
 
+def day_number_axis(ax, lo, hi, pad=0.6, label="day"):
+    """v-tg-share (2026-11-12): days numbered on x (lo..hi, numbers already: day 1, 2 ...), ticks every 1, 5 or 10 days
+    -- the /share pictures' time axis, never a date or a weekday. Panels sharing x get it once, as time_axis."""
+    import math
+    step = 1 if hi - lo <= 10 else (5 if hi - lo <= 60 else 10)
+    first = int(math.ceil(lo))
+    ticks = [first] + [t for t in range(first + 1, int(math.floor(hi)) + 1) if t % step == 0 and t - first >= 0.6 * step]
+    ax.set_xticks(ticks)
+    ax.set_xticklabels([str(t) for t in ticks])
+    ax.set_xlim(lo - pad, hi + pad)
+    ax.grid(False, axis="x")
+    ax.set_xlabel(label)
+    for a in ax.get_shared_x_axes().get_siblings(ax):
+        a._kals_x = {"kind": "category"}
+
+
 def no_axis(ax, axis="y", lo=0.0, hi=1.0):
     """An axis that carries no numbers (a strip's height): fixed limits, no ticks, no grid, no spine."""
     if axis == "y":

@@ -28,23 +28,24 @@ def run(text):
 
 def test_menu_lists_the_three_tappable():
     r = run("/share")
-    for n in ("/share_today", "/share_days", "/share_funds"):
+    for n in ("/share_today", "/share_yesterday", "/share_days", "/share_funds"):
         assert n in r, (n, r)
-    assert "No dates" in r and "screenshot of this chat" in r, r
+    assert "dates and clock times" in r and "screenshot of this chat" in r, r
 
 
 def test_share_with_a_word_points_at_its_command():
     assert "Tap /share_days" in run("/share days"), run("/share days")
     assert "Tap /share_funds" in run("/share bots"), run("/share bots")
     assert "Tap /share_today" in run("/share /today")
+    assert "Tap /share_yesterday" in run("/share yesterday")
     assert "Pictures safe to post" in run("/share nonsense")
 
 
 def test_each_share_command_names_its_picture():
-    for n, kind in (("/share_today", "share_today"), ("/share_days", "share_days"), ("/share_funds", "share_funds"),
-                    ("/share_bots", "share_funds")):
+    for n, kind in (("/share_today", "share_today"), ("/share_yesterday", "share_yesterday"),
+                    ("/share_days", "share_days"), ("/share_funds", "share_funds"), ("/share_bots", "share_funds")):
         r = run(n)
-        assert r.startswith("📸 <b>Postable picture coming</b>: " + S.WHAT[n]), r
+        assert r.startswith("📸 <b>Postable %s picture coming.</b>" % S.WHAT[n]), r
         assert R.kind_of(n) == kind, (n, R.kind_of(n))
     assert R.kind_of("/share") is None
 
