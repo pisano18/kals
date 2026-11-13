@@ -1,5 +1,6 @@
 """test_share.py -- /share_today /share_days /share_funds: drawn from planted botstats, and the leak check refuses every
 kind of give-away it guards against (v-tg-share, 2026-11-12)."""
+from botdata import series
 from phone.charts import build, kind_of, share
 from phone.charts.base import fig_new, money_axis
 from phone.charts.tests.planted import ck, is_png, planted_botstats
@@ -54,5 +55,37 @@ def test_hourly_hides_each_market():
        "hourly: money after the last full hour lands at the end: %r" % share.hourly(pts, 5000))
 
 
+def test_brag_carries_two_real_numbers():
+    from phone.charts.ctx import as_ctx
+    ck(kind_of("/share_brag") == "share_brag" and kind_of("/share_brag_8") == "share_brag_8", "brag kinds")
+    ck(share.brag_pct(0.8099) == 80 and share.brag_pct(0.81) == 81 and share.brag_pct(-0.023) == -3,
+       "brag_pct rounds DOWN: never more than was made")
+    with planted_botstats(fx=False) as (BS, _c, _procs, _td, ctx3):    # its record: 3 whole days before today
+        ctx = as_ctx(ctx3)
+        r = share.window_return(ctx, 3)
+        bs, pctx_, rows, _m = series.all_day_markets(*ctx.bs_args())
+        per = {}
+        for d, _t, v, _b in rows:
+            per[d] = per.get(d, 0.0) + v
+        days, d = [], BS.et_day(ctx.now)
+        for _ in range(3):
+            d = BS.shift_day(d, -1)
+            days.append(d)
+        want = 1.0
+        for d in days:
+            want *= 1.0 + per.get(d, 0.0) / BS.day_pot(pctx_, None, d)
+        ck(r is not None and abs(r - (want - 1.0)) < 1e-12,
+           "window_return: the last whole days' returns compounded, today left out (%r vs %r)" % (r, want - 1.0))
+        ck(share.window_return(ctx, 4) is None and share.brag_return(ctx, 1) is None
+           and share.chart_brag(ctx, 1) is None, "a window longer than the record: no number, no picture")
+        saved = share.brag_return
+        try:
+            share.brag_return = lambda _ctx, _w: 0.8099
+            got = build("share_brag", ctx3)
+        finally:
+            share.brag_return = saved
+        ck(is_png(got) and got[1] == share.CAPTION, "chart_brag: a PNG with the safe caption (leak check passed)")
+
+
 TESTS = (test_the_leak_check, test_a_leaky_picture_is_not_sent, test_share_pictures_from_botstats,
-         test_hourly_hides_each_market)
+         test_hourly_hides_each_market, test_brag_carries_two_real_numbers)

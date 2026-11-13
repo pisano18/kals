@@ -28,8 +28,9 @@ def run(text):
 
 def test_menu_lists_the_three_tappable():
     r = run("/share")
-    for n in ("/share_today", "/share_yesterday", "/share_days", "/share_funds"):
+    for n in ("/share_brag", "/share_brag_8", "/share_today", "/share_yesterday", "/share_days", "/share_funds"):
         assert n in r, (n, r)
+    assert r.index("/share_brag") < r.index("/share_today"), "the safest picture is listed first"
     assert "dates and clock times" in r and "screenshot of this chat" in r, r
 
 
@@ -43,7 +44,8 @@ def test_share_with_a_word_points_at_its_command():
 
 def test_each_share_command_names_its_picture():
     for n, kind in (("/share_today", "share_today"), ("/share_yesterday", "share_yesterday"),
-                    ("/share_days", "share_days"), ("/share_funds", "share_funds"), ("/share_bots", "share_funds")):
+                    ("/share_days", "share_days"), ("/share_funds", "share_funds"), ("/share_bots", "share_funds"),
+                    ("/share_brag", "share_brag"), ("/share_brag_8", "share_brag_8")):
         r = run(n)
         assert r.startswith("📸 <b>Postable %s picture coming.</b>" % S.WHAT[n]), r
         assert R.kind_of(n) == kind, (n, R.kind_of(n))

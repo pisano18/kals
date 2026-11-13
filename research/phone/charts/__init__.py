@@ -55,7 +55,8 @@ _PIN_LOG = (("/losses", "losses"), ("/hedges", "hedges"), ("/fills", "fills"), (
             ("/market", "market"), ("/bars", "bars"))
 # v-tg-share (2026-11-12): the originals, safe to post publicly (share.py: what is hidden, and the leak check)
 _SHARE = (("/share_today", "share_today"), ("/share_yesterday", "share_yesterday"), ("/share_days", "share_days"),
-          ("/share_funds", "share_funds"), ("/share_bots", "share_funds"))
+          ("/share_funds", "share_funds"), ("/share_bots", "share_funds"), ("/share_brag", "share_brag"),
+          ("/share_brag_8", "share_brag_8"))
 CMD_KIND = dict(_SHARED + tuple(bots.CMD_KIND_BOTS.items()) + _PIN_LOG + _SHARE)
 # the pictures that read the ledger copy (pinphone puts ctx["ledger"] / ChartCtx.ledger only for these)
 LEDGER_KINDS = frozenset(["status", "today", "yesterday", "days", "stats", "losses", "hedges", "fills", "market"])
@@ -85,6 +86,8 @@ def build(kind, ctx):
         return days.chart_days(ctx, "days", share=True)
     if kind == "share_funds":
         return funds.chart_funds(ctx, share=True)
+    if kind in ("share_brag", "share_brag_8"):          # two real numbers only: the return over N weeks, and N
+        return share.chart_brag(ctx, 8 if kind.endswith("_8") else 4)
     fn = {"losses": losses.chart_losses, "hedges": small.chart_hedges, "status": small.chart_status,
           "fills": small.chart_fills, "market": small.chart_market, "bars": bars_chart.chart_bars}.get(kind)
     return fn(ctx) if fn else None

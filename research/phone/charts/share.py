@@ -19,11 +19,21 @@ headline, titles, axis labels, tick labels, the right-hand axis, the legend, eve
 FORBIDDEN (dates, times, the exchange, market words, coins) plus every name the bot registry knows (bots, labels,
 commands, accounts, pots). One hit and the picture is not sent (logged). phone/charts/tests/test_share.py plants every
 leak it guards against.
+
+THE BRAG PICTURE (/share_brag, /share_brag_8; the operator 11-13: safe "even to that team of quants" whose full-time job
+is to work it out; it must never look like more than is earned, preferably not less). Every picture above still carries
+a path -- days, hours, drops -- and a path can be lined up with the public record once the post date dates it. This one
+carries exactly TWO real numbers: the time-weighted return over the last N whole weeks (each day's money as a share of
+what every pot held that morning, compounded: the standard, deposits never count as gains) and N. The curve between is
+the steady growth that joins them, and the picture says it is smoothed. The % shown is rounded DOWN to a whole percent.
+Nothing else is on it: no dollars (size), no days, no drops, no bots. Two numbers cannot be lined up with anything.
 """
+import math
 import re
 
 import bots
-from phone.charts.base import category_axis, day_number_axis, png
+from botdata import series
+from phone.charts.base import (BLUE, category_axis, day_number_axis, fig_new, headline, mark_last, pct_axis, png)
 from phone.log import log
 
 CAPTION = "Save the picture itself to post it: a screenshot of this chat shows when it was sent."
@@ -125,3 +135,61 @@ def hours_axis(ax):
 def days_axis(ax, lo, hi, pad=0.6, label="day"):
     """Days numbered (lo..hi), never a date or a weekday: base.day_number_axis (only base.py sets ticks and limits)."""
     day_number_axis(ax, lo, hi, pad=pad, label=label)
+
+
+# ---- the brag picture: two real numbers, nothing else ----------------------------------------------------------------
+def brag_return(ctx, weeks):
+    """The time-weighted return of every bot together over the last `weeks` whole weeks, ending yesterday."""
+    return window_return(ctx, 7 * weeks)
+
+
+def window_return(ctx, n_days):
+    """The time-weighted return of every bot together over the last n_days whole days, ending yesterday (each day's
+    money over what every pot held that morning, compounded), or None: botstats unreadable or partial, or the record
+    shorter than the window."""
+    try:
+        bs, pctx_, rows, missing = series.all_day_markets(*ctx.bs_args())
+    except Exception:                                   # noqa: BLE001
+        return None
+    if missing or not rows:
+        return None
+    per = {}
+    for d, _t, v, _b in rows:
+        per[d] = per.get(d, 0.0) + v
+    days, d = [], bs.et_day(ctx.now)
+    for _ in range(n_days):
+        d = bs.shift_day(d, -1)
+        days.append(d)
+    if min(days) < min(per):
+        return None
+    g = 1.0
+    for d in days:
+        b = bs.day_pot(pctx_, None, d)
+        if not b or b <= 0:
+            return None
+        g *= 1.0 + per.get(d, 0.0) / b
+    return g - 1.0
+
+
+def brag_pct(r):
+    """The whole percent shown: rounded DOWN, never more than was made."""
+    return int(math.floor(100.0 * r + 1e-9))
+
+
+def chart_brag(ctx, weeks):
+    r = brag_return(ctx, weeks)
+    if r is None or r <= -1.0:
+        return None
+    n = 7 * weeks
+    xs = [t / 7.0 for t in range(n + 1)]
+    ys = [100.0 * ((1.0 + r) ** (t / float(n)) - 1.0) for t in range(n + 1)]   # steady growth from 0 to r
+    shown = brag_pct(r)
+    fig, (ax,) = fig_new(1, 5.6)
+    ax.plot(xs, ys, color=BLUE, lw=2.6, zorder=3)
+    ax.fill_between(xs, ys, 0, color=BLUE, alpha=0.08, lw=0)
+    pct_axis(ax, ys, kind="pnl", room_top=0.12)
+    day_number_axis(ax, 0, weeks, pad=0.15, label="weeks")
+    mark_last(ax, xs[-1], ys[-1], "%+d%%" % shown, color=BLUE)
+    ax.set_title("Account growth, smoothed: the start and the end are real, after fees")
+    headline(fig, "%+d%% in %d weeks" % (shown, weeks))
+    return finish(fig, "brag")
