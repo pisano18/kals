@@ -82,7 +82,13 @@ def _money_block_raw(c, name, today, ctx=None):
         base["days_7"], base["days_30"], base["all_days"], base["markets"] = [], [], [], []
         base["error"] = base["error"] or "Kalshi has not been read yet"
         return base
-    rows = [s for sb, y in xs for s in _money.booked_rows(y) if _tables.owner(s.get("ticker"), sb) == name]
+    # v-other-every-pot (2026-11-13): a row no bot owns can sit in ANY pot -- subaccount 4 holds the old coin-race reward
+    # test's coin legs (10-11 and 10-23, -$29.88), which no money block counted, so the all-bots total read high -- so
+    # 'other' reads every pot's rows (still asking owner() pot by pot: a catch-all pot's rows stay its bot's). Its pot
+    # (the % base), its flags and its pot words stay the main account's. botdata/tests/test_other.py: every bot plus
+    # 'other' = every booked row in every pot, each once.
+    rs = xs if name != _reg.OTHER else [(s, (c.get("subs") or {}).get(s) or {}) for s in _tables.SUBS]
+    rows = [s for sb, y in rs for s in _money.booked_rows(y) if _tables.owner(s.get("ticker"), sb) == name]
     ms = [_money.market(s) for s in rows]
     if _hedges_of(name):                               # v-hedge-split: the bet / the hedge / the buys after a flip
         hx = _hedgeplay.current()
@@ -254,7 +260,7 @@ def bot(name, now=None, getter=None, procs=None):
 
 
 def all_bots(now=None, getter=None, procs=None):
-    """Every bot, the `other` main-account markets, and the ALL-BOTS total with each bot's share."""
+    """Every bot, the `other` markets (no bot's, in any pot), and the ALL-BOTS total with each bot's share."""
     now = time.time() if now is None else float(now)
     c, rows, ok = _load(now, getter, procs)
     today = et_day(now)
@@ -264,7 +270,7 @@ def all_bots(now=None, getter=None, procs=None):
     hidden = [b for b in _tables.BOTS if b not in active]
     other = _money_block(c, "other", today, ctx)
     other.pop("markets", None)
-    other["label"] = "Other main-account markets (the old oil bot, anything unlisted)"
+    other["label"] = "Other markets, no bot's (the old oil bot, the old coin-race reward test, anything unlisted)"
     total, missing = {}, [b for b in _tables.BOTS if not bots[b]["money"]["ok"]] + ([] if other["ok"] else ["other"])
     parts = [(b, bots[b]["money"]) for b in _tables.BOTS] + [("other", other)]
     for w in _money.WINDOW_KEYS:
