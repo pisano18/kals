@@ -55,9 +55,21 @@ def test_hourly_hides_each_market():
        "hourly: money after the last full hour lands at the end: %r" % share.hourly(pts, 5000))
 
 
-def test_brag_carries_two_real_numbers():
+def test_brag_every_real_day_shuffled():
+    import random
     from phone.charts.ctx import as_ctx
-    ck(kind_of("/share_brag") == "share_brag" and kind_of("/share_brag_8") == "share_brag_8", "brag kinds")
+    ck(kind_of("/share_brag") == "share_brag" and kind_of("/share_brag_60") is None, "brag kind")
+    rs = [0.02, -0.047, 0.031, 0.0, 0.055, -0.01, 0.012]
+    real = 1.0
+    for x in rs:
+        real *= 1.0 + x
+    ends = set()
+    for seed in range(20):
+        order, growth = share.shuffled_growth(rs, random.Random(seed))
+        ck(sorted(order) == sorted(rs) and len(growth) == len(rs) + 1 and growth[0] == 0.0,
+           "shuffled_growth: the same days, a new order, growth from 0")
+        ends.add(round(growth[-1], 9))
+    ck(ends == {round(100.0 * (real - 1.0), 9)}, "every shuffle ends at exactly the real total: %r" % ends)
     ck(share.brag_pct(0.8099) == 80 and share.brag_pct(0.81) == 81 and share.brag_pct(-0.023) == -3,
        "brag_pct rounds DOWN: never more than was made")
     with planted_botstats(fx=False) as (BS, _c, _procs, _td, ctx3):    # its record: 3 whole days before today
@@ -76,16 +88,11 @@ def test_brag_carries_two_real_numbers():
             want *= 1.0 + per.get(d, 0.0) / BS.day_pot(pctx_, None, d)
         ck(r is not None and abs(r - (want - 1.0)) < 1e-12,
            "window_return: the last whole days' returns compounded, today left out (%r vs %r)" % (r, want - 1.0))
-        ck(share.window_return(ctx, 4) is None and share.brag_return(ctx, 1) is None
-           and share.chart_brag(ctx, 1) is None, "a window longer than the record: no number, no picture")
-        saved = share.brag_return
-        try:
-            share.brag_return = lambda _ctx, _w: 0.8099
-            got = build("share_brag", ctx3)
-        finally:
-            share.brag_return = saved
+        ck(share.window_days(ctx, 4) is None and share.chart_brag(ctx, 4) is None
+           and build("share_brag", ctx3) is None, "a window longer than the record: no number, no picture")
+        got = share.chart_brag(ctx, 3, rng=random.Random(1))
         ck(is_png(got) and got[1] == share.CAPTION, "chart_brag: a PNG with the safe caption (leak check passed)")
 
 
 TESTS = (test_the_leak_check, test_a_leaky_picture_is_not_sent, test_share_pictures_from_botstats,
-         test_hourly_hides_each_market, test_brag_carries_two_real_numbers)
+         test_hourly_hides_each_market, test_brag_every_real_day_shuffled)

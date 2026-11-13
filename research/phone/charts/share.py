@@ -20,20 +20,25 @@ FORBIDDEN (dates, times, the exchange, market words, coins) plus every name the 
 commands, accounts, pots). One hit and the picture is not sent (logged). phone/charts/tests/test_share.py plants every
 leak it guards against.
 
-THE BRAG PICTURE (/share_brag, /share_brag_8; the operator 11-13: safe "even to that team of quants" whose full-time job
-is to work it out; it must never look like more than is earned, preferably not less). Every picture above still carries
-a path -- days, hours, drops -- and a path can be lined up with the public record once the post date dates it. This one
-carries exactly TWO real numbers: the time-weighted return over the last N whole weeks (each day's money as a share of
-what every pot held that morning, compounded: the standard, deposits never count as gains) and N. The curve between is
-the steady growth that joins them, and the picture says it is smoothed. The % shown is rounded DOWN to a whole percent.
-Nothing else is on it: no dollars (size), no days, no drops, no bots. Two numbers cannot be lined up with anything.
+THE BRAG PICTURE (/share_brag, the last 30 days; the operator 11-13: safe "even to that team of quants" whose
+full-time job is to work it out; never more than is earned, preferably not less). Every picture above carries the path
+in its real order, and once the post date dates it, a path lines up with the public record (a loss on the day prices
+flipped late). A two-number smooth curve was safe but proved nothing ("literally anybody could just make that"). This
+one shows EVERY real day of the window -- each day's money over what every pot held that morning, after fees -- and the
+growth they compound to, but in a fresh random order each time (random.SystemRandom): compounding does not care about
+order, so the end is exactly the real time-weighted total, and no day sits on its date, so nothing can be lined up.
+The picture says so. The % is rounded DOWN. No dollars, hours, bots or names. What it still shows: the spread of good
+and bad days -- it can test a guess about the strategy, never make one. 30 days only: a 60-day window (+424% on 11-13)
+was mostly September's small-account days, and would read as earning faster now than the account does.
 """
 import math
+import random
 import re
 
 import bots
 from botdata import series
-from phone.charts.base import (BLUE, category_axis, day_number_axis, fig_new, headline, mark_last, pct_axis, png)
+from phone.charts.base import (BLUE, category_axis, day_number_axis, fig_new, headline, mark_last, pct_axis, png,
+                               ups_downs)
 from phone.log import log
 
 CAPTION = "Save the picture itself to post it: a screenshot of this chat shows when it was sent."
@@ -137,16 +142,10 @@ def days_axis(ax, lo, hi, pad=0.6, label="day"):
     day_number_axis(ax, lo, hi, pad=pad, label=label)
 
 
-# ---- the brag picture: two real numbers, nothing else ----------------------------------------------------------------
-def brag_return(ctx, weeks):
-    """The time-weighted return of every bot together over the last `weeks` whole weeks, ending yesterday."""
-    return window_return(ctx, 7 * weeks)
-
-
-def window_return(ctx, n_days):
-    """The time-weighted return of every bot together over the last n_days whole days, ending yesterday (each day's
-    money over what every pot held that morning, compounded), or None: botstats unreadable or partial, or the record
-    shorter than the window."""
+# ---- the brag picture: every real day, in shuffled order ---------------------------------------------------------------
+def window_days(ctx, n_days):
+    """Each of the last n_days whole days' return, oldest first, ending yesterday: every bot's money that day over
+    what every pot held that morning. None: botstats unreadable or partial, or the record shorter than the window."""
     try:
         bs, pctx_, rows, missing = series.all_day_markets(*ctx.bs_args())
     except Exception:                                   # noqa: BLE001
@@ -162,12 +161,23 @@ def window_return(ctx, n_days):
         days.append(d)
     if min(days) < min(per):
         return None
-    g = 1.0
-    for d in days:
+    out = []
+    for d in reversed(days):
         b = bs.day_pot(pctx_, None, d)
         if not b or b <= 0:
             return None
-        g *= 1.0 + per.get(d, 0.0) / b
+        out.append(per.get(d, 0.0) / b)
+    return out
+
+
+def window_return(ctx, n_days):
+    """The time-weighted return over the last n_days whole days (window_days compounded), or None."""
+    rs = window_days(ctx, n_days)
+    if rs is None:
+        return None
+    g = 1.0
+    for r in rs:
+        g *= 1.0 + r
     return g - 1.0
 
 
@@ -176,20 +186,39 @@ def brag_pct(r):
     return int(math.floor(100.0 * r + 1e-9))
 
 
-def chart_brag(ctx, weeks):
-    r = brag_return(ctx, weeks)
-    if r is None or r <= -1.0:
+def shuffled_growth(rs, rng):
+    """(the days in a shuffled order, the running growth in % from 0 over them). Compounding does not care about
+    order, so the last point is exactly the real total, whatever the shuffle."""
+    order = list(rs)
+    rng.shuffle(order)
+    growth, g = [0.0], 1.0
+    for r in order:
+        g *= 1.0 + r
+        growth.append(100.0 * (g - 1.0))
+    return order, growth
+
+
+def chart_brag(ctx, n_days, rng=None):
+    rs = window_days(ctx, n_days)
+    if rs is None:
         return None
-    n = 7 * weeks
-    xs = [t / 7.0 for t in range(n + 1)]
-    ys = [100.0 * ((1.0 + r) ** (t / float(n)) - 1.0) for t in range(n + 1)]   # steady growth from 0 to r
-    shown = brag_pct(r)
-    fig, (ax,) = fig_new(1, 5.6)
-    ax.plot(xs, ys, color=BLUE, lw=2.6, zorder=3)
-    ax.fill_between(xs, ys, 0, color=BLUE, alpha=0.08, lw=0)
-    pct_axis(ax, ys, kind="pnl", room_top=0.12)
-    day_number_axis(ax, 0, weeks, pad=0.15, label="weeks")
-    mark_last(ax, xs[-1], ys[-1], "%+d%%" % shown, color=BLUE)
-    ax.set_title("Account growth, smoothed: the start and the end are real, after fees")
-    headline(fig, "%+d%% in %d weeks" % (shown, weeks))
+    order, growth = shuffled_growth(rs, rng or random.SystemRandom())   # a fresh order every time: nothing to undo
+    if growth[-1] <= -100.0:
+        return None
+    total = growth[-1] / 100.0
+    shown = brag_pct(total)
+    bars = [100.0 * r for r in order]
+    up = sum(1 for r in rs if r > 0)
+    fig, axs = fig_new(2, 8.6, ratios=[3, 2], sharex=True)
+    xs = list(range(0, n_days + 1))
+    axs[0].plot(xs, growth, color=BLUE, lw=2.4, zorder=3)
+    axs[0].fill_between(xs, growth, 0, color=BLUE, alpha=0.08, lw=0)
+    pct_axis(axs[0], growth, kind="pnl", room_top=0.12)
+    mark_last(axs[0], xs[-1], growth[-1], "%+d%%" % shown, color=BLUE)
+    axs[0].set_title("Account growth after fees: every day and the total are real")
+    axs[1].bar(xs[1:], bars, width=0.78, color=ups_downs(bars), zorder=3)
+    pct_axis(axs[1], bars, kind="pnl", room_top=0.1)
+    axs[1].set_title("Each day, % of the account that morning, shuffled so none sits on its real date")
+    day_number_axis(axs[1], 0, n_days, pad=0.6)
+    headline(fig, "%+d%% in %d days · %d of %d days up" % (shown, n_days, up, n_days))
     return finish(fig, "brag")
