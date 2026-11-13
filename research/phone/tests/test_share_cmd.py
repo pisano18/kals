@@ -30,8 +30,9 @@ def test_menu_lists_the_three_tappable():
     r = run("/share")
     for n in ("/share_brag", "/share_today", "/share_yesterday", "/share_days", "/share_funds"):
         assert n in r, (n, r)
-    assert r.index("/share_brag") < r.index("/share_today"), "the safest picture is listed first"
-    assert "dates and clock times" in r and "screenshot of this chat" in r, r
+    assert r.index("Safe to post") < r.index("/share_brag") < r.index("For you only") < r.index("/share_today"), \
+        "only /share_brag is under 'Safe to post'; the real-order pictures are for the operator only"
+    assert "screenshot of this chat" in r, r
 
 
 def test_share_with_a_word_points_at_its_command():
@@ -39,7 +40,7 @@ def test_share_with_a_word_points_at_its_command():
     assert "Tap /share_funds" in run("/share bots"), run("/share bots")
     assert "Tap /share_today" in run("/share /today")
     assert "Tap /share_yesterday" in run("/share yesterday")
-    assert "Pictures safe to post" in run("/share nonsense")
+    assert "Pictures of the results" in run("/share nonsense")
 
 
 def test_each_share_command_names_its_picture():
@@ -47,7 +48,10 @@ def test_each_share_command_names_its_picture():
                     ("/share_days", "share_days"), ("/share_funds", "share_funds"), ("/share_bots", "share_funds"),
                     ("/share_brag", "share_brag")):
         r = run(n)
-        assert r.startswith("📸 <b>Postable %s picture coming.</b>" % S.WHAT[n]), r
+        if n == "/share_brag":
+            assert r.startswith("📸 <b>Postable 60-day timeline picture coming.</b>"), r
+        else:
+            assert r.startswith("📸 <b>%s picture coming, for you only.</b>" % S.WHAT[n]), r
         assert R.kind_of(n) == kind, (n, R.kind_of(n))
     assert R.kind_of("/share") is None
 

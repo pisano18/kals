@@ -85,8 +85,8 @@ def build(kind, ctx):
         return days.chart_days(ctx, "days", share=True)
     if kind == "share_funds":
         return funds.chart_funds(ctx, share=True)
-    if kind == "share_brag":                            # every real day of the last 30, in a shuffled order
-        return share.chart_brag(ctx, 30)
+    if kind == "share_brag":                            # the last 60 days, shuffled inside 10-15 day stretches
+        return share.chart_brag(ctx)
     fn = {"losses": losses.chart_losses, "hedges": small.chart_hedges, "status": small.chart_status,
           "fills": small.chart_fills, "market": small.chart_market, "bars": bars_chart.chart_bars}.get(kind)
     return fn(ctx) if fn else None

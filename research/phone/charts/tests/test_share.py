@@ -55,44 +55,45 @@ def test_hourly_hides_each_market():
        "hourly: money after the last full hour lands at the end: %r" % share.hourly(pts, 5000))
 
 
-def test_brag_every_real_day_shuffled():
+def test_brag_timeline_shuffled_in_stretches():
     import random
     from phone.charts.ctx import as_ctx
-    ck(kind_of("/share_brag") == "share_brag" and kind_of("/share_brag_60") is None, "brag kind")
-    rs = [0.02, -0.047, 0.031, 0.0, 0.055, -0.01, 0.012]
-    real = 1.0
-    for x in rs:
-        real *= 1.0 + x
-    ends = set()
-    for seed in range(20):
-        order, growth = share.shuffled_growth(rs, random.Random(seed))
-        ck(sorted(order) == sorted(rs) and len(growth) == len(rs) + 1 and growth[0] == 0.0,
-           "shuffled_growth: the same days, a new order, growth from 0")
-        ends.add(round(growth[-1], 9))
-    ck(ends == {round(100.0 * (real - 1.0), 9)}, "every shuffle ends at exactly the real total: %r" % ends)
+    ck(kind_of("/share_brag") == "share_brag", "brag kind")
     ck(share.brag_pct(0.8099) == 80 and share.brag_pct(0.81) == 81 and share.brag_pct(-0.023) == -3,
        "brag_pct rounds DOWN: never more than was made")
-    with planted_botstats(fx=False) as (BS, _c, _procs, _td, ctx3):    # its record: 3 whole days before today
+    gen = random.Random(7)
+    book = []
+    for i in range(60):                                 # a deposit of 500 on day 12 spilling 20 into day 13, a 3 fee
+        moved = 500.0 if i == 11 else (20.0 if i == 12 else (-3.0 if i == 30 else 0.0))
+        book.append((round(gen.uniform(-60, 120), 2), 1000.0 + 20 * i, moved))
+    start = 900.0
+    real_path, _m = share.bankroll_path(book, list(range(60)), start)
+    for seed in range(40):
+        rng = random.Random(seed)
+        st = share.stretches(book, random.Random(seed))
+        ck(st[0][0] == 0 and st[-1][1] == 59 and all(b + 1 == c for (_a, b), (c, _d) in zip(st, st[1:])),
+           "stretches cover every day once, in sequence: %r" % st)
+        ck(any(b == 11 for _a, b in st), "the deposit's first day ends a stretch: %r" % st)
+        ck(all(b - a + 1 <= 19 for a, b in st), "no stretch longer than 19 days: %r" % st)
+        order = share.shuffle_book(book, rng)
+        ck(sorted(order) == list(range(60)) and all(a <= order[i] <= b for a, b in st for i in range(a, b + 1)),
+           "every day stays inside its own stretch")
+        path, _m = share.bankroll_path(book, order, start)
+        ck(all(abs(path[b + 1] - real_path[b + 1]) < 1e-6 for _a, b in st),
+           "the bankroll is exactly real at every stretch's end (seed %d)" % seed)
+        ck(abs(path[-1] - (start + sum(m for m, _p, _f in book) + 517.0)) < 1e-6, "and ends at the real bankroll")
+    with planted_botstats(fx=False) as (_BS, _c, _procs, _td, ctx3):    # its record: 3 whole days before today
         ctx = as_ctx(ctx3)
-        r = share.window_return(ctx, 3)
-        bs, pctx_, rows, _m = series.all_day_markets(*ctx.bs_args())
-        per = {}
-        for d, _t, v, _b in rows:
-            per[d] = per.get(d, 0.0) + v
-        days, d = [], BS.et_day(ctx.now)
-        for _ in range(3):
-            d = BS.shift_day(d, -1)
-            days.append(d)
-        want = 1.0
-        for d in days:
-            want *= 1.0 + per.get(d, 0.0) / BS.day_pot(pctx_, None, d)
-        ck(r is not None and abs(r - (want - 1.0)) < 1e-12,
-           "window_return: the last whole days' returns compounded, today left out (%r vs %r)" % (r, want - 1.0))
-        ck(share.window_days(ctx, 4) is None and share.chart_brag(ctx, 4) is None
-           and build("share_brag", ctx3) is None, "a window longer than the record: no number, no picture")
+        got = share.window_book(ctx, 3)
+        ck(got is not None and len(got[0]) == 3, "window_book: the last 3 whole days")
+        bk, end = got
+        ck(abs(bk[0][1] + sum(m + f for m, _p, f in bk) - end) < 1e-6,
+           "window_book: made + moved add up to the next morning's bankroll, ending at today's")
+        ck(share.window_book(ctx, 4) is None and build("share_brag", ctx3) is None,
+           "a window longer than the record: no picture")
         got = share.chart_brag(ctx, 3, rng=random.Random(1))
         ck(is_png(got) and got[1] == share.CAPTION, "chart_brag: a PNG with the safe caption (leak check passed)")
 
 
 TESTS = (test_the_leak_check, test_a_leaky_picture_is_not_sent, test_share_pictures_from_botstats,
-         test_hourly_hides_each_market, test_brag_every_real_day_shuffled)
+         test_hourly_hides_each_market, test_brag_timeline_shuffled_in_stretches)
