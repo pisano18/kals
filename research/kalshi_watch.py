@@ -36,7 +36,10 @@ THE CHECKS (each its own status, its own baseline in the state file, its own fai
                 said gone again; an empty list is not a missing field); the series' fee type, fee multiplier, settlement
                 sources and contract urls; each market's price steps (price_level_structure, price_ranges), settlement
                 timer and exchange_index (URGENT), and its rules text (sha256 of rules_primary with dates, clock times
-                and numbers blanked by kalshiwatch.norm_rules: a new market is not a change, a new sentence is URGENT);
+                and numbers blanked by kalshiwatch.norm_rules: a new market is not a change, a new sentence is URGENT;
+                the fixed-strike wording, "is at least 2045.23" with ETHUSD_RTI, counts as the opening-price wording
+                of the same index, "is at least the simple average ... before 2:15 AM" with ETHUSDRTI: rules_key,
+                v-kwfalse 11-13);
                 any fee change scheduled on one of our series (URGENT); trading paused outside Kalshi's schedule and
                 outside Thursday 3-5 AM ET (URGENT while it lasts); a new maintenance window other than the usual
                 Thursday 3-5 AM ET one; the balance answer's SHAPE only (its amount is never stored or said). HTTP
@@ -48,7 +51,9 @@ THE CHECKS (each its own status, its own baseline in the state file, its own fai
   cfb_pdf       CF Benchmarks' constituent exchanges PDF: its sha256 (which exchanges make the index).
                 Both hashes leave out what a server may stamp on each copy (/CreationDate, /ModDate, /ID, XMP dates); a
                 PDF that still changes on PDF_NOISY scans running says so once, quietly, and then only on /watch until
-                it holds still (the CF PDF read the same twice on 11-07).
+                it holds still (the CF PDF read the same twice on 11-07). The CF PDF with no answer at all (-1) on
+                PDF_REFUSED (48) scans running is marked 'site refuses' the same way: said once, quietly, then only on
+                /watch (not a failing check) until it answers (v-kwfalse 11-13: -1 on all 226 scans 11-08..11-13).
   cfb_status    https://status.cfbenchmarks.com/ (its incidents.json, else history.rss / history.atom): every new
                 incident is an alert; URGENT only while it is not resolved AND it names an index pin settles on (BRTI,
                 ETHUSD_RTI ... HYPEUSD_RTI, "Bitcoin Real Time Index") or all of CF's indices / its platform. On 11-07
@@ -62,7 +67,11 @@ THE CHECKS (each its own status, its own baseline in the state file, its own fai
                 (flat false: the run ended still holding); said quietly: universe_empty recovered, unbooked booked,
                 startup_bank from the api after a retry or from the mirror, log_write_fail of the trajectory file;
                 never said: expiry_drain (the run's ordinary end, 20 minutes before every planned restart) and
-                expiry_exit flat. A BLOCK (pin's entries_blocked / hedge_broken / clock_skew / log_write_fail /
+                expiry_exit flat; only written in the watch's log (v-kwfalse 11-13, shape_harmless): two api_shape
+                shapes pin writes at a start, an empty book's snapshot (keys 'clock' only) and a /markets floor_strike
+                missing under 90 s into the quarter-hour its market opened (Kalshi fills it 20-60 s in). An api_shape
+                head names its endpoint and field (a /portfolio/balance shape reads apart from a /markets one).
+                A BLOCK (pin's entries_blocked / hedge_broken / clock_skew / log_write_fail /
                 dayloss_write_fail records with a reason; entries_resumed ends it; a new pin run starts with none) still
                 in force at the scan is an URGENT open condition until pin resumes; one that began and ended between two
                 scans is a quiet note. A record more than 2 hours old when read (the watch was off or down) is said
@@ -884,8 +893,38 @@ def compare_keys(store, keys_now, ep, r, rid, nested=True, why_missing="", at_on
     store["keys"] = sorted((old - gone_drop) | keys_now)
 
 
+# v-kwfalse (2026-11-13): 7 of the watch's 12 URGENT alarms in its first 4.7 days (the 11-13 read) were one sentence.
+# Kalshi writes a 15-minute market's rules_primary two ways. Most read the opening-price wording ("If the simple average
+# of the sixty seconds of CF Benchmarks' ETHUSDRTI before 12:00 AM EST on Nov 14, 2026 is at least the simple average of
+# the sixty seconds of CF Benchmarks' ETHUSDRTI before 11:45 PM EST on November 13, 2026, then the market resolves to
+# Yes."); some carry the strike as a number and spell the index with an underscore ("... CF Benchmarks' ETHUSD_RTI
+# before 2:30 AM EST on Nov 12, 2026 is at least 2045.23, then the market resolves to Yes."; BTC says BRTI both ways).
+# On 11-12 199 of 200 KXETH15M markets read the first, the 2:30 AM one the second. Same contract, same index, same
+# second: the fixed-strike wording is hashed as the opening-price wording of the same index (its underscores dropped).
+# The hashes on file stay valid (every series' baseline holds its opening-price hash: checked on the server's state of
+# 11-13 for all 9 coins), so nothing new rings at the deploy. Any other text (another index, another average, another
+# comparison, a sentence added) is not this template and still rings; the alarm shows the text as Kalshi wrote it.
+# A whole-number strike ("is at least 2045, then") loses its comma in norm_rules (its number rule takes "2045," whole),
+# so the comma after '#' is optional.
+RULES_FIXED_STRIKE = re.compile(r"^If the simple average of the sixty seconds of CF Benchmarks' ([A-Za-z0-9_]+) before "
+                                r"TIME TZ on DATE is at least #,? then the market resolves to Yes\.$")
+RULES_OPEN_PRICE = ("If the simple average of the sixty seconds of CF Benchmarks' %s before TIME TZ on DATE is at "
+                    "least the simple average of the sixty seconds of CF Benchmarks' %s before TIME TZ on DATE, then "
+                    "the market resolves to Yes.")
+
+
+def rules_key(t):
+    """What a normalised rules text (norm_rules) is hashed as: the fixed-strike wording as the opening-price wording
+    of the same index, underscores dropped (ETHUSD_RTI -> ETHUSDRTI; v-kwfalse); any other text as it is."""
+    m = RULES_FIXED_STRIKE.match(t or "")
+    if not m:
+        return t
+    idx = m.group(1).replace("_", "")
+    return RULES_OPEN_PRICE % (idx, idx)
+
+
 def market_vals(ms):
-    """{field: sorted canonical values over the markets}, {rules sha256: normalised text}."""
+    """{field: sorted canonical values over the markets}, {rules sha256 (of rules_key): normalised text as written}."""
     vals = {}
     for m in ms:
         for f in MARKET_URGENT:
@@ -895,7 +934,7 @@ def market_vals(ms):
     for m in ms:
         t = norm_rules(m.get("rules_primary"))
         if t:
-            rules[sha256(t)] = t[:400]
+            rules[sha256(rules_key(t))] = t[:400]
     return {f: sorted(v) for f, v in vals.items()}, rules
 
 
@@ -1175,11 +1214,49 @@ def pdf_norm(body):
 
 
 PDF_NOISY = 3                                       # changed on this many scans running: its changes go quiet
+PDF_REFUSED = 48                                    # v-kwfalse: no answer on this many scans running: 'site refuses'
 
 
-def check_pdf(env, base, now, url, what, urgent):
+def check_pdf(env, base, now, url, what, urgent, refused_after=None):
+    """refused_after (v-kwfalse, 2026-11-13; the CF PDF only): after that many scans in a row with no answer at all (-1:
+    no connection, no HTTP status) the site is marked 'site refuses', said once, quietly, like a PDF that changes on
+    every read (PDF_NOISY), and then only on /watch: the check is no longer a failing one (its 'cannot read' condition
+    ends without a 'reads again' note), it is still tried every scan, and the first answer of any kind ends the mark
+    (said, quietly). The CF PDF answered -1 on all 226 scans from 11-08 to 11-13 and stood on /watch as FAILED. The
+    streak is counted here from the deploy on, so on the server the mark comes 48 scans (24 hours) after it."""
     r = Result()
     st, body, hd = env.fetch(url)
+    if refused_after:
+        if st == -1:
+            base["no_answer"] = int(base.get("no_answer") or 0) + 1
+            base.setdefault("no_answer_since", iso(now))
+            base["no_answer_why"] = show(bytes(body or b"").decode("utf-8", "replace"), 160)
+        else:
+            was, n = base.pop("refused", None), int(base.get("no_answer") or 0)
+            since = clock.utc_epoch(base.get("no_answer_since")) if base.get("no_answer_since") else None
+            for k in ("no_answer", "no_answer_since", "no_answer_why"):
+                base.pop(k, None)
+            if was:
+                r.alert("pdf|answers|%s|%s" % (what, iso(now)), "%s: the site answers again" % what,
+                        "%s answered again (HTTP %s) after %d scans with no answer%s. From this scan on it is read as "
+                        "before%s." % (url, st, n, (" (since %s)" % et(since)) if since is not None else "",
+                                       "" if st == 200 else ": a failed read counts toward the usual 3-scan streak"),
+                        False)
+        if st == -1 and int(base.get("no_answer") or 0) >= refused_after:
+            n, since = int(base["no_answer"]), clock.utc_epoch(base["no_answer_since"])
+            r.extra["refused"] = True
+            r.detail = ("site refuses the server: no answer on %d scans in a row since %s (the last: %s); marked 'site "
+                        "refuses' at the %s scan, still tried every scan, said when it answers" % (
+                            n, et(since), base.get("no_answer_why") or "-1", _ordinal(refused_after)))
+            if not base.get("refused"):
+                base["refused"] = iso(now)
+                r.alert("pdf|refused|%s|%s" % (what, base["no_answer_since"]), "%s: the site refuses the server" % what,
+                        "%s has given no answer at all (-1: no connection, no HTTP status) on %d scans in a row, "
+                        "about %s, since %s (the last: %s). Marked 'site refuses': it is still tried every scan but no "
+                        "longer counted as a failing check (/watch says so) and nothing more is said until it answers. "
+                        "It only says which exchanges make CF's indices; pin's trades do not wait on it." % (
+                            url, n, mins(n * EVERY_MIN * 60), et(since), base.get("no_answer_why") or "-1"), False)
+            return r
     if st != 200:
         return r.fail("%s answered %s" % (url, st))
     if not body.startswith(b"%PDF"):
@@ -1215,7 +1292,8 @@ def check_contract_pdf(env, base, now):
 
 
 def check_cfb_pdf(env, base, now):
-    return check_pdf(env, base, now, CFB_PDF, "CF Benchmarks' list of the exchanges in its indices", False)
+    return check_pdf(env, base, now, CFB_PDF, "CF Benchmarks' list of the exchanges in its indices", False,
+                     refused_after=PDF_REFUSED)
 
 
 RESOLVED = ("resolved", "postmortem", "completed")
@@ -1381,8 +1459,56 @@ def pin_judge(d):
         return (True, PIN_ALARM_WORDS[k]) if d.get("flat") is False else None
     if k == "expiry_drain":
         return None
+    if k == "api_shape" and (d.get("endpoint") or d.get("field")):
+        # v-kwfalse (2026-11-13): the endpoint and the field in the head, so a /portfolio/balance shape reads (and is
+        # grouped) apart from a /markets one
+        return True, "%s: %s, field %s" % (PIN_ALARM_WORDS[k], show(str(d.get("endpoint") or "?"), 60),
+                                           show(str(d.get("field") or "?"), 60))
     if k in PIN_ALARM_WORDS:
         return True, PIN_ALARM_WORDS[k]
+    return None
+
+
+SHAPE_NEW_MARKET_S = 90                             # v-kwfalse: a strike missing this soon after the open is not news
+_MON3 = ("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC")
+
+
+def shape_harmless(d):
+    """v-kwfalse (2026-11-13): why one of pin's api_shape records is a known harmless shape (written in the watch's log,
+    results\\kalshi_watch.log, never sent to the phone), or None (it keeps its level: URGENT). 5 of the watch's 12
+    URGENT alarms in its first 4.7 days (the 11-13 read) were these two, written once at every pin start (pin writes
+    each endpoint / field / what once a process), and exactly these two:
+      - a websocket orderbook_snapshot with no yes_dollars_fp / no_dollars_fp whose only other key is 'clock'
+        (absent_with_other_keys, keys 'clock'): an empty book's snapshot, no price level on either side. Any other key
+        beside it, or none, keeps the alarm.
+      - /markets floor_strike missing, written less than SHAPE_NEW_MARKET_S seconds into its quarter-hour, on the market
+        that opened then (its ticker closes 15 minutes after that quarter-hour, Eastern): Kalshi fills the strike 20-60
+        s after a market opens (11-08 14:45:20Z KXSOL15M 10:00, 18:30:20Z KXDOGE15M 13:45, 11-10 13:15:20Z KXXRP15M
+        8:30: each 20 s in). Pin skips such a row until the strike is there. A strike missing later, on another market,
+        from /events, or the field gone for good still rings: the signed /markets read here also says a missing
+        floor_strike (URGENT after 2 scans)."""
+    if d.get("kind") != "api_shape":
+        return None
+    ep, f, what = (str(d.get(x) or "") for x in ("endpoint", "field", "what"))
+    if ep == "ws orderbook_snapshot" and f == "yes_dollars_fp/no_dollars_fp" and what == "absent_with_other_keys":
+        ks = d.get("keys")
+        ks = [str(x).strip() for x in (ks if isinstance(ks, list) else str(ks or "").split(","))]
+        return "an empty book's snapshot: no price levels, only its 'clock' key" if ks == ["clock"] else None
+    if ep == "/markets" and f == "floor_strike" and what == "missing":
+        te = clock.utc_epoch(d.get("t")) if d.get("t") else None
+        if te is None:
+            return None
+        into = te % 900.0                   # ET is a whole number of hours from UTC: the quarter-hours are the same
+        if into >= SHAPE_NEW_MARKET_S:
+            return None
+        close = te - into + 900.0
+        tm = time.gmtime(close + clock._et_off(close))
+        stamp = "%02d%s%02d%02d%02d" % (tm.tm_year % 100, _MON3[tm.tm_mon - 1], tm.tm_mday, tm.tm_hour, tm.tm_min)
+        m = re.match(r"^KX[A-Z0-9]+?15M-(\d{2}[A-Z]{3}\d{6})-", str(d.get("ticker") or ""))
+        if not m or m.group(1) != stamp:
+            return None
+        return ("a market %d seconds old without its strike yet (Kalshi fills it 20-60 seconds after the open)"
+                % int(into))
     return None
 
 
@@ -1437,7 +1563,7 @@ def check_pin_log(env, base, now):
     blocks = dict(base.get("blocks") or {})       # reason -> {kind, t, fields, said}: pin's entry blocks in force
     h4 = [x for x in (base.get("h4xx") or []) if x[0] >= now - 2 * HEDGE_WINDOW_S]
     alarms, ended, new_ref = {}, [], []
-    n_recs, skipped = 0, 0
+    n_recs, skipped, n_harmless = 0, 0, 0
     for p, off in reads:
         got, end, sk = _read_from(p, off)
         skipped += sk
@@ -1474,6 +1600,12 @@ def check_pin_log(env, base, now):
                     ended.append((str(d["reason"]), b, d))
                 continue
             if k in PIN_ALARM_KINDS:
+                why = shape_harmless(d)
+                if why:                 # v-kwfalse: the watch's log only, never the phone
+                    n_harmless += 1
+                    env.log("pin api_shape of a known harmless shape, not sent to the phone: %s. Its record: %s%s" % (
+                        why, ("%s; " % d["t"]) if d.get("t") else "", fields_words(d, 300)))
+                    continue
                 j = pin_judge(d)
                 if j is None:
                     continue
@@ -1565,6 +1697,8 @@ def check_pin_log(env, base, now):
             plural(n_recs, "record"), et(float(last_ok)) if last_ok else "none yet", trailing)
     if blocks:
         r.detail += "; new entries blocked: %s" % ", ".join(sorted(blocks))
+    if n_harmless:
+        r.detail += "; %s of a known harmless shape only logged" % plural(n_harmless, "api_shape record")
     if skipped:
         r.detail += " (%s MB skipped: too much to read in one scan)" % ("%.1f" % (skipped / 2.0 ** 20))
     r.summary = "reading %s; last market list with markets %s" % (
@@ -1845,9 +1979,10 @@ def scan(env, st, now, only=None):
                 cs["fail_alerted"] = False
                 st["open"].pop("fail|" + cid, None)
                 fs = clock.utc_epoch(cs.get("fail_since")) if cs.get("fail_since") else None
-                queue(st, "clear|fail|%s|%s" % (cid, iso(now)), "Cleared: %s reads again" % label,
-                      "%s reads again%s." % (label, (" (it could not from %s, about %s)" % (et(fs), mins(now - fs)))
-                                             if fs else ""), False, cid, now, "cleared")
+                if not r.extra.get("refused"):  # v-kwfalse: a site marked 'refuses' does not read again (its note)
+                    queue(st, "clear|fail|%s|%s" % (cid, iso(now)), "Cleared: %s reads again" % label,
+                          "%s reads again%s." % (label, (" (it could not from %s, about %s)" % (et(fs), mins(now - fs)))
+                                                 if fs else ""), False, cid, now, "cleared")
     if first:
         lines = ["From now on a scan every %d minutes compares Kalshi, the index and the server with what it saw now, "
                  "and tells you what changed, old value beside new (urgent ones ring even in quiet hours). /watch "
@@ -2356,7 +2491,8 @@ def self_test(verbose=True, installer=True, logs=()):
     kauth_before = "kauth" in sys.modules
     td = tempfile.mkdtemp(prefix="kwatch_")
     try:
-        for part in (_self_test_body, _self_test_changelog, _self_test_pin, _self_test_server, _self_test_main):
+        for part in (_self_test_body, _self_test_changelog, _self_test_pin, _self_test_false_alarms, _self_test_server,
+                     _self_test_main):
             try:
                 with contextlib.redirect_stdout(out if verbose else io.StringIO()):
                     part(ck, os.path.join(td, part.__name__), out, installer)
@@ -3025,7 +3161,8 @@ def _self_test_pin(ck, td, out, installer=True):
     r2 = check_pin_log(env, base, Tp + 1800)
     heads = {a["head"]: a["urgent"] for a in r2.alerts}
     print("    pin kinds: %s" % sorted(heads.items()), file=out)
-    urgent_heads = ["Pin got a Kalshi answer without the shape it reads (api_shape)", "Pin had a hedge order fail "
+    urgent_heads = ["Pin got a Kalshi answer without the shape it reads: ws orderbook, field delta_malformed "
+                    "(api_shape)", "Pin had a hedge order fail "
                     "(hedge_fail)", "Pin got an empty market list from Kalshi", "Pin has a bet it has not booked 15 "
                     "minutes", "Pin gave up booking a bet", "Pin could not read its bank at startup",
                     "Pin ended its run still holding a bet", "Pin could not hedge a position (hedge_broken)"]
@@ -3107,6 +3244,178 @@ def _self_test_pin(ck, td, out, installer=True):
        and "for 16 minutes" in rs3.opens["pin_no_markets"]["head"],
        "after a 6-hour stand-down: no alarm while stood down, none for a new run 60 s old, the alarm 16 minutes in "
        "(%s)" % (rs3.opens.get("pin_no_markets") or {}).get("head"))
+
+
+# v-kwfalse (2026-11-13): the real material of the 11-13 read. Each coin's fixed-strike rules text (the wording of the
+# KXETH15M 2:30 AM market of 11-12, strike 2045.23) with: its norm_rules hash (the alarm's; ETH's 7f2cdf1b is on file
+# since its alarm, BTC and SOL had not rung yet on the server) and the opening-price hash its rules_key gives, which is
+# on file in the server's results\kalshi_watch_state.json of 11-13
+RULES_FIXED_1112 = ("If the simple average of the sixty seconds of CF Benchmarks' %s before 2:30 AM EST on Nov 12, "
+                    "2026 is at least 2045.23, then the market resolves to Yes.")
+RULES_1113 = {"KXBTC15M": ("BRTI", "dc071334", "f506e9e4"), "KXETH15M": ("ETHUSD_RTI", "7f2cdf1b", "d214e939"),
+              "KXSOL15M": ("SOLUSD_RTI", "9ee63c73", "15e4abe2"), "KXXRP15M": ("XRPUSD_RTI", "39dd39f0", "640e8e9a"),
+              "KXDOGE15M": ("DOGEUSD_RTI", "f4171bc2", "af438da7"), "KXBNB15M": ("BNBUSD_RTI", "1f2bf289", "19a76b8a"),
+              "KXZEC15M": ("ZECUSD_RTI", "2ff0e359", "496dfe13"), "KXNEAR15M": ("NEARUSD_RTI", "fab70b6b", "71bc77a3"),
+              "KXHYPE15M": ("HYPEUSD_RTI", "9998a967", "de6a6034")}
+# an open KXETH15M market's rules_primary as Kalshi served it on 11-13 (the opening-price wording, ETHUSDRTI)
+RULES_OPEN_ETH_1113 = ("If the simple average of the sixty seconds of CF Benchmarks' ETHUSDRTI before 12:00 AM EST "
+                       "on Nov 14, 2026 is at least the simple average of the sixty seconds of CF Benchmarks' "
+                       "ETHUSDRTI before 11:45 PM EST on November 13, 2026, then the market resolves to Yes.")
+# the server state's whole rules lists of 11-13 for the two series that had not rung yet (each holds only its
+# opening-price hash)
+RULES_ON_FILE_1113 = {"KXBTC15M": ["f506e9e41976c3be5db68d53862eec1b1b7567d3e13c5433367424aa1248e3cf"],
+                      "KXSOL15M": ["15e4abe2b2a59f87329dc4b0c31d38384da5cdf675e1108b3eca6a104ed8afac"]}
+# pin's 6 api_shape records behind the 5 api_shape alarms (11-08 14:31 and 17:46 runs, 11-10 12:35 run), as written
+REAL_SHAPES = [
+    {"keys": "clock", "endpoint": "ws orderbook_snapshot", "field": "yes_dollars_fp/no_dollars_fp",
+     "what": "absent_with_other_keys", "t": "2026-11-08T14:45:00Z", "kind": "api_shape"},
+    {"ticker": "KXSOL15M-26NOV081000-00", "endpoint": "/markets", "field": "floor_strike", "what": "missing",
+     "t": "2026-11-08T14:45:20Z", "kind": "api_shape"},
+    {"keys": "clock", "endpoint": "ws orderbook_snapshot", "field": "yes_dollars_fp/no_dollars_fp",
+     "what": "absent_with_other_keys", "t": "2026-11-08T18:00:01Z", "kind": "api_shape"},
+    {"ticker": "KXDOGE15M-26NOV081345-45", "endpoint": "/markets", "field": "floor_strike", "what": "missing",
+     "t": "2026-11-08T18:30:20Z", "kind": "api_shape"},
+    {"keys": "clock", "endpoint": "ws orderbook_snapshot", "field": "yes_dollars_fp/no_dollars_fp",
+     "what": "absent_with_other_keys", "t": "2026-11-10T12:45:00Z", "kind": "api_shape"},
+    {"ticker": "KXXRP15M-26NOV100830-30", "endpoint": "/markets", "field": "floor_strike", "what": "missing",
+     "t": "2026-11-10T13:15:20Z", "kind": "api_shape"}]
+
+
+def _self_test_false_alarms(ck, td, out, installer=True):
+    """v-kwfalse (2026-11-13): the 12 URGENT false alarms of the watch's first 4.7 days, from their real records (the
+    fixed-strike rules wording, 7; pin's two harmless api_shape shapes, 5), what must still ring, and the CF PDF's
+    'site refuses' mark."""
+    os.makedirs(td)
+    # (a) the rules wording: every coin's fixed-strike text hashes as its opening-price text, the hash on file
+    bad = []
+    for s, (idx, h_fixed, h_open) in sorted(RULES_1113.items()):
+        t = norm_rules(RULES_FIXED_1112 % idx)
+        if sha256(t)[:8] != h_fixed or sha256(rules_key(t))[:8] != h_open:
+            bad.append((s, sha256(t)[:8], sha256(rules_key(t))[:8]))
+    ck(not bad, "rules: the fixed-strike wording of all 9 coins (BRTI, <COIN>USD_RTI) hashes as the opening-price "
+                "wording on file in the server's state of 11-13 (%s)" % bad)
+    to = norm_rules(RULES_OPEN_ETH_1113)
+    ck(rules_key(to) == to and sha256(to)[:8] == "d214e939",
+       "rules: the opening-price wording Kalshi served on 11-13 is hashed as it is (d214e939, ETH's baseline)")
+    eth_fixed = RULES_FIXED_1112 % "ETHUSD_RTI"
+    still = [("thirty seconds", eth_fixed.replace("sixty", "thirty")),
+             ("is above", eth_fixed.replace("is at least", "is above")),
+             ("another index", eth_fixed.replace("ETHUSD_RTI", "ETHUSD_RR")),
+             ("BRTI on ETH", RULES_FIXED_1112 % "BRTI"),
+             ("an added sentence", eth_fixed + " If CF Benchmarks does not publish it, the market resolves to No."),
+             ("a strike in words", eth_fixed.replace("2045.23", "the strike"))]
+    rung = [w for w, v in still if sha256(rules_key(norm_rules(v)))[:8] not in ("d214e939", "7f2cdf1b")]
+    ck(len(rung) == len(still), "rules: still new on ETH: %s (%s)" % (", ".join(w for w, _v in still), rung))
+    # ...through check_markets: the server's own lists for BTC and SOL (the 2 alarms not rung yet), then ETH from a
+    # fixture baseline: the fixed-strike wording says nothing, another sentence is URGENT and shown as Kalshi wrote it
+    for s in ("KXBTC15M", "KXSOL15M"):
+        store, rk = {"rules": list(RULES_ON_FILE_1113[s])}, Result()
+        body = {"markets": [{"ticker": "%s-26NOV120230-30" % s, "rules_primary": RULES_FIXED_1112 % RULES_1113[s][0]}]}
+        check_markets(store, s, body, rk, T_SAT)
+        ck(not [a for a in rk.alerts if a["id"].startswith("rules|")] and store["rules"] == RULES_ON_FILE_1113[s],
+           "rules: %s's fixed-strike market against the server's list of 11-13: nothing said (%s)" % (
+               s, [a["head"] for a in rk.alerts]))
+    store, rk = {}, Result()
+    for i, texts in enumerate(([RULES_OPEN_ETH_1113] * 2, [RULES_OPEN_ETH_1113, eth_fixed],
+                               [eth_fixed, eth_fixed.replace("sixty", "thirty")])):
+        check_markets(store, "KXETH15M", {"markets": [{"ticker": "KXETH15M-26NOV1202%d0-%d0" % (i, i),
+                                                       "rules_primary": x} for x in texts]}, rk, T_SAT + 1800 * i)
+    ra = [a for a in rk.alerts if a["id"].startswith("rules|")]
+    ck(len(ra) == 1 and ra[0]["urgent"] and "New settlement rules sentence on ETH 15-minute" in ra[0]["head"]
+       and "thirty seconds of CF Benchmarks' ETHUSD_RTI" in ra[0]["body"] and len(store["rules"]) == 2,
+       "rules: ETH opening-price baseline, then a fixed-strike market: nothing; then 'thirty seconds': URGENT, the "
+       "text as Kalshi wrote it (%s)" % [a["head"] for a in ra])
+    # (b) pin's api_shape records: the 6 real ones are the two harmless shapes; every near miss keeps its alarm
+    ck(all(shape_harmless(d) for d in REAL_SHAPES), "api_shape: the 6 real records of 11-08..11-10 are harmless (%s)"
+       % [shape_harmless(d) for d in REAL_SHAPES])
+    snap, strike = REAL_SHAPES[0], REAL_SHAPES[1]
+    edt = {"kind": "api_shape", "endpoint": "/markets", "field": "floor_strike", "what": "missing",
+           "ticker": "KXBTC15M-26OCT200930-30", "t": "2026-10-20T13:15:20Z"}       # 9:30 AM EDT = 13:30Z
+    ck(shape_harmless(edt) and shape_harmless(dict(snap, keys=["clock"])),
+       "api_shape: the strike rule reads the ticker in Eastern time (daylight time too); keys as a list")
+    misses = [("a key beside clock", dict(snap, keys="clock,yes_book")), ("no other key", dict(snap, keys="")),
+              ("a snapshot not_a_list", dict(snap, what="not_a_list", field="yes_dollars_fp")),
+              ("95 s into the quarter", dict(strike, t="2026-11-08T14:46:35Z")),
+              ("the market before (it closes at the quarter)", dict(strike, ticker="KXSOL15M-26NOV080945-45")),
+              ("EDT read as EST", dict(edt, t="2026-10-20T14:15:20Z")),
+              ("no ticker", {k: v for k, v in strike.items() if k != "ticker"}),
+              ("no time", {k: v for k, v in strike.items() if k != "t"}),
+              ("from /events", dict(strike, endpoint="/events")), ("unreadable", dict(strike, what="unreadable")),
+              ("the balance", {"kind": "api_shape", "endpoint": "/portfolio/balance", "field": "balance",
+                               "what": "missing", "t": "2026-11-08T14:45:20Z"}),
+              ("another kind", dict(strike, kind="hedge_fail"))]
+    loud = [w for w, d in misses if shape_harmless(d) is None]
+    ck(len(loud) == len(misses), "api_shape: still an alarm: %s (%s)" % (", ".join(w for w, _d in misses), loud))
+    jb = pin_judge(misses[-2][1])
+    ck(jb == (True, "got a Kalshi answer without the shape it reads: /portfolio/balance, field balance")
+       and pin_judge({"kind": "api_shape"})[1] == PIN_ALARM_WORDS["api_shape"],
+       "api_shape: the head names the endpoint and the field (%s)" % (jb,))
+    # ...through check_pin_log: the 6 only logged; a balance shape and a close_time shape: 2 URGENT heads, apart
+    W, env = _pin_world(os.path.join(td, "shapes"), "pinrun-live-20261110T123539Z.jsonl")
+    Tn = float(calendar.timegm((2026, 11, 10, 13, 30, 0)))
+    W.pin_append(W.pin_cur, [{"kind": "start", "t": "2026-11-10T12:35:39Z"}, {"kind": "universe", "got": 9,
+                                                                               "t": "2026-11-10T12:39:00Z"}])
+    bs = {}
+    check_pin_log(env, bs, Tn - 3000)
+    W.pin_append(W.pin_cur, REAL_SHAPES + [
+        {"kind": "api_shape", "endpoint": "/portfolio/balance", "field": "balance", "what": "missing",
+         "t": "2026-11-10T13:20:00Z"},
+        {"kind": "api_shape", "endpoint": "/markets", "field": "close_time", "what": "unparsable", "value": "x",
+         "ticker": "KXBTC15M-26NOV100830-30", "t": "2026-11-10T13:15:20Z"},
+        {"kind": "universe", "got": 9, "t": "2026-11-10T13:29:00Z"}])
+    n0 = len(env.lines)
+    rp = check_pin_log(env, bs, Tn)
+    heads = sorted(a["head"] for a in rp.alerts)
+    logged = [x for x in env.lines[n0:] if "pin api_shape of a known harmless shape, not sent" in x]
+    ck(heads == ["Pin got a Kalshi answer without the shape it reads: /markets, field close_time (api_shape)",
+                 "Pin got a Kalshi answer without the shape it reads: /portfolio/balance, field balance (api_shape)"]
+       and all(a["urgent"] for a in rp.alerts) and len(logged) == 6
+       and "6 api_shape records of a known harmless shape only logged" in rp.detail,
+       "pin log: the 6 real harmless records only in the watch's log; the balance and close_time shapes 2 URGENT "
+       "alerts, each naming its endpoint and field (%s; %d logged)" % (heads, len(logged)))
+    # (c) the CF PDF with no answer: failed 47 scans, marked 'site refuses' at the 48th (one quiet note), then quiet;
+    # the contract PDF is never marked; the first answer ends the mark (quietly)
+    W.web_down = {CFB_PDF, CONTRACT_PDF}
+    bc, bk = {}, {}
+    rc = [check_cfb_pdf(env, bc, T_SAT + 1800 * i) for i in range(50)]
+    rk_ = [check_contract_pdf(env, bk, T_SAT + 1800 * i) for i in range(50)]
+    ck([x.status for x in rc] == ["failed"] * 47 + ["ok"] * 3
+       and [[a["urgent"] for a in x.alerts] for x in rc] == [[]] * 47 + [[False], [], []]
+       and "the site refuses the server" in rc[47].alerts[0]["head"] and rc[49].extra.get("refused")
+       and "site refuses the server: no answer on 50 scans in a row" in rc[49].detail,
+       "CF PDF: no answer on 47 scans = failed; the 48th marks 'site refuses' (one quiet note), then quiet (%s)"
+       % rc[49].detail)
+    ck(all(x.status == "failed" and not x.alerts for x in rk_) and not bk.get("refused"),
+       "the contract PDF (urgent on change) is never marked 'site refuses'")
+    W.web_down = set()
+    rb = check_cfb_pdf(env, bc, T_SAT + 1800 * 50)
+    W.web_down = {CFB_PDF}
+    rd = [check_cfb_pdf(env, bc, T_SAT + 1800 * (51 + i)) for i in range(2)]
+    ck(rb.status == "ok" and [a["urgent"] for a in rb.alerts] == [False] and "answers again" in rb.alerts[0]["head"]
+       and "after 50 scans with no answer" in rb.alerts[0]["body"] and bc.get("sha") and "refused" not in bc
+       and [x.status for x in rd] == ["failed", "failed"] and not rd[0].alerts,
+       "CF PDF answers again: one quiet note, read as before (its first copy recorded); no answer again starts a "
+       "new streak (%s)" % [a["head"] for a in rb.alerts])
+    # ...through scan(): 'cannot read' once at the 3rd scan, the mark at the 48th WITHOUT a 'reads again' note, the
+    # check ok on /watch, its failure condition gone; back: 'answers again', no 'reads again'
+    Wf = _World(os.path.join(td, "scan"))
+    _world_files(Wf)
+    envf, phf, stf = Wf.env(), _FakePhone(), new_state()
+    one = _stepper(Wf, envf, stf, phf)
+    one(T_SAT)
+    Wf.web_down = {CFB_PDF}
+    said = [one(T_SAT + 1800 * (i + 1), only=("cfb_pdf",)) for i in range(49)]
+    idx = [i for i, m in enumerate(said) if m]
+    ck(idx == [2, 47] and "cannot read CF Benchmarks index exchanges (PDF)" in said[2][0][0]
+       and "the site refuses the server" in said[47][0][0] and "reads again" not in said[47][0][0]
+       and not said[47][0][1] and stf["checks"]["cfb_pdf"]["status"] == "ok"
+       and "site refuses" in stf["checks"]["cfb_pdf"]["detail"] and "fail|cfb_pdf" not in stf["open"],
+       "scan: 'cannot read' at the 3rd scan, 'site refuses' (quiet) at the 48th with no 'reads again'; /watch shows it "
+       "ok, marked, and the failure condition is gone (messages at scans %s)" % [i + 1 for i in idx])
+    Wf.web_down = set()
+    back = one(T_SAT + 1800 * 51, only=("cfb_pdf",))
+    ck(len(back) == 1 and "the site answers again" in back[0][0] and "reads again" not in back[0][0],
+       "scan: the CF PDF back: one quiet 'answers again' (%s)" % [t[:90] for t, _u in back])
 
 
 def _self_test_server(ck, td, out, installer=True):

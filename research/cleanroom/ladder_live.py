@@ -146,16 +146,37 @@ def size_for_pot(pot):
 def read_pot(sender, sub):
     """The subaccount's pot in dollars: cash + the cost of what it holds (Kalshi's market_exposure, the cost basis
     of each open position), or None when either read is unreadable. The unit is READ, never inferred (hard rule 5,
-    as the main bot's read_bank): `balance` (cents) and `balance_dollars` must both be present and agree to a cent.
-    A resting bid's collateral is not added: the size only ever changes when no bid rests, so that read is cash."""
+    as the main bot's read_bank).
+    A resting bid's collateral is not added: the size only ever changes when no bid rests, so that read is cash.
+
+    v-ladder-bankread (2026-11-13): `balance_dollars` ALONE IS ENOUGH -- pin's read_bank rule from build 0925v
+    (bankread, 11-07), copied. Before this BOTH `balance` (cents) and `balance_dollars` had to be present, so the day
+    Kalshi drops the cents field (it has removed fields with a week's notice: liquidity 10-01, available_on_brokers
+    09-10) every read is None, start_refusal / AutoSize.start raise SystemExit and no restart brings the ladder back
+    (and a running one logs pot_unreadable every 60 s and never resizes). Its unit is in its name (a fixed-point
+    DOLLAR string), so the cents field is a cross-check, not the source: NaN / inf / garbage dollars are refused; a
+    cents value that is present must still read and agree to the cent (else refused, as before; the tolerance stays
+    this file's 0.011, so 1c agrees and 2c is refused whatever the float rounding); `balance` alone is still
+    refused -- dividing it by 100 would be inferring the unit."""
     st, bal = sender("GET", "/portfolio/balance", None, {"subaccount": int(sub), "exchange_index": POOL})
+    if st != 200 or not isinstance(bal, dict):
+        return None
+    cents, dollars = bal.get("balance"), bal.get("balance_dollars")
+    if dollars is None:
+        return None                              # cents alone: refused (the unit would be inferred)
     try:
-        cash = float(bal["balance_dollars"])
-        cents = float(bal["balance"])
-    except Exception:
+        cash = float(dollars)
+    except (TypeError, ValueError):
         return None
-    if st != 200 or abs(cents / 100.0 - cash) > 0.011:
-        return None
+    if cash != cash or abs(cash) == float("inf"):
+        return None                              # NaN / inf dollars: unreadable
+    if cents is not None:
+        try:
+            c = float(cents) / 100.0
+        except (TypeError, ValueError):
+            return None                          # a cents value that is there but unreadable: refused
+        if not abs(c - cash) <= 0.011:
+            return None                          # present and disagreeing (or NaN): refused, as before
     st2, pos = sender("GET", "/portfolio/positions", None,
                       {"subaccount": int(sub), "count_filter": "position", "settlement_status": "unsettled"})
     if st2 != 200 or not isinstance(pos, dict) or not isinstance(pos.get("market_positions"), list):
@@ -368,16 +389,30 @@ class Broker:
         return (not any(h["n"] > 0 for h in self.held.values()) and not self.open_orders() and not self.limbo()
                 and not any(v["status"] == "cancelling" for v in self.live.values()) and self.q.empty())
 
+    @staticmethod
+    def open_left(v):
+        """v-ladder-partfill (2026-11-13): what a sending/resting bid still has open -- SIZE - filled, never below 0.
+        Before this exposure() and market_contracts() counted every open bid at full SIZE, but on_fill() books a fill
+        into held WITHOUT changing the bid's status, so a partly filled resting bid was counted TWICE: its filled
+        contracts once as held and again inside SIZE (5-lot bid, 2 filled: 2 held + 5 = 7, not 5; a fully filled bid
+        still marked resting: 5 + 5 = 10), and the contract/money rails and both caps could refuse bids that fit.
+        A fully filled bid still marked resting counts 0 as an order (its contracts are all in held)."""
+        return max(0.0, float(SIZE) - float(v["filled"]))
+
     def exposure(self):
         pend = self.pending()
-        n = len(self.open_orders()) * float(SIZE) + sum(h["n"] for h in self.held.values())             + sum(float(SIZE) - v["filled"] for v in pend)
-        c = sum(float(v["px"]) * float(SIZE) for v in self.open_orders()) + sum(h["cost"] for h in self.held.values())             + sum(float(v["px"]) * (float(SIZE) - v["filled"]) for v in pend)
+        opn = self.open_orders()
+        n = sum(self.open_left(v) for v in opn) + sum(h["n"] for h in self.held.values()) \
+            + sum(float(SIZE) - v["filled"] for v in pend)
+        c = sum(float(v["px"]) * self.open_left(v) for v in opn) + sum(h["cost"] for h in self.held.values()) \
+            + sum(float(v["px"]) * (float(SIZE) - v["filled"]) for v in pend)
         return n, c
 
     def market_contracts(self, ticker):
-        """Contracts resting + held + cancelling/limbo remainder in one market."""
+        """Contracts resting (v-ladder-partfill: at SIZE - filled) + held + cancelling/limbo remainder in one market."""
         h = self.held.get(ticker)
-        return (h["n"] if h else 0) + sum(float(SIZE) for v in self.open_orders() if v["ticker"] == ticker)             + sum(float(SIZE) - v["filled"] for v in self.pending() if v["ticker"] == ticker)
+        return (h["n"] if h else 0) + sum(self.open_left(v) for v in self.open_orders() if v["ticker"] == ticker) \
+            + sum(float(SIZE) - v["filled"] for v in self.pending() if v["ticker"] == ticker)
 
     def replacing(self, ticker, desired):
         """True when a bid on `ticker` that the paper engine no longer wants (being replaced) still counts against the
@@ -793,21 +828,40 @@ def selftest():
            "--auto-size: NO upper start cap ($500 starts)")
         ck(start_refusal(None, 9.99, True, True) and start_refusal(None, None, True, True),
            "--auto-size: the $10 floor and the unreadable-pot refusal stay")
-        # the pot reader: unit read from both fields (hard rule 5), cost of holdings added, any unreadable piece -> None
+        # the pot reader: unit read, never inferred (hard rule 5), cost of holdings added, any unreadable piece -> None
         def pot_send(bal, pos, st=200, st2=200):
             return lambda m, p, b, q: (st, bal) if p == "/portfolio/balance" else (st2, pos)
         ck(read_pot(pot_send({"balance": 7000, "balance_dollars": "70.0000"},
                              {"market_positions": [{"ticker": "A", "position": 5, "market_exposure_dollars": "4.9000"},
                                                    {"ticker": "B", "position": -5, "market_exposure": 400}]}), 1) == 78.9,
            "pot = cash 70.00 + held 4.90 + 4.00 (cents field) = 78.90")
-        ck(read_pot(pot_send({"balance": 7000, "balance_dollars": "70.0000"}, {"market_positions": []}), 1) == 70.0
-           and read_pot(pot_send({"balance": 700000, "balance_dollars": "70.0000"}, {"market_positions": []}), 1) is None
-           and read_pot(pot_send({"balance_dollars": "70.0000"}, {"market_positions": []}), 1) is None
-           and read_pot(pot_send({"balance": 7000, "balance_dollars": "70.0000"}, {"nope": 1}), 1) is None
+        # v-ladder-bankread (2026-11-13): pin's 0925v rule -- balance_dollars alone is enough; a cents value that is
+        # present must read and agree to the cent; cents alone, garbage / NaN / inf dollars and a failed read are refused
+        _e = {"market_positions": []}
+        _h = {"market_positions": [{"ticker": "A", "position": 5, "market_exposure_dollars": "4.9000"}]}
+        _bad =[read_pot(pot_send(b, _e), 1) for b in (
+            {"balance": 700000, "balance_dollars": "70.0000"},      # disagree x100 (the cents-read-as-dollars shape)
+            {"balance": 7050, "balance_dollars": "70.0000"},        # disagree by 50c
+            {"balance": 7002, "balance_dollars": "70.0000"},        # disagree by 2c (one cent is the tolerance)
+            {"balance": 7000},                                      # cents alone: /100 would be inferring the unit
+            {"balance": "junk", "balance_dollars": "70.0000"},      # cents present but unreadable
+            {"balance_dollars": "x"}, {"balance_dollars": "nan"}, {"balance": 7000, "balance_dollars": "nan"},
+            {"balance_dollars": "inf"}, {"balance_dollars": "-inf"}, {"balance_dollars": None}, {}, "not a dict")]
+        _bad.append(read_pot(pot_send({"balance": 7000, "balance_dollars": "70.0000"}, _e, st=500), 1))
+        ck(read_pot(pot_send({"balance": 7000, "balance_dollars": "70.0000"}, _e), 1) == 70.0
+           and read_pot(pot_send({"balance_dollars": "70.0000"}, _e), 1) == 70.0
+           and read_pot(pot_send({"balance_dollars": "70.0000"}, _h), 1) == 74.9
+           and read_pot(pot_send({"balance": 7001, "balance_dollars": "70.0000"}, _e), 1) == 70.0
+           and start_refusal(None, read_pot(pot_send({"balance_dollars": "70.0000"}, _e), 1), True, True) is None
+           and len(_bad) == 14 and all(x is None for x in _bad),
+           "v-ladder-bankread: balance_dollars ALONE reads $70.00 (+ holdings $74.90) and --auto-size starts on it; both "
+           "present and agreeing to the cent read the dollars; disagreeing (x100, 50c, 2c), cents alone, garbage cents, "
+           "garbage / NaN / inf / missing dollars and a failed read are all refused (got %r)" % _bad)
+        ck(read_pot(pot_send({"balance": 7000, "balance_dollars": "70.0000"}, {"nope": 1}), 1) is None
            and read_pot(pot_send({"balance": 7000, "balance_dollars": "70.0000"}, {"market_positions": []}, st2=500), 1) is None
            and read_pot(pot_send({"balance": 7000, "balance_dollars": "70.0000"},
                                  {"market_positions": [{"ticker": "A", "position": 1}]}), 1) is None,
-           "pot: cents and dollars must agree, both present; a missing/failed/unreadable positions read is None (never 'flat')")
+           "pot: a missing/failed/unreadable positions read is None (never 'flat')")
         # the sizer: rails at the example pots, stops as a share of the pot, the clamp, no start cap
         clk = [1_790_000_000.0]
         flat = [True]
@@ -1135,6 +1189,31 @@ def selftest():
         mz4[0].orders = [_O(90001, "yes", "0.98")]
         brz4.sync(_E(mz4))
         ck(brz4.live[90001]["status"] == "sending", "capfix NULL: market cap off -> the same re-bid is placed as before")
+        # v-ladder-partfill (2026-11-13): a RESTING bid that is partly filled counts SIZE - filled as an order (the filled
+        # contracts are in held). Before, it counted held + SIZE: 2 of 5 filled -> 7 contracts / $6.86, not 5 / $4.90
+        brp = Broker(log, 3, False, fake_send, lambda: now[0])
+        mp = [_M("P1", 9100, [_O(91000, "yes", "0.98")])]
+        brp.sync(_E(mp))
+        while not brp.q.empty():
+            brp.work_once(brp.q.get())
+        brp.on_fill(91000, 2)                               # the poller books 2 of 5; on_fill leaves the bid 'resting'
+        np_, cp_ = brp.exposure()
+        ck(brp.live[91000]["status"] == "resting" and brp.held["P1"]["n"] == 2 and np_ == 5
+           and abs(cp_ - 0.98 * 5) < 1e-9 and brp.market_contracts("P1") == 5,
+           "partfill: a resting bid 2 of 5 filled = 2 held + 3 resting = 5 contracts, $4.90 (was 7, $6.86; got %s, %.2f)"
+           % (np_, cp_))
+        MARKET_CAP_X = 2
+        mp[0].orders = mp[0].orders + [_O(91001, "yes", "0.98")]   # a 2nd bid on the market while the 1st still rests
+        brp.sync(_E(mp))
+        ck(brp.live[91001]["status"] == "sending",
+           "partfill: market cap x2 -> 5 counted + a 2nd bid of 5 = 10 is placed (the double count made it 12: refused)")
+        MARKET_CAP_X = 0
+        brp.on_fill(91000, 5)                               # fully filled, still marked resting
+        np_, cp_ = brp.exposure()
+        ck(brp.live[91000]["status"] == "resting" and brp.open_left(brp.live[91000]) == 0 and np_ == 10
+           and abs(cp_ - 0.98 * 10) < 1e-9 and brp.market_contracts("P1") == 10,
+           "partfill: a fully filled bid still marked resting counts 0 as an order -> 5 held + the 2nd bid's 5 = 10 "
+           "(was 15; got %s, %.2f)" % (np_, cp_))
     finally:
         SIZE, MAX_CONTRACTS, MAX_COMMIT, DAY_STOP, MAX_SUB_BALANCE, MARKET_CAP_X, CLOSE_CAP_X = _sv
     print("ladder_live self-test " + ("PASSED" if not fails else "FAILED: " + "; ".join(fails)))
