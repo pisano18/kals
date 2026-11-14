@@ -221,14 +221,16 @@ $botArgs = @(
     # market is skipped for that close. Record 09-08..10-27: 22 such buys lost 6 (-$247.06); with the mid rising, 47 lost
     # 0 (+$101.60). Later legs, right-side buys, the hourly ladder and the hedge are untouched.
     # Revert: delete this line pair and rerun while flat (or $code back to 0925m / f36c427f99a5).
-    "--wrongside-rise-c", "1.0",
+    # v-undo1114 2026-11-14 (operator 11-14: "do what makes money"; his standing rule: no break-even safety filters): the wrong-side first-buy skip (v-wrongside, LS20) is OFF, 1.0 -> 0 (pinrun: 0 = off). The 11-14 retro (an analyst and a skeptic, each from the raw logs): -$35.14 to -$56.45 against never having it, 10-27..11-14; all 16 markets it skipped WON; 0 of 46 wrong-side first buys lost since it went live. Tracking vs keeping it: every first buy signal still carries spot_wrong and mid_rise_c (pin keeps the 5 s mids while --ws-later-fall-c is on), READS_DUE undo-WS-read (12-05). Revert: results\pin_undo1114.ps1 -Revert (all four undos), or this line out and "0" back to "1.0".
+    "--wrongside-rise-c", "0",
     # v-band99 2026-10-31 (operator: "I like the test you came up with, do that."): offers over 98c and at or under 99c, only in a market with nothing held, at a tenth of the bet; off again if band orders lose more than $60 or winners fill under 50% after 3 days. Revert: delete this line pair and $code/$codeSha back to C:\kals-live-0925n / e51a465d8b5c
     "--band99-ceiling", "0.99", "--band99-frac", "0.10",
     # v-0925x 2026-11-14: C:\kals-live-0925x = 0925w + results\patch_0925x.py + patch_0925x_ordercli.py (pinrun 3a19b0019e9c, ordercli f40c43061ea3; pintake unchanged): the 11-13 review fixes always on (clock, prebank, drain, connect) and ONE new flag, the line under this block: --band99-max-tau 30 (band99late) places a band leg (the line above) only with 30 s or less to the close. 11-14 reads of the live band: legs at 31-45 s held all 12 band losses and took pin's early slot (about -$7/day all-in); legs at 30 s or less lost 0 of 396 markets (about +$6/day). A band leg that is too early is refused band99_early and written once a market as band99_shadow; it spends no early leg, fill or attempt, so pin's own early leg can still buy. Read: READS_DUE band99-late-read (11-30).
     #   Revert: results\pin_0925x.ps1 -Revert (the .before-0925x-* backups: this block and the line under it out, $code/$codeSha/$ordercliSha back to C:\kals-live-0925w / 05a01fbb5ed2 / 467782077a23), pin takes it at its next start. Or drop only the line under this block (and this block): the band as before, the four fixes kept.
     "--band99-max-tau", "30",
     # v-wsfall10 + v-jumpcap8 2026-11-01 (operator: "Push it live, skip the slash approve."): refuse a LATER buy across the line when our side's mid fell 10c+ in 5 s (rest of that side skipped for the close); the jump hedge fires only under 8 sd (jump_capped logged). Monitor: research\pinrules_watch.py. Revert: delete this line pair and $code/$codeSha back to C:\kals-live-0925p / 24eec22bbaa7
-    "--ws-later-fall-c", "10", "--hedge-jump-max", "8",
+    # v-undo1114 2026-11-14: --hedge-jump-max 8 is OUT of the line under this one (the 8 sd cap on the jump hedge, v-jumpcap8: -$25.12 against never having it while the jump hedge was live, 11-01..11-08; $0/day now). The jump hedge itself stays SHADOW (--hedge-jump-shadow 6 above); each jump_shadow record keeps its jump_sd, so what the cap would have done stays computable. --ws-later-fall-c 10 (v-wsfall10, $0: never fired) stays; it also keeps the mids the wrong-side tracking reads. Revert: this line out and the line under it back to --ws-later-fall-c 10 --hedge-jump-max 8.
+    "--ws-later-fall-c", "10",
     # v-oddsmult 2026-11-02 (operator: "Go. Push it yourself without me needing to do anything."): when the 0.40 belief line fires with 11+ s left, ALSO buy (M - 1) x the position of the hedge side as a second order right after the covering hedge (never on the jump trigger). 1.25 first (the tiny-test rule), then 1.5, 2. Logged as hedge_extra; scored by research\pinrules_watch.py (rule C). Revert: delete this line pair and $code/$codeSha back to C:\kals-live-0925q / 0f49ba3ae221
     # v-oddsmult15 2026-11-13 (operator 11-13: "Improvements are obviously best."): 1.25 -> 1.5, the 11-03 pre-registered next step (bar: at 12 fires the extra fills >= 90% of what it asks at <= 3c over the fire ask, nothing skipped). At 1.25: 18 fires, 262.88 of 262.88 contracts filled, 0 skipped or refused, 16 won 2 lost, +$46.99 in 10.74 days. Next: 2.0 on the same bar (READS_DUE oddsmult-2x-staging). Revert: results\pin_oddsmult15.ps1 -Revert (this line out, "1.5" back to "1.25").
     "--hedge-odds-mult", "1.5", "--hedge-odds-min-tau", "11",
@@ -243,7 +245,7 @@ $botArgs = @(
     #   --cheap-window 6 10 0.98: a FIRST buy (nothing held) under 98c in a market closing 06:00-10:00 ET is refused and the market skipped for the close; markets closing 06-10 ET were the only losing stretch of the day from 10-01 (-$273.18 vs +$1,767.17 the rest of the day), first buys under 98c there lost (287 markets -$73.31) and 98c+ made money (+$72.64); September went the other way, so it is a TRIAL WITH A SHADOW.
     #   Every skip is shadowed in the log (refused gate cheap_window + cheap_window_settled: the size it would have asked, the belief hedge it would have bought, the result) and priced on the phone as /fixes change K, "without the rule" beside it; pinrules_watch alerts on any $10+ skip. Read 11-21: keep if K net >= $0.
     #   Revert (this flag only): delete this comment block and the flag line under it, rerun restart_bot while flat (the 0925v build runs = 0925t + the fail-safe fixes with it off).
-    "--cheap-window", "6", "10", "0.98",
+    # v-undo1114 2026-11-14: the cheap morning skip (K, v-cheapwin) is OFF -- its flag line (--cheap-window 6 10 0.98) is out of the list, and pinrun without the flag = off. The 11-14 retro: -$27.98 to -$42.73 in 6.16 days against never having it (ahead in only 28-33% of resamples); its pre-registered 11-21 bar (keep if K net >= $0) fails today; under the no break-even safety filters rule it goes. Tracking vs keeping it: every first buy signal / order carries the ticker (its ET close), tau and price; READS_DUE undo-K-read (12-05). Revert: this comment line back to the flag line, or results\pin_undo1114.ps1 -Revert.
     # v-0925v 2026-11-07/08 (operator: "Anything that could cause the 1k+ loss needs to be addressed immediately"): C:\kals-live-0925v = 0925t + patch_0925u.py + patch_0925v.py (pinrun d51b131b55cf; pintake and ordercli unchanged). The fail-safe fixes are always on; one new flag, --hedge-jump-shadow, ships OFF and is not passed here. Call B (the 3rd bet out, SIZE kept) is on the --extra-coin / --late-extra / --bank-brake lines below.
     #   Round 3 (11-08), always on: the day cap and the run abort see a market's NET, never one leg (a hedged market's legs book ~15 s apart: 11-02 ZEC -$281.63 then +$253.07); a jump give-up no longer marks the position hedged (the belief hedge keeps its tries); hedge sends no longer spend the close's 24-send entry budget; --max-positions counts unhedged contracts; the paused loop re-checks hedges every 0.05 s.
     #   Round 4 (11-08), always on: every leg of a market books from ONE read in ONE pass (the 15 s split was the GET throttle's), and while pintake's per-leg loss rail would refuse every buy new entries are blocked (leg_dip) instead of 2 refusals halting the run; the close's hedge cap on a jump-only second no longer marks a position hedged; hedge_broken needs failures on 2 markets; the jump shadow (off) reads every second until it would send; the startup self-test leaves no TEMP folder.
@@ -620,7 +622,8 @@ $botArgs = @(
     # we ALREADY hold gets nothing extra -- the argument is about two COINS
     # never losing together, not about a second bet on the first coin.
     # v-0925v call B 2026-11-08: 1 -> 0, a new coin no longer gets a 3rd bet in a close (the brake below keeps SIZE; revert: back to 1)
-    "--extra-coin", "0",
+    # v-undo1114 2026-11-14: call B undone, 0 -> 1 (with --late-extra 1 and --bank-brake 3.00 below = the values live 10-30..11-08; the same SIZE): a coin not yet held in a close may again take a 3rd bet. The 11-14 retro: call B cost -$57.62 in 6.16 days (-$9.35/day; all 3 buys it held back won), expected +$4-6/day back; the worst close goes back from 2 to 3 bets ($876 -> $1,314 at SIZE 447). READS_DUE undo-M-read (12-05).
+    "--extra-coin", "1",
     # AMENDMENT 59 + 61, 2026-09-19. Inside --late-tau a close may spend one
     # extra bet whatever it already holds. That window is the best we have:
     # 94.8c median against 97.8c at 31-45 s, 5.4c a contract against 2.2c,
@@ -633,7 +636,8 @@ $botArgs = @(
     # One extra bet, spendable by a new coin OR in the last seconds,
     # whichever arrives first.
     # v-0925v call B 2026-11-08: 1 -> 0, the last seconds no longer add a 3rd bet either (revert: back to 1)
-    "--late-extra", "0",
+    # v-undo1114 2026-11-14: call B undone, 0 -> 1: inside --late-extra-tau (15 s) a close may again spend a 3rd bet (one extra bet shared with --extra-coin above, never two).
+    "--late-extra", "1",
     # AMENDMENT 64, 2026-09-19, operator: "Then increase to 15 seconds if it
     # means better cheaper buys." The extra BUDGET reaches 15 s while the
     # 1.5x BOOST stays at 10 -- they were sharing --late-tau and should not.
@@ -676,7 +680,8 @@ $botArgs = @(
     # the $821 bank instead of ~93. The ratio stays the brake.
     # v-size15 2026-10-30 (operator: "You decide on pin size"): 4.00 -> 3.00 = 1.33x bet (trial; operator asked for caution; jump hedge kept); +$2/day, 84% of resamples; back to 4.00 on a day under -$100 or a bad 11-10 read
     # v-0925v call B 2026-11-08 (operator 11-07: "Anything that could cause the 1k+ loss needs to be addressed immediately ... And the answer isn't betting less"): 3.00 -> 4.5 with --extra-coin 1 -> 0 and --late-extra 1 -> 0 above. A close may now hold 2 x SIZE of main bets, not 3 x (the worst close $1,153 -> $768 at SIZE 392, two band-boosted coins no longer both fill), and SIZE does not move: it is floor(bank / (brake x bets x 98c)) = floor(bank / 8.82) both ways (3.00 x 3 = 4.5 x 2). The largest single order (1.5 x SIZE), the per-market cap, the stake cap and the day stop are identical; a 2nd boosted coin in the same close is now capped at 0.5 x SIZE (196 at SIZE 392, was 588) -- the 3rd bet's room. Cost: the 3rd bet's own trades, $1.26-$4.28/day at today's size (29 closes since 09-19, 0 lost); keep unless they run above $5/day over 30 days (the scan's bar). Revert: 4.5 -> 3.00 and both lines above back to 1.
-    "--bank-brake", "4.5",
+    # v-undo1114 2026-11-14: call B undone, 4.5 -> 3.00 with --extra-coin 1 and --late-extra 1 above: SIZE = floor(bank / (brake x (2 + 1) x 0.98)) = floor(bank / 8.82), exactly what 4.5 x 2 x 0.98 gave (pinrun size_for_bank, every whole-dollar bank $100-$20,000); the close budget goes back from 2 x SIZE to 3 x SIZE for a new coin or the last 15 s; the loss abort, loss cap and stake cap do not move. Revert: results\pin_undo1114.ps1 -Revert, or 3.00 -> 4.5 and both lines above back to 0.
+    "--bank-brake", "3.00",
     # AMENDMENT 65, same instruction. The loss abort has always been DERIVED
     # (-2 x SIZE x MAX_PER_CLOSE) and therefore GREW with the bank -- it had
     # already reached -$420 at 105 contracts. This is a hard dollar cap: the
