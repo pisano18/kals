@@ -1,4 +1,4 @@
-# Live launcher snapshot -- 2026-11-10
+# Live launcher snapshot -- 2026-11-14
 
 Byte-exact copies of the two files that start the live pin bot on the server, copied from the server on
 2026-11-07 at 11:46 AM ET, with their sha256 in `SHA256SUMS.txt`.
@@ -8,7 +8,7 @@ Byte-exact copies of the two files that start the live pin bot on the server, co
 | `restart_bot_repo.ps1` | `C:\kals-repo\restart_bot.ps1` | the KEEP-ALIVE copy: `watch_bot.ps1` runs it when pin is down |
 | `restart_bot_hand.ps1` | `C:\kals-live-0925n\restart_bot.ps1` | the HAND copy: every deploy script (`results\pin_<ver>.ps1`) and the phone's `/approve pinrestart` restart pin through it |
 
-Both start code `C:\kals-live-0925w` (code sha `05a01fbb5ed2`, pintake sha `b3c7bb48abb5`) with the same flags; since 2026-11-10 pin reads the settlement index 5x a second as well (`--index-5hz new`, v-hedge5, build 0925w); the jump hedge stays in shadow (`--hedge-jump-shadow 6`).
+Both start code `C:\kals-live-0925x` (code sha `3a19b0019e9c`, ordercli sha `f40c43061ea3`, pintake sha `b3c7bb48abb5`) with the same flags: build 0925x (v-0925x, `results\pin_0925x.ps1`, 2026-11-14) adds the 11-13 review fixes and `--band99-max-tau 30` (a band99 leg waits for 30 s or less to the close); pin reads the settlement index 5x a second as well (`--index-5hz shadow`, v-hedge5); the jump hedge stays in shadow (`--hedge-jump-shadow 6`); the hedge extra is 1.5x (`--hedge-odds-mult 1.5`, v-oddsmult15).
 
 `LIVE_PATHS.txt` holds the same two rows in the form the watcher reads (`<file here>  <server path>`): both live files
 are named `restart_bot.ps1`, so the name alone cannot say which one a snapshot copies. `research\botdata\tests\test_ops.py`

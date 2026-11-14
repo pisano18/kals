@@ -6,8 +6,9 @@ refusal is an explicit exit, not an assert, so `python -O` cannot skip one.
 usage: python patch_0925x.py <build_dir>      (build_dir holds research\\pinrun.py)
 Run BOTH patches on the build (either order): pinrun's v-0925x connect checks read the mark the ordercli patch adds.
 
-FOUR CONFIRMED REVIEW DEFECTS (2026-11-13), the smallest fix for each. No new flag, no trading rule, threshold, size,
-gate or hedge trigger moves; every message of the new self-test checks starts "v-0925x <item>".
+FOUR CONFIRMED REVIEW DEFECTS (2026-11-13), the smallest fix for each (always on, no flag; no trading rule,
+threshold, size, gate or hedge trigger moves), and ONE NEW FLAG (2026-11-14, band99late below; off when omitted = the
+0925w band exactly). Every message of the new self-test checks starts "v-0925x <item>".
 
   clock    book_shape_wrap knows Kalshi's "clock" key (added to orderbook frames 2026-10-29). An EMPTY book's snapshot
            ({market_ticker, market_id, clock}) recorded api_shape absent_with_other_keys keys=clock and, the record
@@ -35,13 +36,30 @@ gate or hedge trigger moves; every message of the new self-test checks starts "v
            it. ordercli (patch_0925x_ordercli.py) now marks a connect-phase failure " [connect phase: not sent]" and
            this marker joins _NEVER_SENT_MARKERS; the "<urlopen error" prefix rule (v-keepconn texts stay UNKNOWN) is
            unchanged. pintake's halt on that -1 is unchanged (intended; the drain keeps hedging).
+
+  band99late  --band99-max-tau SECONDS (new flag; default None = no limit, today's band). The band99 leg (--band99-
+           ceiling 0.99 --band99-frac 0.10: a tenth of the coin's bet at up to 99c in a market pin holds nothing in)
+           splits by WHEN it lands (11-14, three independent reads of the live band): legs at 31-45 s held all 12 band
+           losses and, being the market's early leg, took pin's own early slot (pin's early leg was then refused
+           early_once) -- all-in about -$7/day; legs at <= 30 s lost 0 of 396 markets, all-in about +$6/day. With the
+           flag a band leg is placed only when tau (seconds to the close) <= SECONDS. A band leg that is too early is
+           refused band99_early (beside band99_over / band99_held, once a close) and written ONCE a market as a
+           band99_shadow record: ticker, side, the ask and its size, tau, the contracts it would have bought (n: the
+           band's tenth cut to the book under the limit, the early leg's share and the coin cap -- an estimate of the
+           send path), the limit the band order would have sent and the ladder up to it, fair, edge, EV, strike, spot,
+           sigma, book and index age, drop_seen, budget_left. The skip sits where the band is decided -- above the EV
+           skip, the signal counter, the attempt counters and the early leg -- so it spends NOTHING: no early leg
+           (early_once stays free), no fill (max_per_market), no attempt, no signal; pin's own early leg can still buy
+           that market, and a band leg can still come at <= SECONDS if the market is still unheld and the offer still
+           in the band. Needs --band99-ceiling; SECONDS in [3, 60]. The start record names it (band99_max_tau).
 """
 import hashlib
 import os
 import sys
 
 BASE_PINRUN = "05a01fbb5ed2"
-EXPECTED_PINRUN = "4f798c3df9ea"   # the reviewed result (the patch refuses to write anything else)
+EXPECTED_PINRUN = "3a19b0019e9c"   # the reviewed result (the patch refuses to write anything else)
+# (2026-11-13 the four fixes alone made 4f798c3df9ea; with band99late (2026-11-14) the build is the value above)
 
 
 def refuse(msg):
@@ -104,9 +122,11 @@ class Src:
 if sha12(PR) != BASE_PINRUN:
     refuse("research/pinrun.py is not 0925w (%s, want %s); nothing written" % (sha12(PR), BASE_PINRUN))
 R = Src(PR)
-if "v-0925x" in R.s or "_pre_bank" in R.s or "drain_cleared" in R.s or "[connect phase: not sent]" in R.s:
+if ("v-0925x" in R.s or "_pre_bank" in R.s or "drain_cleared" in R.s or "[connect phase: not sent]" in R.s
+        or "BAND99_MAX_TAU" in R.s or "band99_shadow" in R.s or "band99_early" in R.s):
     refuse("already patched (v-0925x is in it); nothing written")
-if "INDEX_5HZ" not in R.s or "hedge5_shadow" not in R.s or "book_shape_wrap" not in R.s:
+if ("INDEX_5HZ" not in R.s or "hedge5_shadow" not in R.s or "book_shape_wrap" not in R.s
+        or "def band99_why(" not in R.s or "_band99_now = True" not in R.s):
     refuse("not the 0925w build (no v-hedge5 / apishape code); nothing written")
 
 # ============================================================================ 1. clock: a known orderbook key
@@ -411,7 +431,422 @@ R.before('''    # ---- B: the 3rd bet out, the brake moved, SIZE and every order
 
 ''')
 
+# ============================================================================ 7. band99late: the flag's constant
+R.after('''BAND99_FRAC = 0.10           # --band99-frac: the band buy's share of the coin's bet
+_DEFAULT_BAND99_FRAC = 0.10
+''', '''# v-0925x band99late (2026-11-14): THE BAND LEG ONLY INSIDE --band99-max-tau
+# SECONDS. Three independent reads of the live band (11-14) split it by when
+# it lands: legs at 31-45 s held all 12 band losses AND, being the market's
+# early leg, took pin's own early slot (pin's early leg was then refused
+# early_once) -- all-in about -$7/day; legs at <= 30 s lost 0 of 396 markets,
+# all-in about +$6/day. With the flag a band leg too early is not bought: it
+# is refused band99_early and written ONCE a market as band99_shadow (what it
+# would have bought, priced like the band order), and it spends nothing -- no
+# signal, no attempt, no early leg, no fill count -- so pin's own early leg
+# may still buy that market. None = no limit (the shipped value, = 0925w).
+BAND99_MAX_TAU = None        # --band99-max-tau SECONDS; None = off
+_DEFAULT_BAND99_MAX_TAU = None
+''')
+
+# ============================================================================ 8. band99late: the wait rule and the shadow's fields
+R.before('''def drop_note(hist, key, t, price, tau):''', '''def band99_too_early(tau):
+    """v-0925x band99late: True when --band99-max-tau is set and a band leg at
+    `tau` seconds to the close must wait (tau over the flag). Off: always
+    False, exactly as before. A tau it cannot read waits: the leg is placed
+    only when tau is KNOWN to be inside."""
+    if BAND99_MAX_TAU is None:
+        return False
+    try:
+        return not (float(tau) <= float(BAND99_MAX_TAU) + 1e-9)
+    except (TypeError, ValueError):
+        return True
+
+
+def band99_shadow_fields(book, tk, want, price, f, ask_size, full, bet=None,
+                         ssz=None, csz=None, tau=None):
+    """v-0925x band99late: the fields of a band99_shadow record -- the band leg
+    pin WOULD have sent at this look had --band99-max-tau not held it back,
+    priced the way the band order is: its leg (early past TAU_MAX with the
+    early leg on, as staged_take names it), the limit the send path uses
+    (sweep_limit up to BAND99_CEILING with the EV floor off, then the early
+    leg's own price cap), our side's ask ladder up to that limit and the depth
+    under it, and the contracts n: what the book holds up to the limit (at
+    least the touch, at most `bet`), cut by the early leg's share, the series
+    and coin caps and last by the band's own share of the coin's bet
+    (n_band). An ESTIMATE of the send path, as v-wsfall10's would_n is (the
+    close's budget is the record's budget_left). Reads the book; sends
+    nothing. Never raises: a field it cannot work out stays None."""
+    out = {"leg": None, "n": None, "n_band": None, "limit": None,
+           "sweep_headroom_c": None, "ladder": None, "buyable": None,
+           "band99_ev_c": None}
+    try:
+        out["n_band"] = band99_size(full)
+        out["leg"] = ("early" if (EARLY_TAU_MAX > TAU_MAX
+                                  and float(tau) > TAU_MAX) else "full")
+    except Exception:                                    # noqa: BLE001
+        pass
+    try:
+        out["band99_ev_c"] = round(100.0 * float(expected_value(float(price))), 3)
+    except Exception:                                    # noqa: BLE001
+        pass
+    try:
+        _lm = float(sweep_limit(f, float(price), want,
+                                ceiling=float(BAND99_CEILING), ev_floor=-1.0))
+        if out["leg"] == "early" and EARLY_MAX_PRICE < 1.0:
+            _lm = min(_lm, float(EARLY_MAX_PRICE))
+        out["limit"] = round(_lm, 4)
+        out["sweep_headroom_c"] = round(100.0 * (_lm - float(price)), 3)
+    except Exception:                                    # noqa: BLE001
+        return out
+    try:
+        out["ladder"] = [[round(float(_p), 4), round(float(_z), 2)]
+                         for _p, _z in list(book.rungs(tk, want, _lm) or [])[:12]]
+    except Exception:                                    # noqa: BLE001
+        pass
+    try:
+        _bet = float(SIZE if bet is None else bet)
+        _dp = (float(book.buyable(tk, want, _lm))
+               if (SWEEP_DEPTH and _lm > float(price) + 1e-9) else 0.0)
+        out["buyable"] = round(_dp, 2)
+        _n = max(min(_bet, float(ask_size)), min(_bet, _dp))
+        if out["leg"] == "early":
+            _n = min(_n, float(EARLY_FRAC) * float(full))
+        for _c in (ssz, csz):
+            if _c is not None:
+                _n = min(_n, float(_c))
+        _n = min(_n, float(band99_size(full)))
+        out["n"] = round(max(0.0, _n), 2)
+    except Exception:                                    # noqa: BLE001
+        pass
+    return out
+
+
+''')
+
+# ============================================================================ 9. band99late: the decision, where the band is decided
+R.replace('''                    _b99 = band99_why(price, _lad is not None,
+                                      band99_held(prev, open_pos, tk))
+                    if _b99 is None:
+                        _band99_now = True
+''', '''                    _b99 = band99_why(price, _lad is not None,
+                                      band99_held(prev, open_pos, tk))
+                    if _b99 is None and band99_too_early(tau):
+                        # v-0925x band99late (2026-11-14): A BAND LEG TOO EARLY
+                        # FOR --band99-max-tau IS NOT BOUGHT. Refused below
+                        # with the band's other refusals (band99_early, once a
+                        # close) and shadowed ONCE a market here -- what it
+                        # would have bought, priced like the band order. HERE,
+                        # above the EV skip, the signal counter, the attempt
+                        # counters and the early leg, so the skip spends
+                        # NOTHING: no early leg (early_once stays free), no
+                        # fill (max_per_market), no attempt -- pin's own early
+                        # leg may still buy the market, and the band may still
+                        # buy it inside the flag while it stays unheld.
+                        # Off (None): never true, exactly as before.
+                        _b99 = "band99_early"
+                        if (close_s, tk, _b99) not in gate_seen:
+                            try:
+                                # (ssz None: a ladder rung is never a band leg)
+                                _b9s = band99_shadow_fields(
+                                    book, tk, want, price, f, size, _fsz,
+                                    bet=float(SIZE), ssz=None, csz=_csz,
+                                    tau=tau)
+                                rec("band99_shadow", ticker=tk, close_s=close_s,
+                                    want=want, side=want,
+                                    ask=round(float(price), 4),
+                                    ask_seen=round(float(price), 4),
+                                    ask_size=size, tau=tau,
+                                    max_tau=BAND99_MAX_TAU, fair=round(f, 5),
+                                    edge_c=round(100 * e, 3), strike=strike,
+                                    digits=digits, spot=spot,
+                                    sigma=round(sg, 6),
+                                    book_age_ms=b.get("age_ms"),
+                                    index_age_s=round(iage, 2),
+                                    exchange_index=exi, full=_fsz,
+                                    coin_size=_csz, early_held=_held46,
+                                    drop_seen=drop_seen(drop_hist, (close_s, tk, want), now),
+                                    budget_left=_budget_left(close_s, tk, tau),
+                                    band99=True,
+                                    band99_ceiling=BAND99_CEILING,
+                                    band99_frac=BAND99_FRAC,
+                                    live=bool(live), sent=False, **_b9s)
+                                print(f"  BAND99 SHADOW {tk} tau={tau}s "
+                                      f"{want.upper()} @{price:.4f}: the band "
+                                      f"waits for tau<={BAND99_MAX_TAU}s; it "
+                                      f"would buy {_b9s.get('n')} at up to "
+                                      f"{_b9s.get('limit')}; nothing sent")
+                            except Exception:            # noqa: BLE001
+                                pass
+                    if _b99 is None:
+                        _band99_now = True
+''')
+
+# ============================================================================ 10. band99late: pinned offline, watched by the give-back guard
+R.replace('''    "CHEAP_WINDOW", "HEDGE_JUMP_SHADOW", "INDEX_5HZ")
+
+
+def _offline_trade_loop(''', '''    "CHEAP_WINDOW", "HEDGE_JUMP_SHADOW", "INDEX_5HZ", "BAND99_MAX_TAU")
+
+
+def _offline_trade_loop(''')
+R.replace('''                 "CHEAP_WINDOW", "HEDGE_JUMP_SHADOW", "INDEX_5HZ")
+
+
+def _selftest_body():''', '''                 "CHEAP_WINDOW", "HEDGE_JUMP_SHADOW", "INDEX_5HZ",
+                 "BAND99_MAX_TAU")
+
+
+def _selftest_body():''')
+
+# ============================================================================ 11. band99late: the flag, its checks, the start record
+R.after('''    ap.add_argument("--band99-frac", type=float, default=None, metavar="F",
+                    help="v-band99: the band buy's share of the coin's full bet "
+                         "(default %.2f; 0.01..0.25)" % _DEFAULT_BAND99_FRAC)
+''', '''    ap.add_argument("--band99-max-tau", type=int, default=None, metavar="SECONDS",
+                    help="v-0925x band99late: place a band leg only at or under "
+                         "SECONDS to the close (3..60). A band leg that is too "
+                         "early is refused band99_early and written once a market "
+                         "as band99_shadow (what it would have bought); it spends "
+                         "no early leg, fill or attempt, so pin's own early leg "
+                         "may still buy the market. Needs --band99-ceiling; off "
+                         "by default (no limit)")
+''')
+R.after('''        globals()["BAND99_FRAC"] = float(a.band99_frac)
+''', '''    if a.band99_max_tau is not None:                       # v-0925x band99late
+        if a.band99_ceiling is None:
+            raise SystemExit("--band99-max-tau needs --band99-ceiling")
+        if not (TAU_MIN <= int(a.band99_max_tau) <= 60):
+            raise SystemExit("--band99-max-tau must be in [%d, 60], got %r"
+                             % (TAU_MIN, a.band99_max_tau))
+        globals()["BAND99_MAX_TAU"] = int(a.band99_max_tau)
+''')
+R.after('''        band99_ceiling=BAND99_CEILING, band99_frac=BAND99_FRAC,
+''', '''        band99_max_tau=BAND99_MAX_TAU,                      # v-0925x band99late
+''')
+
+# ============================================================================ 12. band99late: the band's own by-source check
+# counts the shadow's one read of drop_hist (a record, never a decision); every other count is as it was
+R.replace('''    ck(_b99_src.count("drop_hist") == 3
+       and _b99_src.count("drop_note(drop_hist") == 1
+       and _b99_src.count("drop_seen(drop_hist") == 1
+       and _b99_src.count('drop_seen=sig.get("drop_seen")') == 1
+       and _b99_src.count("_band99_now = True") == 1
+       and _b99_src.count("if _band99_now:") == 4
+       and _b99_src.count("not _band99_now") == 2,
+       "v-band99 by source: drop_hist is written once (every look) and read "
+       "once (into the signal), never by a decision; the band is set at ONE "
+       "place and read by the size (signal, live, paper), the limit, the EV "
+       "skip and the old ceiling refusal only")
+''', '''    # (v-0925x band99late, 2026-11-14: drop_hist is read once more, into the
+    # band99_shadow record a too-early band leg writes -- a record, never a
+    # decision; every other count is unchanged)
+    _b99_shr = "drop_seen=drop_seen(drop_hist, (close_s, tk, want), now),"
+    ck(_b99_src.count("drop_hist") == 4
+       and _b99_src.count("drop_note(drop_hist") == 1
+       and _b99_src.count("drop_seen(drop_hist") == 2
+       and _b99_src.count(_b99_shr) == 1
+       and _b99_src.count('rec("band99_shadow"') == 1
+       and _b99_src.index('rec("band99_shadow"') < _b99_src.index(_b99_shr)
+       < _b99_src.index("_band99_now = True")
+       and _b99_src.count('drop_seen=sig.get("drop_seen")') == 1
+       and _b99_src.count("_band99_now = True") == 1
+       and _b99_src.count("if _band99_now:") == 4
+       and _b99_src.count("not _band99_now") == 2,
+       "v-band99 by source: drop_hist is written once (every look) and read "
+       "twice -- into the signal and into the band99late shadow record -- "
+       "never by a decision; the band is set at ONE place and read by the "
+       "size (signal, live, paper), the limit, the EV skip and the old "
+       "ceiling refusal only")
+''')
+
+# ============================================================================ 13. band99late: the self-test, beside the band's own
+R.after('''       "v-band99 add-on: an ordinary buy's signal and order carry drop_seen "
+       "too, and band99 False")
+''', '''    # ---- v-0925x band99late (2026-11-14): --band99-max-tau -----------------
+    # PURE: the wait rule, and the shadow's fields on a planted book (every
+    # flag those read is pinned here, so the running argv cannot move them).
+    # DRIVEN: the REAL trade_loop, live path, a 99c band offer at tau 25, 33
+    # and 40, with the flag at 30 and off. Every message starts "v-0925x".
+    _x9_g = {"BAND99_MAX_TAU": None, "BAND99_CEILING": 0.99, "BAND99_FRAC": 0.10,
+             "SWEEP_ENABLED": True, "SWEEP_DEPTH": True, "EARLY_TAU_MAX": 45,
+             "TAU_MAX": 30, "EARLY_FRAC": 0.333, "EARLY_MAX_PRICE": 1.0,
+             "SKIP_BANDS": (), "EDGE_FLOOR": _DEFAULT_EDGE_FLOOR}
+    _x9_was = {_k: globals()[_k] for _k in _x9_g}
+
+    class _X9Book(object):
+        def rungs(self, tk, side, lim):
+            return [(0.985, 3.0), (0.99, 40.0)][:(2 if lim >= 0.99 - 1e-9 else 1)]
+
+        def buyable(self, tk, side, lim):
+            return 43.0 if lim >= 0.99 - 1e-9 else 3.0
+
+    class _X9Thin(_X9Book):
+        def buyable(self, tk, side, lim):
+            return 3.0
+
+    class _X9Bad(object):
+        def rungs(self, *_a):
+            raise RuntimeError("planted")
+
+        def buyable(self, *_a):
+            raise RuntimeError("planted")
+    try:
+        globals().update(_x9_g)
+        _x9_off = [band99_too_early(_t) for _t in (45, 40, 31, 30, 25, None, "x")]
+        globals()["BAND99_MAX_TAU"] = 30
+        _x9_on = [band99_too_early(_t) for _t in (45, 40, 31, 30, 25, 3, None, "x")]
+        _x9_fA = band99_shadow_fields(_X9Book(), "T", "yes", 0.985, 0.999, 3.0,
+                                      50.0, bet=50.0, tau=40)
+        _x9_fB = band99_shadow_fields(_X9Book(), "T", "yes", 0.985, 0.999, 3.0,
+                                      50.0, bet=50.0, tau=25, csz=2.0)
+        _x9_fC = band99_shadow_fields(_X9Thin(), "T", "yes", 0.985, 0.999, 3.0,
+                                      50.0, bet=50.0, tau=40)
+        _x9_fD = band99_shadow_fields(_X9Bad(), "T", "yes", 0.985, 0.999, 3.0,
+                                      50.0, bet=50.0, tau=40)
+        _x9_fE = band99_shadow_fields(_X9Book(), "T", "yes", "x", 0.999, 3.0,
+                                      50.0, bet=50.0, tau=40)
+    finally:
+        globals().update(_x9_was)
+    ck(_DEFAULT_BAND99_MAX_TAU is None and _x9_off == [False] * 7
+       and _x9_on == [True, True, True, False, False, False, True, True],
+       "v-0925x band99late PURE: ships OFF (no band leg ever waits: %r); at 30 a "
+       "band leg at tau 31 or more waits and one at 30 or under goes, and a tau "
+       "it cannot read waits (%r)" % (_x9_off, _x9_on))
+    ck(_x9_fA.get("leg") == "early" and _x9_fA.get("n_band") == 5.0
+       and _x9_fA.get("n") == 5.0 and _x9_fA.get("buyable") == 43.0
+       and 0.985 <= float(_x9_fA.get("limit") or 0) <= 0.99 + 1e-9
+       and _x9_fA.get("ladder") == [[0.985, 3.0], [0.99, 40.0]][
+           :(2 if float(_x9_fA.get("limit") or 0) >= 0.99 - 1e-9 else 1)]
+       and _x9_fA.get("band99_ev_c") == round(100.0 * expected_value(0.985), 3)
+       and _x9_fB.get("leg") == "full" and _x9_fB.get("n") == 2.0
+       and _x9_fC.get("n") == 3.0
+       and _x9_fD.get("limit") is not None and _x9_fD.get("ladder") is None
+       and _x9_fD.get("buyable") is None and _x9_fD.get("n") is None
+       and _x9_fD.get("n_band") == 5.0
+       and _x9_fE.get("limit") is None and _x9_fE.get("n") is None
+       and _x9_fE.get("band99_ev_c") is None and _x9_fE.get("n_band") == 5.0,
+       "v-0925x band99late PURE: the shadow's contracts are the band's tenth of "
+       "the coin's 50 (5) out of 43 under its limit %s at tau 40 (an early "
+       "leg); 2 under a coin cap of 2 at tau 25 (a full leg); 3 when the book "
+       "holds 3; a book that raises leaves the ladder, depth and n None, a "
+       "garbage ask the limit too, and neither raises (%r)"
+       % (_x9_fA.get("limit"), _x9_fA))
+    _x9_f = {"BAND99_CEILING": 0.99, "BAND99_FRAC": 0.10, "EARLY_TAU_MAX": 45,
+             "EARLY_FRAC": 0.333, "EARLY_MIN_PRICE": 0.90, "EARLY_MAX_EDGE": 10.0,
+             "MAX_PER_MARKET": 2, "IMPROVE_SCOPE": "market"}
+    _x9_30 = dict(_x9_f, BAND99_MAX_TAU=30)
+
+    def _x9_m(n, book_of):
+        return {"tk": "KXBLT%d15M-B9L" % n, "series": "KXBLT%d15M" % n,
+                "iid": "B9L%d" % n, "strike": 100.0,
+                "fair": (lambda t: 0.999), "book": book_of}
+    _x9_99 = lambda t: _ob(0.94, 0.01)                         # YES at 99c throughout
+    _x9_gone = lambda t: _ob(0.94, 0.01) if t < 2.0 else _ob(0.94, None)   # 99c, then no YES offer
+    _x9_97 = lambda t: _ob(0.94, 0.01) if t < 2.0 else _ob(0.94, 0.03)     # 99c, then 97c
+
+    def _x9_w(n, book_of, tau0, flags):
+        _wt, _wc = _k1_take(False)
+        _wr = _offline_trade_loop([_x9_m(n, book_of)], live=True, take=_wt,
+                                  run_s=6.0, size=50.0, tau0=tau0, flags=flags)
+        return _wr, _wc
+    _x9_1, _x9_1c = _x9_w(1, _x9_99, 25, _x9_30)
+    _x9_1n, _x9_1nc = _x9_w(2, _x9_99, 25, _x9_f)
+    _x9_1o = _kinds(_x9_1, "order")
+    _x9_1no = _kinds(_x9_1n, "order")
+    ck(_x9_1["raised"] is None and _x9_1n["raised"] is None
+       and [_c[2] for _c in _x9_1c] == [5.0] and [_c[2] for _c in _x9_1nc] == [5.0]
+       and len(_x9_1o) == 1 and _x9_1o[0].get("band99") is True
+       and _x9_1o[0].get("leg") == "full" and _x9_1o[0].get("tau_at_send") == 25
+       and len(_x9_1no) == 1 and _x9_1no[0].get("band99") is True
+       and _x9_1no[0].get("tau_at_send") == 25
+       and not _kinds(_x9_1, "band99_shadow") and not _kinds(_x9_1n, "band99_shadow")
+       and not _refusals(_x9_1, "band99_early") and not _refusals(_x9_1n, "band99_early"),
+       "v-0925x band99late DRIVEN: with --band99-max-tau 30 a 99c band offer at "
+       "tau 25 is bought exactly as with the flag off -- ONE band order for 5 "
+       "(a tenth of 50) at tau 25 both ways (%r / %r), no shadow, no band99_early"
+       % (_x9_1c, _x9_1nc))
+    _x9_2, _x9_2c = _x9_w(3, _x9_gone, 40, _x9_30)
+    _x9_2s = _kinds(_x9_2, "band99_shadow")
+    ck(_x9_2["raised"] is None and not _x9_2c and not _kinds(_x9_2, "order")
+       and not _kinds(_x9_2, "signal")
+       and len(_x9_2s) == 1 and _x9_2s[0].get("tau") == 40
+       and _x9_2s[0].get("ticker") == _x9_m(3, None)["tk"]
+       and _x9_2s[0].get("want") == "yes" and _x9_2s[0].get("side") == "yes"
+       and _x9_2s[0].get("ask") == 0.99 and _x9_2s[0].get("ask_size") == 50.0
+       and _x9_2s[0].get("n") == 5.0 and _x9_2s[0].get("n_band") == 5.0
+       and _x9_2s[0].get("leg") == "early" and _x9_2s[0].get("max_tau") == 30
+       and _x9_2s[0].get("sent") is False and _x9_2s[0].get("live") is True
+       and float(_x9_2s[0].get("limit") or 9) <= 0.99 + 1e-9
+       and (_x9_2s[0].get("drop_seen") or [None])[0] == 0.99
+       and "fair" in _x9_2s[0] and "budget_left" in _x9_2s[0]
+       and len(_refusals(_x9_2, "band99_early")) == 1
+       and not _refusals(_x9_2, "early_once"),
+       "v-0925x band99late DRIVEN: at 30 a 99c band offer at tau 40 is NOT "
+       "bought (orders %r): ONE band99_shadow (tau 40, YES 5 of 50 at 99c, an "
+       "early leg, nothing sent) and one band99_early refusal however many "
+       "looks it gets (%d shadows)" % (_x9_2c, len(_x9_2s)))
+    _x9_3, _x9_3c = _x9_w(4, _x9_97, 40, _x9_30)
+    _x9_3n, _x9_3nc = _x9_w(5, _x9_97, 40, _x9_f)
+    _x9_3o = _kinds(_x9_3, "order")
+    _x9_3no = _kinds(_x9_3n, "order")
+    ck(_x9_3["raised"] is None and len(_kinds(_x9_3, "band99_shadow")) == 1
+       and _kinds(_x9_3, "band99_shadow")[0].get("tau") == 40
+       and len(_x9_3c) == 1 and abs(_x9_3c[0][2] - 0.333 * 50.0) < 0.02
+       and len(_x9_3o) == 1 and _x9_3o[0].get("leg") == "early"
+       and _x9_3o[0].get("band99") is False and _x9_3o[0].get("tau_at_send") == 38
+       and abs(float(_x9_3o[0].get("ask_seen") or 0) - 0.97) < 1e-9
+       and all(_r["t"] > _x9_3o[0]["t"] for _r in _refusals(_x9_3, "early_once")),
+       "v-0925x band99late DRIVEN: the skip LEAVES THE EARLY SLOT FREE -- 99c at "
+       "tau 40 is shadowed, and when the ask falls to 97c at tau 38 pin's own "
+       "early leg buys the market (%r, leg early, not a band buy); early_once "
+       "refuses only AFTER that leg (at t %r, order at t %r)"
+       % (_x9_3c, [_r["t"] for _r in _refusals(_x9_3, "early_once")],
+          [_o["t"] for _o in _x9_3o]))
+    ck(_x9_3n["raised"] is None and not _kinds(_x9_3n, "band99_shadow")
+       and not _refusals(_x9_3n, "band99_early")
+       and [_c[2] for _c in _x9_3nc] == [5.0]
+       and len(_x9_3no) == 1 and _x9_3no[0].get("band99") is True
+       and _x9_3no[0].get("leg") == "early" and _x9_3no[0].get("tau_at_send") == 40
+       and len(_refusals(_x9_3n, "early_once")) == 1,
+       "v-0925x band99late NULL: the flag off (the default) is today's band "
+       "unchanged -- the same world buys the band at tau 40 as the market's "
+       "early leg (%r, the only order) and every later early look is refused "
+       "early_once, so the 97c ask at tau 38 is never bought (the slot the flag "
+       "frees)" % (_x9_3nc,))
+    _x9_4, _x9_4c = _x9_w(6, _x9_99, 33, _x9_30)
+    _x9_4o = _kinds(_x9_4, "order")
+    _x9_4s = _kinds(_x9_4, "band99_shadow")
+    ck(_x9_4["raised"] is None and len(_x9_4s) == 1 and _x9_4s[0].get("tau") == 33
+       and [_c[2] for _c in _x9_4c] == [5.0]
+       and len(_x9_4o) == 1 and _x9_4o[0].get("band99") is True
+       and _x9_4o[0].get("tau_at_send") == 30 and _x9_4o[0].get("leg") == "full"
+       and len(_refusals(_x9_4, "band99_early")) == 1,
+       "v-0925x band99late DRIVEN: a 99c offer from tau 33 waits (one shadow at "
+       "tau 33) and is bought as the band at tau 30 -- the boundary is inside "
+       "(orders %r at tau %r)"
+       % (_x9_4c, [_o.get("tau_at_send") for _o in _x9_4o]))
+    _x9_src = inspect.getsource(trade_loop)
+    _x9_mn = inspect.getsource(main)
+    ck(_x9_src.count("band99_too_early(") == 1
+       and _x9_src.count('rec("band99_shadow"') == 1
+       and _x9_src.index("_b99 = band99_why(price,") < _x9_src.index("band99_too_early(tau)")
+       < _x9_src.index('rec("band99_shadow"') < _x9_src.index("_band99_now = True")
+       < _x9_src.index('state["signals"] += 1')
+       < _x9_src.index("attempts_tk[(close_s, tk)] = ")
+       < _x9_src.index("take_n, _leg46 = staged_take(")
+       and "BAND99_MAX_TAU" in _OFFLINE_PINNED_FLAGS and "BAND99_MAX_TAU" in _FLAG_GLOBALS
+       and 'globals()["BAND99_MAX_TAU"] = int(a.band99_max_tau)' in _x9_mn
+       and "--band99-max-tau needs --band99-ceiling" in _x9_mn
+       and "band99_max_tau=BAND99_MAX_TAU," in _x9_mn,
+       "v-0925x band99late by source: the wait is read once, where the band is "
+       "decided -- after band99_why, above the signal counter, the attempt "
+       "counters and the early leg's sizing -- the shadow is written there "
+       "once; the flag ships off, is pinned in every offline world, watched by "
+       "the give-back guard, needs the band and is named in the start record")
+''')
+
 _got = R.write(EXPECTED_PINRUN)
 print("patched", PR, _got, "(checked: the reviewed %s)" % EXPECTED_PINRUN)
-print("v-0925x: four review fixes, always on, no new flag (clock, prebank, drain, connect); run "
-      "patch_0925x_ordercli.py on the same build for connect")
+print("v-0925x: four review fixes, always on, no flag (clock, prebank, drain, connect), and one new flag, off when "
+      "omitted: --band99-max-tau SECONDS (band99late; the deploy passes 30); run patch_0925x_ordercli.py on the same "
+      "build for connect")

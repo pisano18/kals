@@ -142,11 +142,11 @@ $py = "C:\Python314\python.exe"
 # with this full argv: SELF-TEST PASSED (.sweep\q-2026-10-23\clockbug\pinrun_0925m_selftest.out).
 # REVERT: copy results\restart_bot.before-etclock.ps1 over restart_bot.ps1
 # (= v-ladderboost, C:\kals-live-0925k, 32639cccc7f1) and rerun while flat.
-$code = "C:\kals-live-0925w"
-$codeSha = "05a01fbb5ed2"
+$code = "C:\kals-live-0925x"
+$codeSha = "3a19b0019e9c"
 # pinrun's code_sha cannot see ordercli / pintake (0925e and 0925g shared
 # it), so the launcher checks both of them as well, before anything stops.
-$ordercliSha = "467782077a23"
+$ordercliSha = "f40c43061ea3"
 $pintakeSha = "b3c7bb48abb5"
 
 # --- 0. LEAVE A TRANSCRIPT. On 2026-09-13 the operator ran this and the bot
@@ -226,6 +226,9 @@ $botArgs = @(
     "--wrongside-rise-c", "1.0",
     # v-band99 2026-10-31 (operator: "I like the test you came up with, do that."): offers over 98c and at or under 99c, only in a market with nothing held, at a tenth of the bet; off again if band orders lose more than $60 or winners fill under 50% after 3 days. Revert: delete this line pair and $code/$codeSha back to C:\kals-live-0925n / e51a465d8b5c
     "--band99-ceiling", "0.99", "--band99-frac", "0.10",
+    # v-0925x 2026-11-14: C:\kals-live-0925x = 0925w + results\patch_0925x.py + patch_0925x_ordercli.py (pinrun 3a19b0019e9c, ordercli f40c43061ea3; pintake unchanged): the 11-13 review fixes always on (clock, prebank, drain, connect) and ONE new flag, the line under this block: --band99-max-tau 30 (band99late) places a band leg (the line above) only with 30 s or less to the close. 11-14 reads of the live band: legs at 31-45 s held all 12 band losses and took pin's early slot (about -$7/day all-in); legs at 30 s or less lost 0 of 396 markets (about +$6/day). A band leg that is too early is refused band99_early and written once a market as band99_shadow; it spends no early leg, fill or attempt, so pin's own early leg can still buy. Read: READS_DUE band99-late-read (11-30).
+    #   Revert: results\pin_0925x.ps1 -Revert (the .before-0925x-* backups: this block and the line under it out, $code/$codeSha/$ordercliSha back to C:\kals-live-0925w / 05a01fbb5ed2 / 467782077a23), pin takes it at its next start. Or drop only the line under this block (and this block): the band as before, the four fixes kept.
+    "--band99-max-tau", "30",
     # v-wsfall10 + v-jumpcap8 2026-11-01 (operator: "Push it live, skip the slash approve."): refuse a LATER buy across the line when our side's mid fell 10c+ in 5 s (rest of that side skipped for the close); the jump hedge fires only under 8 sd (jump_capped logged). Monitor: research\pinrules_watch.py. Revert: delete this line pair and $code/$codeSha back to C:\kals-live-0925p / 24eec22bbaa7
     "--ws-later-fall-c", "10", "--hedge-jump-max", "8",
     # v-oddsmult 2026-11-02 (operator: "Go. Push it yourself without me needing to do anything."): when the 0.40 belief line fires with 11+ s left, ALSO buy (M - 1) x the position of the hedge side as a second order right after the covering hedge (never on the jump trigger). 1.25 first (the tiny-test rule), then 1.5, 2. Logged as hedge_extra; scored by research\pinrules_watch.py (rule C). Revert: delete this line pair and $code/$codeSha back to C:\kals-live-0925q / 0f49ba3ae221
