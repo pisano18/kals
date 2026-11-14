@@ -10,7 +10,20 @@ for the % is the ledger's bank now (pindesk.Ledger.bank_at), else the pin bot's 
 v-ladder-rail100 tracking (2026-11-14): a change that says a problem (botdata.fixes: change["problem"] -- O while the
 ladder runs its 100% rail on code that does not mark the bids, so O could only ever read 'none yet') gets a ⚠️ line in
 its own block (before 'not engaged yet', never cut) and is counted on a ⚠️ line at the top of the page.
+
+v-tg-fixes-PQ (2026-11-14; the operator: "make sure all of this is being tracked what the results would be if it
+wasn't changed"): P (band99 late-only: the band legs skipped for being earlier than 30 s, against pin's own legs they
+would have blocked) and Q (the ladder's midnight reset: what it made after each reset, the old code stayed halted)
+render like every other change, their lines under the net. O is WITHDRAWN (change["withdrawn"]): its block says so,
+and it never gets a problem line here, whatever it carries (fixes.totals leaves it out of the total too).
+
+Page room (11-14, the server's logs ran the page to 3,880 of 3,900 chars with every last-engagement line gone): a change
+that is off for good while it is not live (fixes: change["retired"] -- N shelved, O withdrawn) is folded with the others
+into ONE short 'not live' line in the first one's place, never a block (~230 chars back; their whole words stay in
+fixes' not_live); P's line puts its net first; and no cut ever lands inside a money figure (_cut stops before it).
 """
+import re
+
 from botdata import fixes as _fixes
 from botdata import paths as _paths
 from botdata.fmt import usd
@@ -29,8 +42,8 @@ PROBLEM = "⚠️ <b>%s</b>"
 
 def problems_line(changes):
     """The page's top line when any change says a problem: '⚠️ 1 PROBLEM: O ladder cash limit 100%: <its words>'; None
-    when none does."""
-    bad = [c for c in changes if c.get("problem")]
+    when none does (a withdrawn change never counts: fixes' O while O_WITHDRAWN)."""
+    bad = [c for c in changes if c.get("problem") and not c.get("withdrawn")]
     if not bad:
         return None
     return "⚠️ <b>%d PROBLEM%s</b>: %s" % (len(bad), "" if len(bad) == 1 else "S", "; ".join(
@@ -66,10 +79,38 @@ def _pct(x, bank):
     return " (%s%.2f%% of the bank)" % ("+" if x >= 0 else "-", abs(x) / bank * 100)
 
 
+_MONEY = re.compile(r"[-+]?\$\d[\d,]*(?:\.\d+)?")     # a money figure: -$1,234.56, +$0.32, $12
+
+
 def _cut(words, n):
-    """`words` at most n characters (an ellipsis closes a cut), or whole when n is None."""
+    """`words` at most n characters (an ellipsis closes a cut), or whole when n is None. A cut never lands inside a money
+    figure: it stops before the figure instead (a half figure, '$1.…' for $1.22, would read as another amount); a line
+    that opens with one keeps it whole."""
     w = str(words)
-    return w if n is None or len(w) <= n else w[:max(1, n - 1)].rstrip() + "…"
+    if n is None or len(w) <= n:
+        return w
+    k = max(1, n - 1)
+    for m in _MONEY.finditer(w):
+        if m.start() >= k:
+            break
+        if k < m.end():
+            k = m.start() if m.start() > 0 else m.end()
+            break
+    return w[:k].rstrip() + "…"
+
+
+def retired_line(changes):
+    """ONE short line for every change that is off for good while it is not live (fixes: change["retired"]; N shelved,
+    O withdrawn): 'not live: <b>N hedge line 0.60</b> (shelved 11-09) · <b>O ...</b> (withdrawn 11-14, ...)'; None when
+    there is none. A change with a problem is never folded (its block carries the warning)."""
+    rs = [c for c in changes if _folded(c)]
+    if not rs:
+        return None
+    return "not live: " + " · ".join("<b>%s %s</b> (%s)" % (esc(c["id"]), esc(c["name"]), esc(c["retired"])) for c in rs)
+
+
+def _folded(c):
+    return bool(c.get("retired")) and not c.get("since") and not (c.get("problem") and not c.get("withdrawn"))
 
 
 def block(c, bank, shown, cut=None, extra_cut=None, what_cut=None):
@@ -78,10 +119,11 @@ def block(c, bank, shown, cut=None, extra_cut=None, what_cut=None):
     out = ["<b>%s %s</b>" % (esc(c["id"]), esc(c["name"]))]
     if what_cut != 0:
         out.append(esc(_cut(c["what"], what_cut)))
-    if c.get("problem"):                                  # never cut, never behind 'not engaged yet' (fixes.O_UNTRACKED)
-        out.append(PROBLEM % esc(c["problem"]))
+    if c.get("problem") and not c.get("withdrawn"):       # never cut, never behind 'not engaged yet' (fixes.O_UNTRACKED);
+        out.append(PROBLEM % esc(c["problem"]))           # never on a withdrawn change (O: fixes.O_WITHDRAWN)
     if not c["since"]:
-        out.append(c.get("not_live") or "not live yet (comes with the new build)")   # L: its own words (fixes.L_NOT_LIVE)
+        # L, M, N, O (withdrawn), P, Q: their own words (fixes.L_NOT_LIVE ... Q_NOT_LIVE)
+        out.append(esc(c.get("not_live") or "not live yet (comes with the new build)"))
         return out
     out.append("since %s" % esc(c["since"]))
     if c.get("off") and not c["engaged"]:
@@ -126,9 +168,16 @@ def render(d, ctx):
         _mark(T["net_usd"]), esc(usd(T["net_usd"])), esc(_pct(T["net_usd"], bank)), T["engaged"],
         "" if T["engaged"] == 1 else "s", (" · %d open" % T["open"]) if T["open"] else "")
     top = problems_line(changes)
+    gone = retired_line(changes)
     for shown, cut, extra_cut, what_cut in PLAN:
         out = [HEAD, i_(NOTE)] + ([top] if top else [])
+        folded = False
         for c in changes:
+            if _folded(c):                                # N, O: one shared short line, in the first one's place
+                if not folded:
+                    out += ["", gone]
+                    folded = True
+                continue
             out += [""] + block(c, bank, shown, cut, extra_cut, what_cut)
         out += ["", total]
         msg = "\n".join(out)

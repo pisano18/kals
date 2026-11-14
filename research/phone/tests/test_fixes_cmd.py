@@ -83,7 +83,8 @@ def test_page_over_the_synthetic_logs():
         assert "it skipped a hedge of 50 Yes" not in s and "\n  Nov" not in s, "no event lines once the blocks fill the page"
         # C: 5 engagements, 2 open
         assert "engaged 5 times, last Nov 5 1:44 AM ET · 2 open\n🟢 net <b>+$95.94</b>" in s, s
-        assert "<b>N hedge line 0.60</b>\n" in s and "SHELVED 11-09, never deployed" in s, s
+        # N (shelved, not live): folded into the one short 'not live' line (fixes: change["retired"]), never a block
+        assert "\n\nnot live: <b>N hedge line 0.60</b> (shelved 11-09)\n\n" in s and "SHELVED" not in s, s
         for k in "ABCDEFGHIJ":
             blk = s.split("<b>%s " % k)[1].split("\n\n")[0]
             assert blk.count("\n  ") == 0, "the blocks whole, no event lines: %s\n%s" % (k, blk)
@@ -116,7 +117,11 @@ def test_k_cheap_window_block():
         s = str(_run(now=TF.NOW_K))
         assert len(s) <= MAX_LEN, len(s)
         blk = s.split("<b>K cheap morning skip</b>")[1]
-        assert blk.startswith("\nno first buy under 98.0c in a market closing 6 AM to 10 AM ET"), blk[:200]
+        # fifteen changes (P, 11-14): the "what" lines went first when the page filled; with N folded into the one 'not
+        # live' line (11-14, fixes: change["retired"]) this page fits with them again; K's own block carries its what
+        K = next(c for c in F.report(now=TF.NOW_K) if c["id"] == "K")
+        assert FC.block(K, BANK, 0)[1].startswith("no first buy under 98.0c in a market closing 6 AM to 10 AM ET"), K["what"]
+        assert blk.startswith("\n%s\nsince Nov 7 7:00 AM ET\n" % K["what"]), blk[:200]
         assert "since Nov 7 7:00 AM ET\nengaged 3 times, last Nov 7 9:44 AM ET · 1 open\n🟢 net <b>+$111.50</b>" in blk, blk
         assert ("\nwithout the rule: the 2 settled skips would have lost $111.50 (1 won, 1 flipped, hedges in) · 1 still "
                 "open\ncloses 6 AM to 10 AM ET since the rule (1 settled market): pin made +$1.50 with it, -$110.00 "
@@ -209,11 +214,55 @@ def test_m_third_bet_block():
         paths.set_results(old)
 
 
+def test_o_withdrawn_never_a_problem():
+    """v-ladder-rail100 WITHDRAWN 11-14 (fixes.O_WITHDRAWN, the shipped value): the same untracked 100% log that makes O
+    a problem below puts no ⚠️ anywhere: O's block says withdrawn (and that the latest start runs 1.0 all the same), the
+    total leaves it out; on the 0.82 log its block is the withdrawn words alone."""
+    old, td = _world()
+    try:
+        with open(os.path.join(td, "ladder-live-orders.jsonl"), "w", encoding="utf-8") as fh:
+            for r in TF.run_o([], with_rail100=False) + [TF._old_code_start("2026-11-15T09:50:00.000Z")]:
+                fh.write(json.dumps(r, separators=(",", ":")) + "\n")
+        F._CACHE.clear()
+        s = str(_run(now=TF.NOW_O))
+        assert len(s) <= MAX_LEN and "⚠️" not in s and "PROBLEM" not in s, s[:600]
+        # folded with N into the one 'not live' line; the 1.0 start said there too, never the '82%' that is not true
+        assert ("\n\nnot live: <b>N hedge line 0.60</b> (shelved 11-09) · <b>O ladder cash limit 100%</b> (withdrawn "
+                "11-14; but the ladder's latest start (Nov 15 4:50 AM ET) runs --commit-frac 1.0: nothing of it is "
+                "counted here)\n\n") in s, s
+        rep = F.report(now=TF.NOW_O)
+        O = next(c for c in rep if c["id"] == "O")
+        blk = "\n".join(FC.block(O, BANK, 0))                  # its own block (not on the page) keeps the whole words
+        assert blk.endswith("\nwithdrawn 11-14: it could not be tracked against never changing it, so the ladder stays at "
+                            "82%; but the ladder's latest start (Nov 15 4:50 AM ET) runs --commit-frac 1.0: nothing of it "
+                            "is counted here"), blk
+        assert O["withdrawn"] and FC.problems_line(rep) is None and F.totals(rep)["problems"] == []
+        for step in FC.PLAN:                                   # no problem line at any shrink step, even if one were set
+            b = FC.block(dict(O, problem=F.O_UNTRACKED), BANK, *step)
+            assert not any("⚠️" in x for x in b), (step, b)
+        assert FC.problems_line([dict(O, problem=F.O_UNTRACKED)]) is None
+        with open(os.path.join(td, "ladder-live-orders.jsonl"), "w", encoding="utf-8") as fh:
+            for r in TF.run_o([], with_rail100=False):
+                fh.write(json.dumps(r, separators=(",", ":")) + "\n")
+        F._CACHE.clear()
+        s2 = str(_run(now=TF.NOW_O))
+        assert "⚠️" not in s2 and ("\n\nnot live: <b>N hedge line 0.60</b> (shelved 11-09) · <b>O ladder cash limit "
+                                   "100%</b> (withdrawn 11-14, stays at 82%)\n\n") in s2, s2
+    finally:
+        paths.set_results(old)
+
+
 def test_o_untracked_problem_on_top_and_in_its_block():
     """v-ladder-rail100 tracking (11-14): the ladder on its 100% rail under the OLDER code (start record: commit_frac 1.0,
     no argv / old_limit; it never marks a bid) -- O says ON THE 100% RAIL BUT NOT TRACKED in its block (before 'not
     engaged yet', so it is never hidden) and the page counts it on a top line; at every shrink step both stay. A tracked
-    ladder (the marking code's start record) has no problem line anywhere."""
+    ladder (the marking code's start record) has no problem line anywhere. (O's machinery, as if O had not been
+    withdrawn: TF.o_live.)"""
+    with TF.o_live():
+        _o_untracked_problem()
+
+
+def _o_untracked_problem():
     old, td = _world()
     try:
         with open(os.path.join(td, "ladder-live-orders.jsonl"), "w", encoding="utf-8") as fh:
@@ -247,6 +296,127 @@ def test_o_untracked_problem_on_top_and_in_its_block():
         paths.set_results(old)
 
 
+def test_p_band99_late_block():
+    """v-0925x band99late (11-14): P's block carries its net (pin's blocked legs' real money less what the skipped early
+    band legs would have made), the given up / gained / net line and the gross line; 'none yet' before any shadow."""
+    old, td = _world()
+    try:
+        TF.write_p(td)
+        F._CACHE.clear()
+        s = str(_run(now=TF.NOW_P))
+        assert len(s) <= MAX_LEN, len(s)
+        blk = s.split("<b>P band99 late-only</b>")[1].split("\n\n")[0]
+        assert "since Nov 14 1:11 PM ET\nengaged 6 times, last Nov 14 2:14 PM ET · 1 open\n🔴 net <b>-$2.72</b> (-0.10% of the bank)" in blk, blk
+        assert "\nnet -$2.72: the early band bets skipped would have lost $15.56 (4 won, 1 lost); pin's own bets they wou" in blk, blk
+        assert "—" not in s and "not live yet" not in blk
+        P = next(c for c in F.report(now=TF.NOW_P) if c["id"] == "P")
+        whole = FC.block(P, BANK, 1, None)
+        assert whole[1].startswith("the band99 leg (a tenth of the bet at up to 99c) only with 30 s or less left"), whole[1]
+        assert whole[5:7] == ["net -$2.72: the early band bets skipped would have lost $15.56 (4 won, 1 lost); pin's own "
+                              "bets they would have blocked lost $18.28 · 1 open",
+                              "gross, before pin's hedges win back 41% of a band loss: they would have lost $27.72; "
+                              "blocked: 2 early legs (top-ups: 1 not at the full bet: not counted), 1 3rd fill, 1 later "
+                              "band leg"], whole
+        assert whole[-1] == ("  Nov 14 2:14 PM ET · SOL · open · an early band bet skipped: 30 No at 98.5c with 40 s left "
+                             "(it would have been the market's early leg); it would have blocked none of pin's own bets; not "
+                             "settled yet"), whole[-1]
+        T = F.totals(F.report(now=TF.NOW_P))
+        assert s.rstrip().endswith("· engaged %d times · %d open" % (T["engaged"], T["open"])), s[-200:]
+        # live with no shadow yet: 'none yet'
+        with open(os.path.join(td, "pinrun-live-20261114T181141Z.jsonl"), "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(TF.run_p([])[0]) + "\n")
+        F._CACHE.clear()
+        s = str(_run(now=TF.NOW_P))
+        blk = s.split("<b>P band99 late-only</b>")[1].split("\n\n")[0]
+        assert blk.endswith("since Nov 14 1:11 PM ET\nnot engaged yet"), blk
+    finally:
+        paths.set_results(old)
+
+
+def test_q_midnight_reset_and_the_full_page():
+    """v-ladder-dayreset (11-14): Q's block carries the money the ladder made after its midnight reset (the old code stayed
+    halted); with the ladder log the page is A..N, O (withdrawn), P, Q -- every change -- and still one message, P's and
+    Q's money lines on it."""
+    old, td = _world()
+    try:
+        TF.write_p(td)
+        with open(os.path.join(td, "ladder-live-orders.jsonl"), "w", encoding="utf-8") as fh:
+            for r in TF.run_q([]):
+                fh.write(json.dumps(r, separators=(",", ":")) + "\n")
+        F._CACHE.clear()
+        s = str(_run(now=TF.NOW_Q))
+        assert len(s) <= MAX_LEN, len(s)
+        for cid in F.IDS + F.LADDER_IDS:
+            assert "<b>%s %s</b>" % (cid, F.NAMES[cid]) in s, cid
+        assert s.index("<b>N ") < s.index("<b>O ") < s.index("<b>P ") < s.index("<b>Q "), "letter order"
+        blk = s.split("<b>Q ladder midnight reset</b>")[1].split("\n\n")[0]
+        assert "since Nov 14 12:53 PM ET\nengaged 1 time, last Nov 15 12:00 AM ET\n🟢 net <b>+$12.04</b> (+0.43% of the bank)" in blk, blk
+        assert "\nmoney the ladder made after a midnight reset (the old code stayed halted): +$12.04 over 1 reset since" in blk, blk
+        assert "withdrawn 11-14" in s.split("<b>O ")[1].split("\n\n")[0] and "⚠️" not in s
+        assert "\nnet -$2.72: the early band bets skipped would have lost $15.56" in s.split("<b>P ")[1].split("\n\n")[0]
+        Q = next(c for c in F.report(now=TF.NOW_Q) if c["id"] == "Q")
+        assert FC.block(Q, BANK, 1, None)[-1] == (
+            "  Nov 15 12:00 AM ET · ladder · +$12.04 · the day stop of Nov 14 (the day at -$280.00) ended at midnight ET "
+            "and the ladder bid again: until its next start (Nov 15 4:50 AM ET) it made $12.04 on 4 markets; the old code "
+            "would have stayed halted"), FC.block(Q, BANK, 1, None)[-1]
+        rep = F.report(now=TF.NOW_Q)
+        T = F.totals(rep)
+        assert T["net_usd"] == round(sum(c["net_usd"] for c in rep if c["id"] not in "JO"), 2) and T["problems"] == []
+        assert s.rstrip().endswith("· engaged %d times · %d open" % (T["engaged"], T["open"])), s[-200:]
+    finally:
+        paths.set_results(old)
+
+
+def test_page_room_retired_fold_and_money_cut():
+    """Page room (11-14: the server's logs ran the page to 3,880 of 3,900 chars): N (shelved) and O (withdrawn) fold into
+    ONE short 'not live' line in N's place, never two blocks; a retired change with a problem keeps its block; P's net
+    leads its line, so the 120-char cut keeps it; no cut ever lands inside a money figure."""
+    old, td = _world()
+    try:
+        TF.write_p(td)
+        with open(os.path.join(td, "ladder-live-orders.jsonl"), "w", encoding="utf-8") as fh:
+            for r in TF.run_q([]):
+                fh.write(json.dumps(r, separators=(",", ":")) + "\n")
+        F._CACHE.clear()
+        rep = F.report(now=TF.NOW_Q)
+        s = str(_run(now=TF.NOW_Q))
+        line = ("not live: <b>N hedge line 0.60</b> (shelved 11-09) · <b>O ladder cash limit 100%</b> (withdrawn 11-14, "
+                "stays at 82%)")
+        assert s.count(line) == 1 and ("\n\n%s\n\n<b>P band99 late-only</b>" % line) in s, s
+        assert "SHELVED" not in s and "could not be tracked" not in s, "the long not-live words are off the page"
+        assert FC.retired_line(rep) == line and FC.retired_line([c for c in rep if c["id"] not in "NO"]) is None
+        blocks = len("\n" + "\n".join(FC.block(next(c for c in rep if c["id"] == "N"), BANK, 0, None, None, 0))
+                     + "\n\n" + "\n".join(FC.block(next(c for c in rep if c["id"] == "O"), BANK, 0, None, None, 0)))
+        assert blocks - len(line) >= 200, "the fold wins back %d chars on the page" % (blocks - len(line))
+        # a retired change that says a problem keeps its block (its warning line); a live N is a block again
+        N = next(c for c in rep if c["id"] == "N")
+        bad = [dict(N, problem="x")] + [c for c in rep if c["id"] != "N"]
+        s_bad = str(FC.render({"changes": bad, "bank": BANK}, _ctx(now=TF.NOW_Q)))
+        nblk = s_bad.split("\n\n<b>N hedge line 0.60</b>\n")[1].split("\n\n")[0]
+        assert "⚠️ <b>x</b>" in nblk and F.N_NOT_LIVE in nblk and "not live: <b>O ladder cash limit 100%</b>" in s_bad, s_bad
+        live_n = [dict(N, since="Nov 9 12:00 AM ET", retired=None)] + [c for c in rep if c["id"] != "N"]
+        s_live = str(FC.render({"changes": live_n, "bank": BANK}, _ctx(now=TF.NOW_Q)))
+        assert "\n<b>N hedge line 0.60</b>\n" in s_live and "not live: <b>O ladder cash limit 100%</b>" in s_live, s_live
+        # P's net first: the 120-char cut keeps it whole
+        P = next(c for c in rep if c["id"] == "P")
+        cut = FC.block(P, BANK, 0, None, 120)
+        assert any(x.startswith("net -$2.72: the early band bets skipped would have lost $15.56") and x.endswith("…")
+                   for x in cut), cut
+        # never inside a money figure: at every cut point of a money line the figures left are whole
+        for text in P["extra"] + [e["words"] for e in P["events"]] + ["-$1,234.56 opens it: then words"]:
+            for n in range(2, len(text) + 2):
+                got = FC._cut(text, n)
+                body = got[:-1] if got.endswith("…") and got != text else got
+                for m in FC._MONEY.finditer(body):
+                    whole = FC._MONEY.match(text, m.start())
+                    assert whole and whole.group() == m.group(), (text, n, got)
+                assert len(got) <= n or FC._MONEY.match(text), (text, n, got)
+        assert FC._cut("lost $15.56 (4 won)", 10) == "lost…" and FC._cut("lost $15.56 (4 won)", 13) == "lost $15.56…"
+        assert FC._cut("net -$2.72: x", 6) == "net…" and FC._cut("$15.56 and more", 4) == "$15.56…"
+    finally:
+        paths.set_results(old)
+
+
 def test_before_the_new_build_and_empty_folder():
     old, td = _world()
     try:
@@ -266,7 +436,8 @@ def test_before_the_new_build_and_empty_folder():
             os.remove(os.path.join(td, p))
         F._CACHE.clear()
         s = str(_run())                                        # the smoke's real folder may hold no pin log at all
-        assert s.count("not engaged yet") == 3 and s.count("not live yet") == 10 and s.count("SHELVED 11-09") == 1 and "⚪ <b>All changes: net $0.00</b>" in s, s
+        assert s.count("not engaged yet") == 3 and s.count("not live yet") == 11 and s.count("(shelved 11-09)") == 1 and "⚪ <b>All changes: net $0.00</b>" in s, s
+        assert "not live yet (comes with the first pin start on --band99-max-tau 30)" in s, "P: its own waiting words"
         assert "(+0.00% of the bank)" in s and "engaged 0 times" in s
     finally:
         paths.set_results(old)
@@ -281,10 +452,13 @@ def test_size_limit_trims_events_first():
             c["events"] = [{"et": "Nov 5 1:00 AM ET", "coin": "ZEC", "usd": 1.0, "words": "w" * 400, "open": False}] * 9
         s = str(FC.render(d, _ctx()))
         assert len(s) <= MAX_LEN and "engaged 9 times" in s and "w" * 400 not in s, (len(s), s[:300])
-        # fourteen changes, every one engaged (N, 11-08): even one 30-char event each is over one message (the blocks
-        # alone were 3,361 chars at thirteen), so the page is the blocks whole, no event lines; with twelve one 30-char
-        # event each fit
-        assert "w" * 29 not in s and "\n  Nov" not in s and s.count("\n\n<b>") == 14, "the fourteen blocks whole, no events"
+        # fifteen changes, every one engaged (N, 11-08; P, 11-14): even the blocks whole with no events are over one
+        # message (the blocks alone were 3,361 chars at thirteen), so the "what" lines go (they go before any money
+        # line) and one 30-char event each comes back (3,392 chars measured); with twelve one 30-char event each fit
+        # with their whats
+        A_what = next(c for c in d["changes"] if c["id"] == "A")["what"]
+        assert s.count("w" * 29 + "…") == 15 and "w" * 30 not in s and s.count("\n\n<b>") == 15 and A_what not in s, \
+            "the fifteen blocks without their whats, one cut event each"
         d["changes"] = d["changes"][:12]
         s = str(FC.render(d, _ctx()))
         assert len(s) <= MAX_LEN and s.count("w" * 29 + "…") == 12 and "w" * 59 not in s, "twelve: one event each, cut to 30"

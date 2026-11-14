@@ -1,11 +1,13 @@
-"""test_fixes.py -- botdata/fixes.py (v-fixes, 2026-11-04): every live pin change A..M scored on synthetic pin logs.
+"""test_fixes.py -- botdata/fixes.py (v-fixes, 2026-11-04): every live pin change A..Q scored on synthetic pin logs.
 
 Run:  C:\\Python314\\python.exe research\\botdata\\tests\\test_fixes.py   (exit 0 = every test passed; botstats.py
 --selftest runs it too). Synthetic runs: the 0925r build (code_sha ca156bf45704; rules A, B, C), a later build with
-another sha (D..J), the 0925u cheap-window run (K), the 0925v jump-hedge-shadow run (L) and the call-B run with its
-trajectory log (M). Every $ below is worked by hand from the scoring table (Kalshi's taker fee ceil(7 * p * (1 - p) * n)
-/ 100 inside); the phone test (phone/tests/test_fixes_cmd.py) renders the same logs.
+another sha (D..J), the 0925u cheap-window run (K), the 0925v jump-hedge-shadow run (L), the call-B run with its
+trajectory log (M), the 0925x band99late run with its trajectory log (P) and the ladder's order log (O, withdrawn; Q).
+Every $ below is worked by hand from the scoring table (Kalshi's taker fee ceil(7 * p * (1 - p) * n) / 100 inside); the
+phone test (phone/tests/test_fixes_cmd.py) renders the same logs.
 """
+import contextlib
 import json
 import os
 import sys
@@ -198,8 +200,14 @@ def _report(paths=None, now=NOW):
 def test_shape_and_sinces():
     d = tempfile.mkdtemp(prefix="fixes-test-")
     rep = _report(write_logs(d))
-    ck("".join(sorted(rep)) == F.IDS == "ABCDEFGHIJKLMN" and F.LADDER_IDS == "O",
-       "fourteen pin changes A..N, one row each; the ladder's O only when a ladder order log is read (none here)")
+    ck("".join(sorted(rep)) == F.IDS == "ABCDEFGHIJKLMNP" and F.LADDER_IDS == "OQ"
+       and [c["id"] for c in F.report(paths=write_logs(d), now=NOW)] == list("ABCDEFGHIJKLMNP"),
+       "fifteen pin changes A..N and P, one row each, in letter order; the ladder's O and Q only when a ladder order log "
+       "is read (none here)")
+    ck(rep["P"]["since"] is None and rep["P"]["engaged"] == 0 and rep["P"]["extra"] == []
+       and rep["P"]["not_live"] == F.P_NOT_LIVE == "not live yet (comes with the first pin start on --band99-max-tau 30)",
+       "P is not live before a start record has band99_max_tau set, and says what it waits for: %s" % rep["P"]["not_live"])
+    ck(all(c["withdrawn"] is False and c["problem"] is None for c in rep.values()), "no pin change is withdrawn")
     ck(rep["C"]["extra"] == [], "C has no step line before any 1.5x start or leg: %s" % rep["C"]["extra"])
     for c in rep.values():
         ck(set(c) >= {"id", "name", "what", "since", "engaged", "last_engaged", "open", "net_usd", "events", "extra",
@@ -292,8 +300,8 @@ def test_g_h_i_j():
 def test_not_live_yet_and_empty():
     d = tempfile.mkdtemp(prefix="fixes-test-")
     ps = write_logs(d)
-    rep = _report(ps[:2])                                  # the 0925r run only: D..M are not live
-    for k in "DEFGHIJKLM":
+    rep = _report(ps[:2])                                  # the 0925r run only: D..M and P are not live
+    for k in "DEFGHIJKLMP":
         ck(rep[k]["since"] is None and rep[k]["engaged"] == 0 and rep[k]["net_usd"] == 0.0 and rep[k]["events"] == [],
            "%s not live yet" % k)
     ck(rep["I"]["what"] == "up to 5 positions open at once (was 3)", "the new flags' words before the build is live")
@@ -1153,6 +1161,18 @@ def _ev(ev, t, **kw):
     return r
 
 
+@contextlib.contextmanager
+def o_live():
+    """O's scoring as if it had not been withdrawn (F.O_WITHDRAWN False), for the tests that keep its machinery
+    checked; the withdrawn row (the shipped value) is test_o_withdrawn's."""
+    saved = F.O_WITHDRAWN
+    F.O_WITHDRAWN = False
+    try:
+        yield
+    finally:
+        F.O_WITHDRAWN = saved
+
+
 def _lad_start(t, argv, frac, pot=1338.6325):
     return _ev("start", t, pid=4232, subaccount=1, live=True, sub_balance=pot, auto_size=True, pot=pot,
                auto={"pot_per_contract": 5.9756 if frac >= 1.0 else 14.0, "commit_frac": frac}, argv=argv,
@@ -1232,11 +1252,20 @@ def run_o(recs, with_rail100=True):
 
 
 def test_o_ladder_rail100():
+    with o_live():
+        _test_o_ladder_rail100()
+
+
+def _test_o_ladder_rail100():
     d = tempfile.mkdtemp(prefix="fixes-test-")
     ps = write_logs(d)
     pl = _write(d, "ladder-live-orders.jsonl", run_o([]), compact=True)   # ladder_live's own (compact) JSON
     rep = _report(ps + [pl], now=NOW_O)
-    ck("".join(sorted(rep)) == F.IDS + F.LADDER_IDS, "a ladder order log adds the O row after A..N: %s" % sorted(rep))
+    ck("".join(sorted(rep)) == "".join(sorted(F.IDS + F.LADDER_IDS))
+       and [c["id"] for c in F.report(paths=ps + [pl], now=NOW_O)] == list("ABCDEFGHIJKLMNOPQ"),
+       "a ladder order log adds the O and Q rows, in letter order around P: %s" % sorted(rep))
+    ck(rep["Q"]["since"] is None and rep["Q"]["not_live"] == F.Q_NOT_LIVE,
+       "Q is not live on ladder starts before the midnight-reset code (no start_reads): %s" % rep["Q"]["not_live"])
     O = rep["O"]
     ck(O["name"] == "ladder cash limit 100%" and O["since"] == "Nov 15 4:50 AM ET" and O["not_live"] is None,
        "O since the first ladder start whose argv has --commit-frac 1.0 (not the 0.82 one): %s" % O["since"])
@@ -1280,11 +1309,16 @@ def test_o_ladder_rail100():
     # rewritten shorter (another log in its place): read afresh
     _write(d, "ladder-live-orders.jsonl", run_o([], with_rail100=False), compact=True)
     O3 = _by_id(F.report(paths=[pl], now=NOW_O))["O"]
-    ck(O3["since"] is None and O3["engaged"] == 0 and O3["not_live"] == F.O_NOT_LIVE and "not live yet" in O3["not_live"],
+    ck(O3["since"] is None and O3["engaged"] == 0 and O3["not_live"] == F.O_NOT_LIVE and O3["withdrawn"] is False,
        "O before the restart on --commit-frac 1.0 (only the 0.82 start): not live, its own words: %s" % O3["not_live"])
 
 
 def test_o_none_yet_and_helpers():
+    with o_live():
+        _test_o_none_yet_and_helpers()
+
+
+def _test_o_none_yet_and_helpers():
     d = tempfile.mkdtemp(prefix="fixes-test-")
     pl = _write(d, "ladder-live-orders.jsonl", run_o([], with_rail100=False) + [_lad_start("2026-11-15T09:50:00.000Z",
                                                                                            O_ARGV100, 1.0)])
@@ -1315,15 +1349,59 @@ def test_o_none_yet_and_helpers():
 def test_o_untracked_is_a_problem():
     """The 100% argv started on the OLDER ladder code (auto.commit_frac 1.0, no argv / old_limit: it never marks a bid):
     O must not read 'none yet' forever -- it says ON THE 100% RAIL BUT NOT TRACKED as its problem, counted by totals();
-    once the marking code starts, the problem goes and the untracked hours stay said under the net."""
-    d = tempfile.mkdtemp(prefix="fixes-test-")
-    base = run_o([], with_rail100=False) + [_old_code_start("2026-11-15T09:50:00.000Z"),
-                                            # the old code's records: placed / live_fill with no over_82 at all
+    once the marking code starts, the problem goes and the untracked hours stay said under the net. (O's machinery,
+    run as if O had not been withdrawn: while it is, none of this is a problem -- test_o_withdrawn.)"""
+    with o_live():
+        _test_o_untracked_is_a_problem()
+
+
+def _old_code_base():
+    """The 0.82 day, then the 100% argv started on the OLDER ladder code with its unmarked placed / live_fill."""
+    return run_o([], with_rail100=False) + [_old_code_start("2026-11-15T09:50:00.000Z"),
                                             _ev("placed", "2026-11-15T09:59:31.000Z", order_id="k-2001", resp="{}",
                                                 body={"ticker": "KXNEAR15M-26NOV150500-00", "count": "224.00"}),
                                             _ev("live_fill", "2026-11-15T09:59:40.000Z", ticker="KXNEAR15M-26NOV150500-00",
                                                 paper_id=2001, kid="k-2001", side="yes", px="0.9800", delta=224,
                                                 filled=224)]
+
+
+def test_o_withdrawn():
+    """v-ladder-rail100 WITHDRAWN 11-14 (F.O_WITHDRAWN, the shipped value): O's row is never live whatever the ladder log
+    holds -- its words say withdrawn and that the ladder stays at 82% --, never a problem, never in totals(); a 100%
+    start in the log all the same is said in its words (never a quiet '82%' that is not true), still no problem."""
+    ck(F.O_WITHDRAWN is True and F.O_NOT_LIVE == "withdrawn 11-14: it could not be tracked against never changing it, so "
+       "the ladder stays at 82%", "O ships withdrawn, in those words: %s" % F.O_NOT_LIVE)
+    d = tempfile.mkdtemp(prefix="fixes-test-")
+    ps = write_logs(d)
+    # the 82% days only (the server's log today): withdrawn, exactly those words
+    pl = _write(d, "ladder-live-orders.jsonl", run_o([], with_rail100=False), compact=True)
+    rep = _report(ps + [pl], now=NOW_O)
+    O = rep["O"]
+    ck(O["since"] is None and O["engaged"] == 0 and O["net_usd"] == 0.0 and O["events"] == [] and O["extra"] == []
+       and O["problem"] is None and O["withdrawn"] is True and O["not_live"] == F.O_NOT_LIVE,
+       "O withdrawn on the 0.82 log: %s" % {k: O[k] for k in ("since", "engaged", "problem", "withdrawn", "not_live")})
+    # the logs that made O live, tracked (-213.04) and untracked (a problem): withdrawn, neither counts
+    for name, recs in (("tracked", run_o([])), ("untracked", _old_code_base())):
+        pl = _write(d, "ladder-live-orders.jsonl", recs, compact=True)
+        rep = _report(ps + [pl], now=NOW_O)
+        O, T = rep["O"], F.totals(list(rep.values()))
+        ck(O["since"] is None and O["engaged"] == 0 and O["problem"] is None and O["withdrawn"] is True
+           and O["not_live"] == F.O_NOT_LIVE + "; but the ladder's latest start (Nov 15 4:50 AM ET) runs --commit-frac "
+                                               "1.0: nothing of it is counted here"
+           and T["problems"] == [] and T["engaged"] == 15 and T["open"] == 2
+           and T["net_usd"] == round(sum(c["net_usd"] for k, c in rep.items() if k not in "JO"), 2),
+           "O withdrawn on the %s 100%% log: not live, no problem, not in the totals (15 engaged = A..N's), and its words "
+           "say the 100%% start: %s | %s" % (name, O["not_live"], T))
+    # totals() leaves a withdrawn row out even if one carried money or a problem
+    fake = dict(rep["O"], engaged=3, open=1, net_usd=-50.0, problem="x")
+    T2 = F.totals([fake, rep["A"]])
+    ck(T2["engaged"] == rep["A"]["engaged"] and T2["net_usd"] == rep["A"]["net_usd"] and T2["problems"] == [],
+       "totals(): a withdrawn row never counts, never a problem: %s" % T2)
+
+
+def _test_o_untracked_is_a_problem():
+    d = tempfile.mkdtemp(prefix="fixes-test-")
+    base = _old_code_base()                    # the old code's records: placed / live_fill with no over_82 at all
     pl = _write(d, "ladder-live-orders.jsonl", base, compact=True)
     F._CACHE.clear()
     rep = _report([pl], now=NOW_O)
@@ -1362,6 +1440,576 @@ def test_o_untracked_is_a_problem():
        and O3["extra"][0].startswith("ON THE 100% RAIL BUT NOT TRACKED") and "since Nov 15 6:50 AM ET" in O3["extra"][0],
        "the latest start untracked again: the problem is back, the tracked bids before it keep their money: %s"
        % O3["extra"][:1])
+
+
+# ---- v-0925x band99late (2026-11-14): P, each band leg skipped for being earlier than 30 s ---------------------------
+NOW_P = 1794684000.0               # 2026-11-14T19:20:00Z = 2:20 PM ET (the 2:15 PM market: 5 min past its close)
+PC = {"ZEC": 1794680100, "ETH": 1794680100, "BNB": 1794681000, "XRP": 1794681900, "DOGE": 1794682800,
+      "SOL": 1794683700}           # the closes: 1:15, 1:15, 1:30, 1:45, 2:00, 2:15 PM ET
+PT = {"ZEC": "KXZEC15M-26NOV141315-15", "ETH": "KXETH15M-26NOV141315-15", "BNB": "KXBNB15M-26NOV141330-30",
+      "XRP": "KXXRP15M-26NOV141345-45", "DOGE": "KXDOGE15M-26NOV141400-00", "SOL": "KXSOL15M-26NOV141415-15"}
+P_START = dict(code_sha="3a19b0019e9c", band99_max_tau=30, band99_ceiling=0.99, band99_frac=0.1, max_per_market=2,
+               tau_max=30, early_tau_max=45, hedge_odds_mult=1.5, hedge_odds_min_tau=11.0, size=447.0)
+
+
+def _b99(coin, tau, want, ask, n, leg="early", cs=None, tk=None, **kw):
+    """A band99_shadow record as pinrun 0925x writes it (the fields of the server's 11-14 18:14:25Z XRP record)."""
+    cs = PC[coin] if cs is None else cs
+    rec = dict(ticker=tk or PT[coin], close_s=cs, want=want, side=want, ask=ask, ask_seen=ask, ask_size=155.0, tau=tau,
+               max_tau=30, fair=(0.997 if want == "yes" else 0.003), edge_c=0.9, strike=1.0, digits=2, spot=1.0,
+               sigma=0.0002, book_age_ms=6, index_age_s=0.05, exchange_index=2, full=447.0, coin_size=None,
+               early_held=0.0, drop_seen=[ask, tau], budget_left=894.0, band99=True, band99_ceiling=0.99, band99_frac=0.1,
+               live=True, sent=False, leg=leg, n=n, n_band=44.0, limit=0.99, sweep_headroom_c=0.5,
+               ladder=[[ask, 155.0]], buyable=155.0, band99_ev_c=0.5)
+    rec.update(kw)
+    return _r("band99_shadow", _ts(cs - tau), **rec)
+
+
+def _p_order(coin, tau, want, n, px, leg="full", band99=False, early_held=0.0, cs=None, tk=None):
+    cs = PC[coin] if cs is None else cs
+    o = _order(_ts(cs - tau), tk or PT[coin], want, n, px, tau, leg=leg, limit=0.99)
+    o.update(band99=band99, early_held=early_held, ask_seen=px)
+    return o
+
+
+def run_p(recs):
+    """The 0925x run (11-14 1:11 PM ET on, --band99-max-tau 30): P. Every $ worked by hand with Kalshi's fee
+    ceil(7 x p x (1 - p) x n) / 100: a skipped band leg n at its ask, a loss less the 41% pin's hedges win back."""
+    def st(coin, want, res, cost, pnl_c):
+        return _r("settled", _ts(PC[coin] + 20), ticker=PT[coin], want=want, result=res, cost=cost, pnl_c=pnl_c)
+    recs += [
+        _r("start", "2026-11-14T18:11:41Z", **P_START),
+        # ZEC 1:15 PM, WON, a blocked early leg that won: the band's 40 Yes at 98.5c would have made 0.60 - fee 0.05 =
+        # 0.55; it was the market's early leg, so pin's own early leg (100 at 97c, +2.79) is early_once; the topup at
+        # 20 s is the 2nd fill, not blocked. The rule made 2.79 - 0.55 = +2.24. The topup's 200 (+ 100 held) is not the
+        # full bet (447 x the 97.5c band's 1.5): the book cut it, so how much more the old one would have bought is not
+        # counted (test_p_early_topup prices the ones that were at the full bet)
+        _b99("ZEC", 40, "yes", 0.985, 40.0),
+        _b99("ZEC", 30, "yes", 0.985, 40.0),          # a 2nd shadow of the same market (after a restart): not counted
+        _p_order("ZEC", 38, "yes", 100.0, 0.97, leg="early"),
+        _p_order("ZEC", 20, "yes", 200.0, 0.975, leg="topup", early_held=100.0),
+        st("ZEC", "yes", "yes", 0.97, 279.0), st("ZEC", "yes", "yes", 0.975, 465.0),
+        # ETH 1:15 PM, untraded: the trajectory's last second says No (fair 0.0), the band's 44 No at 98.9c would have
+        # made 0.484 - fee 0.04 = 0.44; nothing blocked: the rule cost 0.44
+        _b99("ETH", 40, "no", 0.989, 44.0),
+        # BNB 1:30 PM, LOST: the band's 30 No at 98.8c would have lost 29.64 + fee 0.03 = 29.67, x 0.59 = 17.51 after
+        # pin's hedges; it would have blocked pin's own early No leg (60 at 96c: -57.77) whose hedge (60 Yes at 40c:
+        # +34.99) is all that leg's: -22.78. The rule cost -22.78 - (-17.51) = 5.27
+        _b99("BNB", 42, "no", 0.988, 30.0),
+        _p_order("BNB", 36, "no", 60.0, 0.96, leg="early"),
+        _r("hedge", _ts(PC["BNB"] - 10), ticker=PT["BNB"], close_s=PC["BNB"], side="yes", price=0.40, n=60.0, asked=60.0,
+           status="executed", live=True),
+        st("BNB", "no", "yes", 0.96, -5777.0), st("BNB", "yes", "yes", 0.40, 3499.0),
+        # XRP 1:45 PM, the server's 11-14 shape: the band's 44 Yes at 98.1c (35 s) would have made 0.836 - fee 0.06 =
+        # 0.78 and held the market, so pin's own band leg at 22 s (28.8 at 98.8c, +0.32) is band99_held: -0.46
+        _b99("XRP", 35, "yes", 0.981, 44.0, ladder=[[0.981, 20.0], [0.982, 20.0], [0.983, 65.0]]),
+        _p_order("XRP", 22, "yes", 28.8, 0.988, band99=True),
+        st("XRP", "yes", "yes", 0.988, 32.16),
+        # DOGE 2:00 PM: the band's 20 Yes at 99c (0.20 - fee 0.02 = 0.18) is the 1st fill, pin's 100 at 97.5c the 2nd,
+        # its 50 at 97c at 12 s would be the 3rd: max_per_market (+1.39). The rule made 1.39 - 0.18 = +1.21
+        _b99("DOGE", 44, "yes", 0.99, 20.0),
+        _p_order("DOGE", 25, "yes", 100.0, 0.975),
+        _p_order("DOGE", 12, "yes", 50.0, 0.97),
+        st("DOGE", "yes", "yes", 0.975, 232.0), st("DOGE", "yes", "yes", 0.97, 139.0),
+        # SOL 2:15 PM, OPEN: no settled record, no trajectory row (5 min past its close at NOW_P: pending)
+        _b99("SOL", 40, "no", 0.985, 30.0),
+        # a paper (live false) shadow is not pin's
+        _b99("SOL", 41, "no", 0.985, 30.0, live=False, ticker="KXHYPE15M-26NOV141415-15"),
+    ]
+    return recs
+
+
+def traj_p(recs):
+    """The trajectory log of run_p: a filler market every second from the start to NOW_P (so the log is ~2 MB and the
+    close is found by the binary search, not by reading it all), and ETH's and XRP's last seconds."""
+    def tj(tk, cs, tau, want, fair, held=None):
+        return _r("traj", _ts(cs - tau), ticker=tk, close_s=cs, tau=tau, want=want, held=held, fair=fair,
+                  conf=(fair if want == "yes" else 1.0 - fair), spot=1.0, strike=1.0, eff_strike=1.0, mu=1.0, sd=0.001,
+                  cushion_sd=100.0, remaining=tau, sigma=0.0002, ask=None, ask_size=None, opp_ask=0.001,
+                  opp_size=40000.0, book_age_ms=7, index_age_s=1.0, gate="no_offer", gate_pass_ago=1, near=True,
+                  entries_stopped=False, paused=False)
+    t0 = 1794679901                                  # 18:11:41Z
+    for ep in range(t0, int(NOW_P)):
+        cs = ep - ep % 900 + 900                     # the close of the quarter it is in
+        recs.append(tj("KXBTC15M-filler", cs, cs - ep, "yes", 0.6))
+        if cs == PC["ETH"] and cs - ep <= 2:
+            recs.append(tj(PT["ETH"], cs, cs - ep, "no", 0.0))
+        if cs == PC["XRP"] and cs - ep <= 2:
+            recs.append(tj(PT["XRP"], cs, cs - ep, "yes", 1.0, held="yes"))
+    return recs
+
+
+def write_p(d):
+    pp = os.path.join(d, "pinrun-live-20261114T181141Z.jsonl")
+    with open(pp, "w", encoding="utf-8") as fh:
+        for r in run_p([]):
+            fh.write(json.dumps(r) + "\n")
+    with open(os.path.join(d, "pintraj-live-20261114T181141Z.jsonl"), "w", encoding="utf-8") as fh:
+        for r in traj_p([]):
+            fh.write(json.dumps(r) + "\n")
+    return pp
+
+
+def archive_traj(d, name="pintraj-live-20261114T181141Z.jsonl"):
+    """Archive folder d's log `name` the way log_rotate.py does: results\\archive\\<name>.gz (the same bytes, gzip), the
+    plain file gone. Returns the archive's path."""
+    import gzip
+    src, ad = os.path.join(d, name), os.path.join(d, "archive")
+    os.makedirs(ad, exist_ok=True)
+    dst = os.path.join(ad, name + ".gz")
+    with open(src, "rb") as a, gzip.open(dst, "wb") as b:
+        b.write(a.read())
+    os.remove(src)
+    return dst
+
+
+def test_p_band99_late():
+    d = tempfile.mkdtemp(prefix="fixes-test-")
+    pp = write_p(d)
+    rep = _report([pp], now=NOW_P)
+    P = rep["P"]
+    ck(P["name"] == "band99 late-only" and P["since"] == "Nov 14 1:11 PM ET" and P["not_live"] is None,
+       "P since the first start record with band99_max_tau: %s" % P["since"])
+    ck(P["engaged"] == 6 and P["open"] == 1 and P["net_usd"] == -2.72,
+       "P: 6 shadow markets (the 2nd ZEC shadow and the paper one not), SOL open: +2.24 - 0.44 - 5.27 - 0.46 + 1.21 = "
+       "-2.72: %s" % {x: P[x] for x in ("engaged", "open", "net_usd")})
+    w = {e["coin"]: e for e in P["events"]}
+    ck(sorted(w) == ["BNB", "DOGE", "ETH", "SOL", "XRP", "ZEC"], "P events by coin: %s" % sorted(w))
+    ck(w["ZEC"]["usd"] == 2.24 and w["ZEC"]["words"] == (
+        "an early band bet skipped: 40 Yes at 98.5c with 40 s left (it would have been the market's early leg); it would "
+        "have blocked pin's own early Yes leg at 38 s (100 at 97.0c: the band leg would have been the market's early leg); "
+        "pin's top-up at 20 s (200 at 97.5c) was not at the full bet: how much more the old code's would have bought is "
+        "not counted; it WON (pin's own settled record): it would have made $0.55; pin's blocked bets made $2.79 with "
+        "their hedges; so the rule made $2.24") and w["ZEC"]["et"] == "Nov 14 1:14 PM ET",
+       "P won, a blocked early leg that won: 2.79 - 0.55 = +2.24 (the topup, the 2nd fill, not blocked; not at the full "
+       "bet, so not priced): %s" % w["ZEC"])
+    ck(w["BNB"]["usd"] == -5.27 and "it LOST (pin's own settled record): it would have lost $29.67, $17.51 after pin's "
+       "hedges win back 41%; pin's blocked bets lost $22.78 with their hedges; so the rule cost $5.27" in w["BNB"]["words"]
+       and "pin's own early No leg at 36 s (60 at 96.0c" in w["BNB"]["words"],
+       "P lost: the band's -29.67 x 0.59 = -17.51 against pin's early leg -57.77 + its hedge +34.99: %s" % w["BNB"])
+    ck(w["ETH"]["usd"] == -0.44 and w["ETH"]["words"].endswith(
+        "it would have blocked none of pin's own bets; it WON (the index at the close): it would have made $0.44; so the "
+        "rule cost $0.44"), "P untraded, the result off the trajectory's last second: %s" % w["ETH"])
+    ck(w["XRP"]["usd"] == -0.46 and "pin's own band Yes leg at 22 s (28.8 at 98.8c: the band leg would have held the "
+       "market)" in w["XRP"]["words"] and "made $0.78" in w["XRP"]["words"] and "made $0.32" in w["XRP"]["words"],
+       "P band99_held: 0.32 - 0.78: %s" % w["XRP"])
+    ck(w["DOGE"]["usd"] == 1.21 and "pin's Yes leg at 12 s (50 at 97.0c: a 3rd fill counting the band leg (2 a market))"
+       in w["DOGE"]["words"] and "pin's blocked bets made $1.39" in w["DOGE"]["words"],
+       "P max_per_market: the 3rd fill (+1.39) - 0.18 = +1.21: %s" % w["DOGE"])
+    ck(w["SOL"]["usd"] is None and w["SOL"]["open"] and w["SOL"]["words"].endswith("; not settled yet"),
+       "P open: no result yet: %s" % w["SOL"])
+    ck(P["extra"] == [
+        "net -$2.72: the early band bets skipped would have lost $15.56 (4 won, 1 lost); pin's own bets they would have "
+        "blocked lost $18.28 · 1 open",
+        "gross, before pin's hedges win back 41% of a band loss: they would have lost $27.72; blocked: 2 early legs "
+        "(top-ups: 1 not at the full bet: not counted), 1 3rd fill, 1 later band leg"],
+       "P's lines, the NET FIRST: X = 0.55 + 0.44 - 17.51 + 0.78 + 0.18 = -15.56, Y = 2.79 - 22.78 + 0.32 + 1.39 = "
+       "-18.28, Y - X = -2.72; the gross -27.72: %s" % P["extra"])
+    ck(P["what"] == ("the band99 leg (a tenth of the bet at up to 99c) only with 30 s or less left; each earlier one "
+                     "skipped is priced by what it would have made and the bets of pin's it would have blocked"),
+       "P what, off the start record: %s" % P["what"])
+    for e in P["events"]:
+        ck("—" not in e["words"], "no em dash in P's words")
+    T = F.totals(list(rep.values()))
+    ck(T["net_usd"] == round(sum(c["net_usd"] for k, c in rep.items() if k != "J"), 2) and T["engaged"] >= 6,
+       "P is in the totals (pin's real money and the band legs it skipped): %s" % T)
+    # 4 h on, still no result for SOL: unknown, still open
+    P4 = _report([pp], now=NOW_P + 4 * 3600)["P"]
+    s4 = next(e for e in P4["events"] if e["coin"] == "SOL")
+    ck(s4["open"] and s4["words"].endswith("; no result 3 h after the close (unknown)") and P4["net_usd"] == -2.72,
+       "P unknown 3 h after the close: %s" % s4["words"])
+    # the trajectory by binary search equals a whole read, at every close of the log and between them
+    tp = os.path.join(d, "pintraj-live-20261114T181141Z.jsonl")
+    ck(os.path.getsize(tp) > 1 << 20, "the planted trajectory log is over 1 MB (the search has work to do)")
+    rows = [json.loads(ln) for ln in open(tp, encoding="utf-8")]
+    for cs in sorted(set(PC.values())) + [1794679200, 1794685000]:
+        want = {}
+        for r in rows:
+            if r["close_s"] == cs and r["tau"] <= 1:
+                want.setdefault(r["ticker"], []).append(r)
+        got = F.traj_close_rows(tp, cs)
+        ck({k: [x["t"] for x in v] for k, v in got.items()} == {k: [x["t"] for x in v] for k, v in want.items()},
+           "traj_close_rows at %d: the binary search finds what a whole read finds: %s" % (cs, sorted(got)))
+    ck(F.traj_close_rows(os.path.join(d, "missing.jsonl"), PC["ETH"]) == {}, "a missing trajectory log: {}")
+    # the trajectory archived the way log_rotate does it (results\archive\<name>.gz, two days after its last write) while
+    # the pin log is still plain: P finds it there (test_p_archived_trajectory: the read, the cache, an archived pin log)
+    gz = archive_traj(d)
+    ck(not os.path.exists(tp) and F.p_traj_path(pp) == gz, "p_traj_path resolves the archive: %s" % F.p_traj_path(pp))
+    Pg = _report([pp], now=NOW_P)["P"]
+    ck(Pg["net_usd"] == -2.72 and next(e for e in Pg["events"] if e["coin"] == "ETH")["usd"] == -0.44,
+       "P reads results\\archive\\pintraj-*.jsonl.gz once the plain one is archived: %s" % Pg["net_usd"])
+    # no trajectory log at all (the archive kept in _P_CLOSES is not asked: there is no file to resolve): ETH has no
+    # result (open), the rest unchanged
+    os.remove(gz)
+    Pn = _report([pp], now=NOW_P)["P"]
+    ck(Pn["open"] == 2 and Pn["net_usd"] == -2.28 and next(e for e in Pn["events"] if e["coin"] == "ETH")["usd"] is None,
+       "P without a trajectory log: ETH open until a result is known (-2.72 + 0.44): %s" % Pn["net_usd"])
+    # helpers
+    r0 = _b99("ZEC", 40, "yes", 0.985, 40.0)
+    ck([round(x, 4) for x in F.p_given_up(r0, True)] == [0.55, 0.55] and F.p_given_up(dict(r0, n=0), True) == (0.0, 0.0)
+       and F.p_given_up(dict(r0, ask=None), False) == (0.0, 0.0)
+       and [round(x, 4) for x in F.p_given_up(_b99("BNB", 42, "no", 0.988, 30.0), False)] == [-17.5053, -29.67]
+       and F.p_early(r0) and not F.p_early(dict(r0, leg="full")) and F.p_early({"tau": 31}) and not F.p_early({"tau": 30}),
+       "p_given_up (won, nothing, no ask, lost x 0.59) and p_early")
+    ck(F.p_blocked([], dict(r0, n=0)) == [], "a shadow that would have bought nothing blocks nothing")
+
+
+def test_p_none_yet():
+    d = tempfile.mkdtemp(prefix="fixes-test-")
+    p = _write(d, "pinrun-live-20261114T181141Z.jsonl", run_p([])[:1])
+    P = _report([p], now=NOW_P)["P"]
+    ck(P["since"] == "Nov 14 1:11 PM ET" and P["engaged"] == 0 and P["net_usd"] == 0.0 and P["not_live"] is None
+       and P["extra"] == ["early band bets skipped: none yet since Nov 14 1:11 PM ET"],
+       "P live with no shadow yet reads 'none yet': %s" % P["extra"])
+    # only an open shadow: 'none settled yet'
+    p = _write(d, "pinrun-live-20261114T181141Z.jsonl", run_p([])[:1] + [_b99("SOL", 40, "no", 0.985, 30.0)])
+    P = _report([p], now=NOW_P)["P"]
+    ck(P["engaged"] == 1 and P["open"] == 1 and P["extra"] == ["early band bets skipped: none settled yet since Nov 14 "
+                                                               "1:11 PM ET · 1 open"], "P open only: %s" % P["extra"])
+
+
+def test_p_archived_trajectory():
+    """log_rotate moves a pintraj log to results\\archive\\<name>.gz two days after its last write (11-19 for the 0925x
+    run's): P must still price every skipped band leg in a market pin did not trade (its result is the trajectory's last
+    second). The archive is read through ONCE for all of the run's shadow markets and only each one's close row is kept
+    (_P_CLOSES, never _CACHE: _load clears that as the live log grows) -- never the trajectory; an archived pin log
+    finds its trajectory in the same archive; a file moved between the look and the read is asked for again."""
+    d = tempfile.mkdtemp(prefix="fixes-test-")
+    pp = write_p(d)
+    gz = archive_traj(d)
+    F._P_CLOSES.clear()
+    opened, real_open = [], F._lf.open
+
+    def counting(path, *a, **k):
+        if "pintraj-live-" in str(path):
+            opened.append(str(path))
+        return real_open(path, *a, **k)
+    F._lf.open = counting
+    try:
+        P1 = _report([pp], now=NOW_P)["P"]
+        n1 = list(opened)
+        for i in range(11):                            # the live log grows: a new _load key each ask; then _CACHE cleared
+            with open(pp, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(_r("heartbeat", _ts(NOW_P - 60 + i))) + "\n")
+            F.report(paths=[pp], now=NOW_P)
+        F._CACHE.clear()
+        P2 = _by_id(F.report(paths=[pp], now=NOW_P))["P"]
+    finally:
+        F._lf.open = real_open
+    eth = [e["usd"] for P_ in (P1, P2) for e in P_["events"] if e["coin"] == "ETH"]
+    ck(P1["net_usd"] == P2["net_usd"] == -2.72 and eth == [-0.44, -0.44],
+       "P priced off the archived trajectory, ETH's No off its last second: %s %s" % (P1["net_usd"], eth))
+    ck(n1 == [gz] and opened == [gz], "the archive read through once for the run's six shadow markets, never again (12 "
+                                      "more reports, _load's eviction and _CACHE cleared): %s" % opened)
+    st = os.stat(gz)
+    kept = F._P_CLOSES[(gz, st.st_size, st.st_mtime_ns)]
+    ck(set(kept) == {(PT[c], PC[c]) for c in ("ZEC", "ETH", "BNB", "XRP", "DOGE", "SOL")}
+       and kept[(PT["ETH"], PC["ETH"])] == [{"tau": 1, "fair": 0.0}] and kept[(PT["XRP"], PC["XRP"])] == [{"tau": 1, "fair": 1.0}]
+       and kept[(PT["SOL"], PC["SOL"])] == [] and not any(k[0] == "KXBTC15M-filler" for k in kept)
+       and not any(isinstance(k, tuple) and k and k[0] == "trajgz" for k in F._CACHE),
+       "what is kept: the close row (tau, fair) of each shadow market, [] where the archive has none -- not the filler "
+       "market, not the trajectory, nothing in _CACHE: %s" % kept)
+    # an archived PIN log too (60 days on): its trajectory resolves from the results folder above results\archive
+    import gzip
+    ppg = os.path.join(d, "archive", os.path.basename(pp) + ".gz")
+    with open(pp, "rb") as a, gzip.open(ppg, "wb") as b:
+        b.write(a.read())
+    os.remove(pp)
+    P3 = _report([ppg], now=NOW_P)["P"]
+    ck(F.p_traj_path(ppg) == gz and P3["net_usd"] == -2.72, "an archived pin log's trajectory: %s" % F.p_traj_path(ppg))
+    # moved to the archive between the look and the read: asked again, from the archive
+    plain = os.path.join(d, "pintraj-live-20261114T181141Z.jsonl")
+    with open(plain, "w", encoding="utf-8") as fh:
+        for r in traj_p([]):
+            fh.write(json.dumps(r) + "\n")
+    ck(F.p_traj_path(pp) == plain and F.p_traj_path(ppg) == plain, "plain and archived both there: the plain one")
+    real_rows = F.traj_close_rows
+
+    def rotated(tp, cs, pad=5.0):
+        os.remove(tp)                                  # log_rotate's delete, right after p_traj_path's look
+        return {}
+    F.traj_close_rows = rotated
+    try:
+        rows = F.p_traj({"ticker": PT["ETH"], "close_s": PC["ETH"], "_path": pp}, {})
+    finally:
+        F.traj_close_rows = real_rows
+    ck(rows == [{"tau": 1, "fair": 0.0}] and not os.path.exists(plain), "a trajectory archived mid-read: %s" % rows)
+    ck(F.p_traj_path(os.path.join(d, "ladder-live-orders.jsonl")) is None and F.p_traj_path(None) is None
+       and F.p_traj_path(os.path.join(d, "pinrun-live-20261101T000000Z.jsonl")) is None
+       and F.traj_close_rows(gz, PC["ETH"]) == {},
+       "p_traj_path: None for a log that is not pin's, and when neither file is there; the binary search never takes "
+       "an archive (traj_gz_rows reads those)")
+
+
+# the 0925x run's later closes (2:30 to 3:15 PM ET), for the top-up after a blocked early leg
+NOW_PT = 1794688200.0              # 2026-11-14T20:30:00Z = 3:30 PM ET
+PTC = {"NEAR": 1794684600, "BNB": 1794685500, "DOGE": 1794686400, "SOL": 1794687300}
+PTT = {"NEAR": "KXNEAR15M-26NOV141430-30", "BNB": "KXBNB15M-26NOV141445-45", "DOGE": "KXDOGE15M-26NOV141500-00",
+       "SOL": "KXSOL15M-26NOV141515-15"}
+
+
+def run_pt(recs):
+    """Four markets where the skipped band leg (B contracts) would have been the early leg, so pin's own early leg (E) is
+    blocked (early_once) and pin's real top-up completed the position from E. The old code's top-up would have completed
+    it from B: when the real one filled the full bet (447 x the multiple - early_held), it would have bought E - B more,
+    priced at the top-up's price and the result with their share of the hedges, and added to what the rule gave up."""
+    def b(c, tau, want, ask, n):
+        return _b99(c, tau, want, ask, n, cs=PTC[c], tk=PTT[c])
+
+    def o(c, tau, want, n, px, leg, eh=0.0):
+        return _p_order(c, tau, want, n, px, leg=leg, early_held=eh, cs=PTC[c], tk=PTT[c])
+
+    def st(c, want, res, cost, pnl_c):
+        return _r("settled", _ts(PTC[c] + 20), ticker=PTT[c], want=want, result=res, cost=cost, pnl_c=pnl_c)
+    recs += [
+        _r("start", "2026-11-14T19:20:00Z", **dict(P_START, late_mult=1.5, late_tau=10, doubt_mult=1.0,
+                                                    band_mults=[[0.955, 0.981, 1.5]])),
+        # NEAR 2:30 PM, WON, at the full bet (98.3c: no band multiple; 20 s: not the late one): 100 held + 347 = 447. The
+        # band's 40 at 98.5c would have made 0.55; pin's early 100 at 98.2c made 1.67; the old top-up's 60 more at 98.3c
+        # would have made 1.02 - fee ceil(7 x 0.983 x 0.017 x 60 = 7.02) / 100 = 0.94. Given up 0.55 + 0.94 = 1.49:
+        # the rule made 1.67 - 1.49 = +0.18
+        b("NEAR", 40, "yes", 0.985, 40.0),
+        o("NEAR", 38, "yes", 100.0, 0.982, "early"),
+        o("NEAR", 20, "yes", 347.0, 0.983, "topup", 100.0),
+        st("NEAR", "yes", "yes", 0.982, 167.0), st("NEAR", "yes", "yes", 0.983, 548.9),
+        # BNB 2:45 PM, LOST, at the full bet x 1.5 (97c is in the 95.5-98.1c band): 60 held + 610.5 = 670.5, hedged by
+        # 600 Yes at 40c (+349.92). The band's 30 No at 98.8c: -29.67, x 0.59 = -17.51; pin's early 60 at 96c: -57.77 +
+        # 349.92 x 60 / 670.5 = -26.46; the old top-up's 30 more at 97c: -29.17 + 349.92 x 30 / 670.5 = -13.51. Given up
+        # -17.51 - 13.51 = -31.02: the rule made -26.46 + 31.02 = +4.56
+        b("BNB", 42, "no", 0.988, 30.0),
+        o("BNB", 36, "no", 60.0, 0.96, "early"),
+        o("BNB", 20, "no", 610.5, 0.97, "topup", 60.0),
+        _r("hedge", _ts(PTC["BNB"] - 10), ticker=PTT["BNB"], close_s=PTC["BNB"], side="yes", price=0.40, n=600.0,
+           asked=600.0, status="executed", live=True),
+        st("BNB", "no", "yes", 0.96, -5777.0), st("BNB", "no", "yes", 0.97, -59343.5), st("BNB", "yes", "yes", 0.40, 34992.0),
+        # DOGE 3:00 PM, WON, NOT at the full bet (100 held + 150: the book cut it): not counted; 1.67 - 0.55 = +1.12
+        b("DOGE", 40, "yes", 0.985, 40.0),
+        o("DOGE", 38, "yes", 100.0, 0.982, "early"),
+        o("DOGE", 20, "yes", 150.0, 0.983, "topup", 100.0),
+        st("DOGE", "yes", "yes", 0.982, 167.0), st("DOGE", "yes", "yes", 0.983, 237.0),
+        # SOL 3:15 PM, WON, at the full bet with E (20) under B (40): the old top-up would have been 20 SMALLER, 20 at
+        # 98.3c it would not have bought (0.34 - 0.03 = 0.31 off the given up): 0.55 - 0.31 = 0.24; pin's early 20 at
+        # 98.2c made 0.33: +0.09 (the real 20 at 98.2c + 427 against 40 at 98.5c + 407: 0.33 - 0.55 + 0.31)
+        b("SOL", 40, "yes", 0.985, 40.0),
+        o("SOL", 38, "yes", 20.0, 0.982, "early"),
+        o("SOL", 20, "yes", 427.0, 0.983, "topup", 20.0),
+        st("SOL", "yes", "yes", 0.982, 33.0), st("SOL", "yes", "yes", 0.983, 675.0),
+    ]
+    return recs
+
+
+def test_p_early_topup():
+    d = tempfile.mkdtemp(prefix="fixes-test-")
+    p = _write(d, "pinrun-live-20261114T192000Z.jsonl", run_pt([]))
+    P = _report([p], now=NOW_PT)["P"]
+    w = {e["coin"]: e for e in P["events"]}
+    ck({c: w[c]["usd"] for c in w} == {"NEAR": 0.18, "BNB": 4.56, "DOGE": 1.12, "SOL": 0.09} and P["net_usd"] == 5.95
+       and P["open"] == 0, "P with the old code's top-up: +0.18 + 4.56 + 1.12 + 0.09 = +5.95: %s"
+       % {c: w[c]["usd"] for c in w})
+    ck(w["NEAR"]["words"] == (
+        "an early band bet skipped: 40 Yes at 98.5c with 40 s left (it would have been the market's early leg); it would "
+        "have blocked pin's own early Yes leg at 38 s (100 at 98.2c: the band leg would have been the market's early leg); "
+        "pin's top-up at 20 s (347 at 98.3c) filled the full bet, so the old code's would have bought 60 more (100 early "
+        "less 40 band); it WON (pin's own settled record): it would have made $0.55; the old code's top-up (60 more) adds "
+        "+$0.94 to that, hedges in; pin's blocked bets made $1.67 with their hedges; so the rule made $0.18"),
+       "P at the full bet, won: %s" % w["NEAR"]["words"])
+    ck("filled the full bet, so the old code's would have bought 30 more (60 early less 30 band); it LOST (pin's own "
+       "settled record): it would have lost $29.67, $17.51 after pin's hedges win back 41%; the old code's top-up (30 "
+       "more) adds -$13.51 to that, hedges in; pin's blocked bets lost $26.46 with their hedges; so the rule made $4.56"
+       in w["BNB"]["words"], "P at the full bet x the band's 1.5, lost, the hedge shared by contracts: %s" % w["BNB"]["words"])
+    ck("pin's top-up at 20 s (150 at 98.3c) was not at the full bet: how much more the old code's would have bought is "
+       "not counted; it WON" in w["DOGE"]["words"] and "old code's top-up (" not in w["DOGE"]["words"],
+       "P not at the full bet: said, not priced: %s" % w["DOGE"]["words"])
+    ck("so the old code's would have bought 20 fewer (20 early less 40 band)" in w["SOL"]["words"]
+       and "the old code's top-up (20 fewer) adds -$0.31 to that" in w["SOL"]["words"],
+       "P with E under B: the old top-up smaller: %s" % w["SOL"]["words"])
+    ck(P["extra"] == [
+        "net +$5.95: the early band bets skipped would have lost $28.74 (3 won, 1 lost); pin's own bets they would have "
+        "blocked lost $22.79",
+        "gross, before pin's hedges win back 41% of a band loss: they would have lost $40.90; blocked: 4 early legs "
+        "(top-ups: 3 priced -$12.88, 1 not at the full bet: not counted), 0 3rd fills, 0 later band legs"],
+       "P's lines: X = 1.49 - 31.02 + 0.55 + 0.24 = -28.74, Y = 1.67 - 26.46 + 1.67 + 0.33 = -22.79, the top-ups "
+       "0.94 - 13.51 - 0.31 = -12.88: %s" % P["extra"])
+    # the helpers: the multiple (band, late, none), the full-bet test, nothing to price
+    S = F._load([p])[1]
+    by = {}
+    for o_ in S.orders:
+        by.setdefault(o_["ticker"], []).append(o_)
+    b0 = next(r for r in S.b99s if r["ticker"] == PTT["BNB"])
+    tp = F.p_topup(by[PTT["BNB"]], b0, F.p_blocked(by[PTT["BNB"]], b0), S.latest_start())
+    ck(tp["at_full"] and tp["n"] == 30.0 and tp["early_held"] == 60.0 and tp["full"] == 670.5,
+       "p_topup: 97c is the band's 1.5 x 447 = 670.5: %s" % {k: tp[k] for k in ("at_full", "n", "full")})
+    ck(F.p_topup(by[PTT["BNB"]], b0, F.p_blocked(by[PTT["BNB"]], b0), dict(S.latest_start(), band_mults=[]))["at_full"]
+       is False, "without the band multiple 670.5 is not 447: not at the full bet")
+    late = [dict(o_, tau_at_send=8) if o_.get("leg") == "topup" else o_ for o_ in by[PTT["NEAR"]]]
+    n0 = next(r for r in S.b99s if r["ticker"] == PTT["NEAR"])
+    ck(F.p_topup(late, n0, F.p_blocked(late, n0), S.latest_start())["at_full"] is False
+       and F.p_topup(late, n0, F.p_blocked(late, n0), dict(S.latest_start(), late_mult=1.0))["at_full"] is True,
+       "inside late_tau the late 1.5 is the multiple: 447 is then not the full bet")
+    ck(F.p_topup(by[PTT["NEAR"]], n0, [], S.latest_start()) is None
+       and F.p_topup([x for x in by[PTT["NEAR"]] if x.get("leg") != "topup"], n0,
+                     F.p_blocked(by[PTT["NEAR"]], n0), S.latest_start()) is None
+       and F.p_topup(by[PTT["NEAR"]], dict(n0, full=None), F.p_blocked(by[PTT["NEAR"]], n0), S.latest_start())["at_full"]
+       is False, "p_topup: nothing blocked or no top-up -> None; no full in the record -> not at the full bet")
+    # a hedge of the market not settled yet: open, the top-up not priced either (BNB without its hedge's settled record)
+    p2 = _write(d, "pinrun-live-20261114T192000Z.jsonl",
+                [r for r in run_pt([]) if not (r.get("kind") == "settled" and r.get("want") == "yes"
+                                               and r.get("ticker") == PTT["BNB"])])
+    P2 = _report([p2], now=NOW_PT)["P"]
+    ck(next(e for e in P2["events"] if e["coin"] == "BNB")["usd"] is None and P2["open"] == 1,
+       "P open while the top-up side's hedge has not settled")
+
+
+# ---- v-ladder-dayreset (the ladder's 2026-11-14 17:53:01Z start): Q, the money after a midnight reset ---------------
+NOW_Q = 1794743400.0               # 2026-11-15T11:50:00Z = 6:50 AM ET
+
+
+def _q_start(t):
+    """A start record of the ladder code with the midnight reset (its start record carries start_reads)."""
+    return dict(_lad_start(t, O_ARGV82, 0.82), start_reads=[200])
+
+
+def _q_fill(t, tk, side, n):
+    return _ev("live_fill", t, ticker=tk, paper_id=int(n), kid="k-q", side=side, px="0.9800", delta=n, filled=n,
+               over_82=False)
+
+
+def run_q(recs, end_start=True):
+    """The ladder's order log: the old code's start, the midnight-reset code's start (11-14 12:53 PM ET), a day stop on
+    11-14, its reset at midnight ET, the markets after it and (end_start) the ladder's next start at 4:50 AM ET 11-15.
+    Each market's money is its live_settle pnl (98c bids: a win +2c a contract, a loss -98c)."""
+    recs += [
+        _lad_start("2026-11-14T10:00:14.128Z", O_ARGV82, 0.82),
+        _q_start("2026-11-14T17:53:01.311Z"),
+        # 11-14 3:00 PM ET: the ZEC loss that trips the day stop -- before the reset, not Q's
+        _q_fill("2026-11-14T19:59:40.000Z", "KXZEC15M-26NOV141500-00", "no", 226),
+        _settle("2026-11-14T20:00:23.000Z", "KXZEC15M-26NOV141500-00", "no", "yes", 226),
+        _ev("day_stop", "2026-11-14T20:00:23.100Z", day="2026-11-14", day_pnl=-280.0),
+        # a market filled before the reset that settles after it: its contracts are not the reset's
+        _q_fill("2026-11-15T04:59:30.000Z", "KXNEAR15M-26NOV150000-00", "yes", 226),
+        _ev("day_stop_reset", "2026-11-15T05:00:00.020Z", halt_day="2026-11-14", day="2026-11-15", halt_day_pnl=-280.0,
+            day_stop=-270.46),
+        _settle("2026-11-15T05:00:20.000Z", "KXNEAR15M-26NOV150000-00", "yes", "yes", 226),
+        # after the reset: NEAR +4.52, ZEC +4.52, DOGE (two fills) +2.00, HYPE +1.00 = +12.04
+        _q_fill("2026-11-15T05:14:40.000Z", "KXNEAR15M-26NOV150015-15", "yes", 226),
+        _settle("2026-11-15T05:15:30.000Z", "KXNEAR15M-26NOV150015-15", "yes", "yes", 226),
+        _q_fill("2026-11-15T05:29:40.000Z", "KXZEC15M-26NOV150030-30", "no", 226),
+        _settle("2026-11-15T05:30:30.000Z", "KXZEC15M-26NOV150030-30", "no", "no", 226),
+        _q_fill("2026-11-15T05:44:40.000Z", "KXDOGE15M-26NOV150045-45", "yes", 60),
+        _q_fill("2026-11-15T05:44:45.000Z", "KXDOGE15M-26NOV150045-45", "yes", 40),
+        _settle("2026-11-15T05:45:30.000Z", "KXDOGE15M-26NOV150045-45", "yes", "yes", 100),
+        _q_fill("2026-11-15T09:44:50.000Z", "KXHYPE15M-26NOV150445-45", "no", 50),
+        _settle("2026-11-15T09:45:30.000Z", "KXHYPE15M-26NOV150445-45", "no", "no", 50),
+    ]
+    if end_start:
+        recs += [
+            _q_start("2026-11-15T09:50:00.000Z"),
+            # after the next start: the old code would have bid again too, not Q's
+            _q_fill("2026-11-15T09:59:40.000Z", "KXXRP15M-26NOV150500-00", "yes", 226),
+            _settle("2026-11-15T10:00:30.000Z", "KXXRP15M-26NOV150500-00", "yes", "yes", 226),
+        ]
+    return recs
+
+
+def test_q_midnight_reset():
+    d = tempfile.mkdtemp(prefix="fixes-test-")
+    ps = write_logs(d)
+    pl = _write(d, "ladder-live-orders.jsonl", run_q([]), compact=True)
+    rep = _report(ps + [pl], now=NOW_Q)
+    Q = rep["Q"]
+    ck(Q["name"] == "ladder midnight reset" and Q["since"] == "Nov 14 12:53 PM ET" and Q["not_live"] is None,
+       "Q since the first ladder start with start_reads (not the old code's 5:00 AM one): %s" % Q["since"])
+    ck(Q["engaged"] == 1 and Q["open"] == 0 and Q["net_usd"] == 12.04,
+       "Q: one reset, the markets filled from it to the next start: 4.52 + 4.52 + 2.00 + 1.00 = +12.04 (the 11:59:30 PM "
+       "fill and the 5:00 AM market after the next start not): %s" % {x: Q[x] for x in ("engaged", "open", "net_usd")})
+    e = Q["events"][0]
+    ck(e["usd"] == 12.04 and e["coin"] == "ladder" and e["et"] == "Nov 15 12:00 AM ET" and not e["open"]
+       and e["words"] == ("the day stop of Nov 14 (the day at -$280.00) ended at midnight ET and the ladder bid again: "
+                          "until its next start (Nov 15 4:50 AM ET) it made $12.04 on 4 markets; the old code would have "
+                          "stayed halted"), "Q event: %s" % e)
+    ck(Q["extra"] == ["money the ladder made after a midnight reset (the old code stayed halted): +$12.04 over 1 reset "
+                      "since Nov 14 12:53 PM ET (4 markets settled)"], "Q's line: %s" % Q["extra"])
+    ck(Q["what"] == "a ladder day stop ends at the next ET midnight (before, it held until the ladder's process ended, up "
+                    "to 7 days)", "Q what: %s" % Q["what"])
+    T = F.totals(list(rep.values()))
+    ck(T["engaged"] == 16 and T["open"] == 2 and T["net_usd"] == round(sum(c["net_usd"] for k, c in rep.items()
+                                                                           if k not in "JO"), 2),
+       "Q is in the totals (15 + 1 engagements; O withdrawn is not): %s" % T)
+    # still running (no next start yet), a market not settled yet, and a second reset the next night: each reset's span
+    # ends at the next one; the open span shows the money so far
+    recs = run_q([], end_start=False) + [
+        _q_fill("2026-11-15T09:59:40.000Z", "KXXRP15M-26NOV150500-00", "yes", 226),
+        _ev("day_stop_reset", "2026-11-16T05:00:00.010Z", halt_day="2026-11-15", day="2026-11-16", halt_day_pnl=-275.0,
+            day_stop=-270.46),
+        _q_fill("2026-11-16T05:14:40.000Z", "KXZEC15M-26NOV160015-15", "no", 226),
+        _settle("2026-11-16T05:15:30.000Z", "KXZEC15M-26NOV160015-15", "no", "no", 226)]
+    pl = _write(d, "ladder-live-orders.jsonl", recs, compact=True)
+    now2 = 1794806400.0                # 2026-11-16T05:20:00Z
+    Q2 = _report([pl], now=now2)["Q"]
+    e1, e2 = Q2["events"]
+    ck(Q2["engaged"] == 2 and Q2["open"] == 2 and Q2["net_usd"] == 16.56
+       and e1["usd"] == 12.04 and e1["open"] and e1["words"].startswith(
+           "the day stop of Nov 14 (the day at -$280.00) ended at midnight ET and the ladder bid again: until the next reset "
+           "(Nov 16 12:00 AM ET) it made $12.04 on 4 markets (1 more not settled yet)")
+       and e2["usd"] == 4.52 and e2["open"] and "so far (still running) it made $4.52 on 1 market;" in e2["words"],
+       "Q two resets, one running: [reset 1, reset 2) +12.04 with XRP unsettled, [reset 2, now) +4.52: %s" % [
+           (x["usd"], x["words"]) for x in Q2["events"]])
+    ck(Q2["extra"] == ["money the ladder made after a midnight reset (the old code stayed halted): +$16.56 over 2 resets "
+                       "since Nov 14 12:53 PM ET (5 markets settled) · 2 open"], "Q's line, open: %s" % Q2["extra"])
+    # 'no reset yet', and not live before the midnight-reset code
+    pl = _write(d, "ladder-live-orders.jsonl", run_q([])[:2], compact=True)
+    Q3 = _report([pl], now=NOW_Q)["Q"]
+    ck(Q3["since"] == "Nov 14 12:53 PM ET" and Q3["engaged"] == 0 and Q3["net_usd"] == 0.0
+       and Q3["extra"] == ["money the ladder made after a midnight reset (the old code stayed halted): no reset yet since "
+                           "Nov 14 12:53 PM ET"], "Q live, no reset: %s" % Q3["extra"])
+    pl = _write(d, "ladder-live-orders.jsonl", run_q([])[:1], compact=True)
+    Q4 = _report([pl], now=NOW_Q)["Q"]
+    ck(Q4["since"] is None and Q4["not_live"] == F.Q_NOT_LIVE == "not live yet (comes with the ladder's first start on "
+       "the midnight-reset code)" and Q4["engaged"] == 0, "Q not live on the old code: %s" % Q4["not_live"])
+    ck(F.q_since([{"_epoch": 1.0}, {"_epoch": 2.0, "start_reads": [200]}]) == 2.0 and F.q_since([{"_epoch": 1.0}]) is None
+       and F._q_day("2026-11-14") == "Nov 14" and F._q_day("x") == "x", "q_since, _q_day")
+
+
+def test_retired_rows():
+    """change["retired"]: the short words of a change off for good while it is not live -- N shelved, O withdrawn (the
+    phone folds them into one line; their whole words stay in not_live) -- None on every other row, and None once N
+    goes live or O is not withdrawn."""
+    d = tempfile.mkdtemp(prefix="fixes-test-")
+    ps = write_logs(d)
+    pl = _write(d, "ladder-live-orders.jsonl", run_q([]), compact=True)
+    rep = _report(ps + [pl], now=NOW_Q)
+    ck(rep["N"]["retired"] == F.N_RETIRED == "shelved 11-09" and rep["N"]["not_live"] == F.N_NOT_LIVE
+       and rep["O"]["retired"] == F.O_RETIRED == "withdrawn 11-14, stays at 82%" and rep["O"]["not_live"] == F.O_NOT_LIVE
+       and all(c["retired"] is None for k, c in rep.items() if k not in "NO"),
+       "retired: N and O only: %s" % {k: c["retired"] for k, c in rep.items()})
+    # the 100% start all the same: the short words say it too, never the '82%' that is not true
+    pl = _write(d, "ladder-live-orders.jsonl", run_o([]), compact=True)
+    O = _report(ps + [pl], now=NOW_O)["O"]
+    ck(O["retired"] == ("withdrawn 11-14; but the ladder's latest start (Nov 15 4:50 AM ET) runs --commit-frac 1.0: "
+                        "nothing of it is counted here") and "82%" not in O["retired"], "O retired on 1.0: %s" % O["retired"])
+    with o_live():
+        ck(_report(ps + [pl], now=NOW_O)["O"]["retired"] is None, "O not withdrawn: not retired")
+    # N live (a start on --hedge-belief 0.60): not retired
+    pn = _write(d, "pinrun-live-20261109T000000Z.jsonl", [_r("start", "2026-11-09T00:00:00Z", hedge_belief=0.60)])
+    ck(_report(ps + [pn], now=NOW)["N"]["retired"] is None, "N live: not retired")
+
+
+def test_load_keeps_the_ladder_scan():
+    """_load drops only its own entries past 8 (each a state of pin's logs: the live log grows between asks), never a
+    ladder scan's (O / Q read the ladder's 26 MB log incrementally; wiping it re-reads it all)."""
+    d = tempfile.mkdtemp(prefix="fixes-test-")
+    pp = write_logs(d)[-1]
+    pl = _write(d, "ladder-live-orders.jsonl", run_q([]), compact=True)
+    F._CACHE.clear()
+    F.report(paths=[pp, pl], now=NOW_Q)
+    sc = F._CACHE[("ladder", pl)]
+    for i in range(12):
+        with open(pp, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(_r("heartbeat", "2026-11-05T06:59:%02dZ" % i)) + "\n")
+        F.report(paths=[pp, pl], now=NOW_Q)
+    mine = [k for k in F._CACHE if k and isinstance(k[0], tuple)]
+    ck(F._CACHE.get(("ladder", pl)) is sc and 1 <= len(mine) <= 9,
+       "12 more states of pin's logs: _load's own entries bounded (%d), the ladder scan the same object" % len(mine))
 
 
 if __name__ == "__main__":
