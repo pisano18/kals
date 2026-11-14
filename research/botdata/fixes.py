@@ -1478,8 +1478,10 @@ def _j(S, now, since):
 
 def market_money(S, tk):
     """pin's own settled money in market `tk`, every leg (its buys, hedges and extras, fee in: pinrun writes one
-    settled record per side and cost, legs at one price merged, all in the pass that books the market), or None until
-    the market has settled."""
+    settled record per side and cost, legs at one price merged), or None until the market has settled. pinrun books
+    each leg on its own (one GET per ticker every 15 s): measured 11-14, 261 of 1,573 settled markets had 2+ legs, a
+    median 15 s apart (max 45 s), so a read between them sees a part (this page reads again and heals; a one-shot
+    alert must wait for two equal reads, pinrules_watch.new_undo_losses)."""
     legs = [r for r in S.by_tk.get(tk, []) if r.get("result") in ("yes", "no")]
     if not legs:
         return None
