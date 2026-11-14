@@ -84,7 +84,7 @@ is falsified, and say so in the commit. Never edit a fact to fit a story.
 | F-P01 | Break-even is a **3.58%** close-loss rate. A win pays ~3.7c, a loss costs ~96c: one loss undoes ~27 wins. | `CURRENT_STATE.md` |
 | F-P02 | Current version: 35 closes, 34W 1L. All live history: 12 losing of 248 closes (4.84%). The two straddle break-even. | `pinver` |
 | F-P03 | 28.2% of live orders fill NOTHING. | 362 live orders |
-| F-P04 | It is not our speed: filled and zero-filled orders have the SAME median latency, 96 ms both. | 2026-09-13 |
+| F-P04 | Fill rate falls with our order round trip: 15.7% of orders empty at 0-20 ms, 25.7% at 50-100 ms, 62.5% at 300+ ms. Moving the bot to a 12.6 ms host cut empties 24.6% -> 15.5% and raised contracts filled of asked 71.9% -> 83.2%, surviving hour, coin and leg reweights; the side we missed WON 275 of 277. *Replaces the 2026-09-13 reading "It is not our speed: filled and zero-filled orders have the SAME median latency, 96 ms both" -- falsified: equal MEDIANS hid the tail where the difference lives, and the controlled host comparison shows a dose-response worth about $9/day, already banked.* | `results/IDEA_LEDGER.md` LS04, LS24 |
 | F-P05 | Mean entry 95.6c; mean edge at signal +3.9c (current version), +4.60c over all history. | `pinver` |
 | F-P06 | The hedge recovers about one third of a loss, and that decays with size: 34.9% at 20, 33.2% at 68, 22.3% at 250. | `CURRENT_STATE.md` |
 | F-P07 | Selling a winner before settlement always loses money. By 15s out a loser's bid is already 23c, 6c at 10s. | `results/RESULTS_exit.md` |

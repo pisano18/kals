@@ -750,3 +750,15 @@
 {"note": "Both facts are constraints on HOW to measure (standardise within coin; the tape cannot speak for our fills), not quantities that can be measured against each other. Two caveats do not make a measurement. The only measurement I could build here (does an ask existing on our side just mark a calm regime? F-M07 x F-M08/F-M12) required importing four other facts and is not what this pair says -- a forced connection.", "pair": ["F-M09", "F-R05"], "t": "2026-11-13T08:53:09Z", "verdict": "nothing"}
 {"note": "Real mechanism (missing deltas make every level look freshly changed, so price age is a book-reconstruction artefact) but no decision hangs on it: F-O06 is post-hoc, chosen after seeing the tape, and never gated on. The only population where an age gate matters is our own fills -- 12 losses lifetime -- where there is no power, and the tape version is forbidden by rule 5. Delta parse coverage belongs in collector monitoring, not research.", "pair": ["F-I06", "F-O06"], "t": "2026-11-13T08:53:09Z", "verdict": "nothing"}
 {"note": "Same-section pair, and the measurement it suggests (check the 880 coefficient's tail on the index alone) is already bracketed: IDEA_LEDGER SH231 measured the live ruler as calibrated at the bot's horizon (5.97 flips per 100 vs 6.00 expected), and F-M06 shows inflating variance makes the bad rate WORSE, so a variance-scale error is not the story. CLAUDE.md marks the settlement model established -- do not re-derive.", "pair": ["F-C05", "F-C06"], "t": "2026-11-13T08:53:09Z", "verdict": "nothing"}
+{"pair": ["F-C10", "F-P06"], "t": "20261114T0848Z", "verdict": "drawn"}
+{"pair": ["F-M05", "F-P02"], "t": "20261114T0848Z", "verdict": "drawn"}
+{"pair": ["F-O06", "F-P04"], "t": "20261114T0848Z", "verdict": "drawn"}
+{"pair": ["F-C08", "F-M05"], "t": "20261114T0848Z", "verdict": "drawn"}
+{"pair": ["F-I07", "F-P02"], "t": "20261114T0848Z", "verdict": "drawn"}
+{"pair": ["F-I03", "F-I04"], "t": "20261114T0848Z", "verdict": "drawn"}
+{"note": "", "pair": ["F-C10", "F-P06"], "t": "2026-11-14T08:51:56Z", "verdict": "nothing"}
+{"note": "pincalib.py already measures exactly this from the index alone; validating a link to our 12 losing closes has no power", "pair": ["F-M05", "F-P02"], "t": "2026-11-14T08:51:56Z", "verdict": "nothing"}
+{"note": "price age is mined (ledger P01/R01/F09/F27) and F-P04's premise is falsified by LS04/LS24", "pair": ["F-O06", "F-P04"], "t": "2026-11-14T08:51:56Z", "verdict": "nothing"}
+{"note": "", "pair": ["F-C08", "F-M05"], "t": "2026-11-14T08:51:56Z", "verdict": "nothing"}
+{"note": "", "pair": ["F-I07", "F-P02"], "t": "2026-11-14T08:51:56Z", "verdict": "nothing"}
+{"note": "F-P10 is a 17.1M-fill null on taker information; F-C06 says the final minute has a shrinking target; F-O05 says a 60s window leaks 88.55pp", "pair": ["F-I03", "F-I04"], "t": "2026-11-14T08:51:56Z", "verdict": "nothing"}
