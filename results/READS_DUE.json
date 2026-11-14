@@ -557,7 +557,8 @@
    "what": "SJ02 rain tail NO desk, 30-day PAPER log (IDEA_LEDGER U10). research/sweep/rain_paper.py pid 1804636, started 2026-10-03 14:39:27Z (--minutes 43200), log results/rain-paper.jsonl (stdout/stderr results/rain-paper-std*.log; boot_all.ps1 keeps it alive; results/rain-paper.stop stands it down). Rules: every 5 min list open KXRAIN markets; a market 21.5-22.5 h from close is read once per scan; if the best YES bid is in the 3-10c rung with >= 25 contracts, paper-fill 25 NO at 1 - bid as a taker (fee = rain_candles.fee_c, ceil to the cent per order); max 2 cities per region and 6 cities a night (night = ET date of the close); the NWS rain-chance gate (> 20%) is RECORDED, not applied; results booked from GET /markets/{ticker} after close. PAPER ONLY: no order call exists in the file (self-test asserts it).",
    "how": "python - <<'EOF'\nimport json;R=[json.loads(l) for l in open('results/rain-paper.jsonl',encoding='utf-8')]\nd=[r for r in R if r['type']=='decision'];f=[r for r in d if r['filled']];s=[r for r in R if r['type']=='settled']\nprint('decisions',len(d),'filled',len(f),'settled',len(s),'losses',sum(r['lost'] for r in s),'per100',100*sum(r['lost'] for r in s)/max(1,len(s)))\nprint('net c/contract at the 25-lot fill',sum(r['pnl_c'] for r in s)/max(1,len(s)),'lot total $',sum(r['pnl_lot_c'] for r in s)/100)\nimport collections;print('losses by ET day',collections.Counter(r['day'] for r in s if r['lost']))\nprint('refused by caps',sum(1 for r in d if r['why'] and ('cap' in r['why'])),'gate would remove',sum(1 for r in f if r['pop_gate']),'of',len(f),'filled with a PoP',sum(1 for r in f if r['pop'] is not None))\nEOF  -- then compare with rain_candles.py's weekly row (same fee code) and report in plain words.",
    "bar": "net >= +1.5c at the 25-lot fill, no day with >= 3 losses, forecast gate removes <= 30% of eligible cities",
-   "status": "open"
+   "status": "read",
+   "read_note": "2026-11-13 PASS on all three lines but by less than one loss: 101 fills, 93 settled, 3 lost (Kalshi confirms), +2.24c a contract, +$52.09 = $1.28/day; a 4th loss puts it under the 1.5c bar; since 10-30 +0.10c. NOT FUNDED: $1.28/day on up to $351 loses to pin's marginal dollar (~2.4%/day). Arm left to end on its own."
   },
   {
    "id": "revert-0925b",
@@ -924,8 +925,8 @@
    "what": "PAPER resting-bid forecaster shadow (fc synth 2026-10-18 'Paper test 1'; candidate 1 = s4_sim p_fair_m07_r29_back_pull_nx_L100_C90 / skeptic C1_base). research/cleanroom/fc_maker_paper.py sha256 f76ad9720b75, log results/fc-maker-paper.jsonl (its only results file), own WebSocket with the FcWS subscription-id fix, NO order code (self-test proves it). Virtual post-only bids at live-model fair - 7c from rel -29, none at 90c+ / under 50c / favourite < 55%, re-priced each second, pulled 250 ms after the book moves against them, fills only on printed trades at/through the price with queue ahead modelled, 23 a side, one side per market, live day stop -$28.87 / run stop -$45.24 (run stop halts the ET day, then a simulated restart). Arms: M300 (lands 0.3 s after the print), M500 (0.5 s), NULL (bid at the market mid, no model), M300raw (no stops, context only).",
    "how": "python research\\cleanroom\fc_maker_paper.py --read   (per arm: $/day = 96 x P&L on covered closes / covered closes, stale-flagged markets excluded; ROI = P&L / cost of fills; run/day stops; longest dry spell; share of seconds with <= 3 order actions; verdict). Covered close = >= 7 of 9 coins with a synced, non-stale book at >= 20 of 29 decision seconds; covered ET day = >= 87 of 96 closes covered; calm day = median rel -29 local/g vol ratio < 0.60.",
    "bar": "PRE-REGISTERED 2026-10-18 before any paper data. Needs >= 10 covered ET days incl. >= 3 calm; if fewer, extend to 2026-11-02T12:00Z. PASS (all): M300 >= +$10/day after stops; M300 ROI >= 5%; M500 >= +$5/day; M300 - NULL >= $0/day; M300 <= 1 run stop and longest dry spell <= 8 h; M300 order actions (place / cancel / move, a move counted once as one amend; summed over the 9 markets) <= 3/s in >= 99% of the seconds of closes it wrote in (cancel + place counted separately is reported beside it). KILL (any): M300 total <= $0; M500 total < $0; M300 trails NULL by > $5/day; M300 >= 2 run stops. Read flagged UNRELIABLE if stale-flagged markets hold > 10% of M300's filled markets. PASS -> operator decision on a small live probe (23 a side, run stop 0.33 x pot) with live latency measured on real orders; otherwise no live change.",
-   "status": "open",
-   "read_note": "10-23 interim: already on a KILL line (M500 total -$36.42 < $0; M300 +$0.92/day vs the +$10/day bar); no live probe. Final read 10-29."
+   "status": "read",
+   "read_note": "2026-11-13 KILL by its own bar (fc_maker_paper.py --read): retired 10-27 with 7 covered ET days (bar 10, 3 calm); M300 +$1.16/day (bar +$10), ROI 0.53% (bar 5%), M500 -$47.98 (< $0 = KILL). No live probe; nothing to stop."
   },
   {
    "id": "watch-band15",
@@ -1079,7 +1080,8 @@
    "what": "KalsKalshiWatch (installed 11-08 14:40Z, every 30 min): scans Kalshi's changelog, 20 signed reads, the contract PDF, CF Benchmarks' PDF and status, pin's log, disk, packages, the live launchers' sha. First scans: everything ok except cfb_pdf (the CF Benchmarks exchanges PDF fetch failed twice).",
    "how": "results\\kalshi_watch.log on the server; phone /watch",
    "bar": "after 3 days: 0 false alarms on the phone; cfb_pdf either fetching or the check marked as 'site refuses' with no repeated alarm; every real Kalshi change in the window was caught",
-   "status": "open"
+   "status": "read",
+   "read_note": "2026-11-13 FAIL on 2 of 3 lines, then FIXED (commit 5c5645d v-kwfalse, live from the next scan): 12 URGENT false alarms in 4.7 days = 7 'new rules sentence' (the fixed-strike wording, now hashed as the opening-price wording of the same index, whole-number strikes too) + 5 api_shape (pin's clock-only snapshot and floor_strike missing < 90 s into the quarter-hour, now logged quietly); cfb_pdf failed 226 of 226 scans, now marked 'site refuses' after a long streak. Real changes were caught (18 changelog entries, the 0925w launcher alerts). Re-read after 3 more days."
   },
   {
    "id": "jumphedge-shadow-sanity",
@@ -1087,7 +1089,8 @@
    "what": "v-jumpshadow (pin_jumpshadow.ps1, 11-08): the jump hedge runs as a SHADOW (--hedge-jump-shadow 6 in place of --hedge-jump 6; --hedge-jump-max 8 and --jump-hedge-min-ask 0.05 kept; same build d51b131b55cf). 7-day sanity: is the shadow writing, and has it sent nothing?",
    "how": "In results/pinrun-live-*.jsonl since the switch's start record (hedge_jump null, hedge_jump_shadow 6): count the jump_shadow records by outcome (would_send / capped / cheap_skip / no_ask / filtered / nothing_to_buy / error) and by coin, the would_send ones with their n, ask and ask_size; confirm 0 hedge / hedge_extra records whose trigger is 'jump' since the switch (the shadow sends nothing; a belief-line hedge with trigger 'belief' is the ordinary hedge and is fine); confirm every start record since the switch carries hedge_jump null and hedge_jump_shadow 6 (a restart that lost the flag would show hedge_jump 6).",
    "bar": "PRE-REGISTERED 2026-11-08. OK = at least one jump_shadow record in 7 days (live 10-23..11-08 the alarm fired about 4 times a day) and 0 jump-triggered orders. A jump-triggered order = the shadow is not what it says; stop and read the code. Zero jump_shadow records in 7 days with jump moves on the tape = the shadow is not being written; read the log for errors before trusting the 12-07 read.",
-   "status": "open"
+   "status": "read",
+   "read_note": "2026-11-13 PASS (early; due 11-15): the jump hedge runs only as shadow (no live order in the code path, start record hedge_jump null / hedge_jump_shadow 6). Interim for jumphedge-shadow-read (12-07): shadow +$3.72 over 4.6 days = ~+$0.8/day vs the +$5/day re-enable bar."
   },
   {
    "id": "jumphedge-shadow-read",
@@ -1112,7 +1115,8 @@
    "what": "v-hedge5 (build 0925w, results/pin_0925w.ps1, patch_0925w.py): pin reads the settlement index's 5 Hz channel (BTC ETH SOL XRP DOGE) as well as the 1 Hz one; --index-5hz shadow or hedge, the operator's pick. Day-1 sanity: is the feed arriving and is nothing else disturbed?",
    "how": "In results/pinrun-live-*.jsonl since the 0925w start record (code_sha 05a01fbb5ed2, index_5hz shadow|hedge): one index5_up record (fast_ticks > 0) and no index5_silent; hedge_quote rows on BTC/ETH/SOL/XRP/DOGE carry belief5 (not null on most held seconds), on BNB/ZEC/NEAR/HYPE belief5 null; the feeds record shows > 10 ticks; the next end record's index_stats has fast_ticks, fast_first, fast_dup, sub5 >= 1; compare entries per hour and index_stale hedge_blind records with the 3 days before (no new staleness); hedge_alarm records carry belief_1hz / belief5 / by_5hz.",
    "bar": "PRE-REGISTERED 2026-11-10. OK = index5_up present, belief5 on the five coins' quotes, no rise in index_stale blind records or refused entries for index age. index5_silent or no belief5 = the subscription is not working: pin behaves as 0925v, read the socket errors (conn_stats / index_stats) before the 11-17 read.",
-   "status": "open"
+   "status": "read",
+   "read_note": "2026-11-13 PASS (audit, two verifiers): 66.6 h on 0925w, index5_up for BRTI/ETH/SOL/XRP/DOGE, belief5 filled on 3,595 of 3,644 hedge_quote rows of the 5 coins and moving in every 6 h bucket, differs from the 1 Hz belief on 757 of 879 unsaturated rows, hedge_blind 0, index age median 1.02 s / max 1.22 s (same as the 72 h before), no index5_silent. Interim for hedge5-read (11-17): 0 flips with a 5 Hz lead, 0 false alarms; 1 both-crossed BTC case worth +$1.42 (counted in neither); the read will likely say extend one week. Use hedge5_shadow + hedge records, not hedge_quote.belief5 (it holds the last value)."
   },
   {
    "id": "hedge5-read",
@@ -1137,6 +1141,15 @@
    "how": "From pin's live logs (results/pinrun-live-*.jsonl, archived ones included) since the first start record with hedge_odds_mult 1.5: the first 12 extra fires = kind hedge_extra with mult 1.5, plus every hedge_extra_skipped / hedge_extra_refused at 1.5. CAPTURE = (contracts filled at a price <= the fire's ask + 0.03: each hedge_extra record's n where price <= ask + 0.03) / (contracts the extra asked: the records' asked, skipped and refused ones included). SKIPPED = the count of hedge_extra_skipped + hedge_extra_refused. Report next to it: fires, won/lost, the extra's own net at the result, fee in (research/pinrules_watch.py rule C / the phone's /fixes C) and $/day, and from each record's ladder the depth within ask + 0.03 against what a 2.0x extra would ask (2x the 1.5x size), so 2.0x's capture is judged before it runs.",
    "bar": "PRE-REGISTERED 11-03 (v-oddsmult staging), carried over unchanged to the next step: STEP 1.5x -> 2.0x (the same one-line edit of both live launchers + a refreshed launcher snapshot, a pin_oddsmult2 deploy script modelled on pin_oddsmult15.ps1) only if, over the first 12 fires at 1.5x, CAPTURE >= 90% at <= 3c over the fire ask AND nothing skipped or refused. Otherwise stay at 1.5x and re-read at the next 12 fires.",
    "status": "open"
+  },
+  {
+   "id": "jumpband-paper-read-1112",
+   "due": "2026-11-12T11:36Z",
+   "what": "The jump-band paper arm (research/cleanroom/jumpband_live.py, 100-lot hypothetical, results/jumpband-paper.jsonl) stopped itself 11-12 06:36 ET; the open question was a BNB+NEAR-only relaunch (the live stage 1 was cut 11-06).",
+   "how": "Per-coin cents a contract from the paper log vs the live stage-1 fills (results/jumpband-live.jsonl), and the 11-06 relaunch bar (BNB+NEAR at least +3c a contract on live-filled markets).",
+   "bar": "11-06: relaunch BNB+NEAR at 5 lots only if they clear +3c on markets live could fill; the all-4 kill rule (first 150 < 0c, first 200 < +3c, any coin < -5c after 40 buys).",
+   "status": "read",
+   "read_note": "2026-11-13 FAIL, stays dead (audit + 2 skeptics): paper 195 buys, +3.8c, kill rule not fired; BNB+NEAR +7.4c on 48 out-of-sample paper buys, HYPE+ZEC -3.3c; but live-filled BNB+NEAR made +2.59c on 38 fills (paper +2.0c on the same markets): the paper's wins are the asks live misses. Live stage 1 total by Kalshi +$2.09 on 67 markets. Never use /approve jbrelaunch (it starts all 4 coins)."
   }
  ]
 }
