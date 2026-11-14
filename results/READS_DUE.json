@@ -1150,6 +1150,15 @@
    "bar": "11-06: relaunch BNB+NEAR at 5 lots only if they clear +3c on markets live could fill; the all-4 kill rule (first 150 < 0c, first 200 < +3c, any coin < -5c after 40 buys).",
    "status": "read",
    "read_note": "2026-11-13 FAIL, stays dead (audit + 2 skeptics): paper 195 buys, +3.8c, kill rule not fired; BNB+NEAR +7.4c on 48 out-of-sample paper buys, HYPE+ZEC -3.3c; but live-filled BNB+NEAR made +2.59c on 38 fills (paper +2.0c on the same markets): the paper's wins are the asks live misses. Live stage 1 total by Kalshi +$2.09 on 67 markets. Never use /approve jbrelaunch (it starts all 4 coins)."
+  },
+  {
+   "id": "band99-read-1110",
+   "due": "2026-11-10T12:00Z",
+   "what": "band99 (--band99-ceiling 0.99 --band99-frac 0.10, live since 10-31 06:11 ET): pin buys up to 99c in markets it holds nothing in, at 10% of its size (~44 contracts, ~$44 a bet). Should it step to 0.25 (the live build's cap)?",
+   "how": "Every pin live log since 10-31 (order records band99: true) + Kalshi's sub-0 rows; score band orders PLUS the hedge records whose n equals the band leg (the 11-03 rule).",
+   "bar": "PRE-REGISTERED 11-03: STEP to 0.25 only if net of hedges > 0 AND the pooled one-sided 95% upper bound on the outright loss rate < 1.21% (<=1 loss in 390+, <=2 in 520+, <=3 in 640+); STOP if net < 0; else HOLD 0.10.",
+   "status": "read",
+   "read_note": "2026-11-14 (late; one analyst + two independent recomputations, all agree): HOLD 0.10. 1,036 filled band orders over 14.2 days, 29,958 contracts, fill ratio 0.84; gross +$10 (0.03c/contract: wins +1.17c, a loss -93c, break-even loss rate 1.24% vs 1.16% seen); 12 outright losses -> 95% UB 1.87% > 1.21% (fails); hedges +$60.6 -> net +$70.8 (+$5/day), so not STOP. Since the 11-03 interim it is worse (11 losses in 813, gross -$51, hedges carry it). At 0.25 the middle gain is +$4..7/day but the 90% range is about -$15..+$20 and a 34-48% chance it earns less than 0.10. Unmeasured cost: the band leg takes pin's early slot (729 early_once/max_per_market refusals in 705 band markets; the 11-04 estimate ~$4-5/day) -> all-in the band may be about break-even even at 0.10. Next: measure that slot cost; if it is >= the band's +$5/day, switching band99 off is the money move. Scorer: scratchpad maxpower/band99_read/b99read2.py."
   }
  ]
 }
