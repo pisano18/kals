@@ -21,6 +21,18 @@ Page room (11-14, the server's logs ran the page to 3,880 of 3,900 chars with ev
 that is off for good while it is not live (fixes: change["retired"] -- N shelved, O withdrawn) is folded with the others
 into ONE short 'not live' line in the first one's place, never a block (~230 chars back; their whole words stay in
 fixes' not_live); P's line puts its net first; and no cut ever lands inside a money figure (_cut stops before it).
+
+v-tg-fixes-acc (2026-11-14, the 11-14 retro: "/fixes must show, for every change, the money vs NEVER making it, losses
+included"): the rows the retro found missing -- WS (the wrong-side skip), LAD (the ladder's four changes against the
+Option C setting) and STOP (the four stops) -- render like the others; LAD and STOP are measured once (change["fixed"]:
+their since line says 'measured once, to <date>', never 'engaged'). A rule the 11-14 undo switched off (M, K, WS:
+change["undo"]) says so on its since line ('UNDONE <date>', the date its rule figure runs to) and its NET LINE carries
+both periods: '🔴 with the rule: net -$X (..% of the bank) · 🟢 since the undo (vs keeping it): +$Y (..%) on N markets'.
+The bold net and its dot stay the rule's money against never making it (fixes: net_usd is rule_usd; from the undo on
+pin trades as if the rule had never been), the undo's money against keeping the rule has its own dot, and neither is
+ever on a line a shrink step can drop (the 11-14 review: at the last step every 'since the undo' line was gone). B's net
+line says the share of it C counts too. The total line splits pin's, the ladder's and the stops' money, says B's
+cap-made extra legs (also C's) are counted once, and puts the undos' money beside the total, never in it.
 """
 import re
 
@@ -32,9 +44,10 @@ from phone.html import MAX_LEN, Html, esc, i_
 
 SHOWN = 3                                         # the last engagements of each change (when they fit)
 HEAD = "🔧 <b>Pin changes</b> (every live change: times engaged, net $ so far)"
-NOTE = ("engaged = the change did something pin would not have done before · net = what that made or saved (+) or "
-        "cost or gave up (-), fee in, on markets that have settled · open = engaged, the market not settled yet · "
-        "the total leaves J out (a J leg is already counted in C)")
+NOTE = ("net = what the change made or saved (+) or cost or gave up (-) against never making it, fee and losses in, "
+        "on settled markets · open = not settled yet · an UNDONE rule's net ends at its undo; the undo's money (vs "
+        "keeping the rule) is beside it, not in the total · the total leaves J out and takes B's cap-made extra legs "
+        "once (C counts them too)")
 # a change that cannot be tracked as it runs (fixes: change["problem"]; O on the ladder's 100% rail without the code that
 # marks its bids): a line in its block and, counted, a line on top of the page -- both kept at every shrink step
 PROBLEM = "⚠️ <b>%s</b>"
@@ -113,6 +126,26 @@ def _folded(c):
     return bool(c.get("retired")) and not c.get("since") and not (c.get("problem") and not c.get("withdrawn"))
 
 
+def net_line(c, bank):
+    """The row's net line, never cut at any shrink step: '🔴 net <b>-$25.12</b> (-0.64% of the bank)'; B's adds the
+    share of it C counts too ('· of it +$11.57 is C's extra legs too': fixes' overlap_usd, the extra legs only the cap
+    made happen; the total takes them once); an UNDONE rule's carries both periods, each with its own
+    dot and % -- '🔴 with the rule: net <b>-$57.50</b> (..) · 🟢 since the undo (vs keeping it): <b>+$3.10</b> (..) on 2
+    bets' -- the bold net the rule's money against never making it (fixes' net_usd), the undo's beside it."""
+    x = c["net_usd"]
+    u = c.get("undo") or {}
+    if u.get("since"):
+        y = _fixes._f(u.get("net_usd"))
+        return "%s with the rule: net <b>%s</b>%s · %s %s: <b>%s</b>%s %s" % (
+            _mark(x), esc(usd(x)), esc(_pct(x, bank)), _mark(y), esc(_fixes.UNDO_WORDS), esc(usd(y)), esc(_pct(y, bank)),
+            esc(_fixes.undo_counted(c)))
+    line = "%s net <b>%s</b>%s" % (_mark(x), esc(usd(x)), esc(_pct(x, bank)))
+    ov = _fixes._f(c.get("overlap_usd"))
+    if abs(ov) > 0.004:
+        line += " · of it %s is C's extra legs too" % esc(usd(ov))
+    return line
+
+
 def block(c, bank, shown, cut=None, extra_cut=None, what_cut=None):
     """One change: name, what (cut to `what_cut` chars; 0 = left out), since, engaged / last, net, its extra lines (cut
     to `extra_cut` chars; 0 = left out), the last `shown` events (their words cut to `cut` chars)."""
@@ -125,21 +158,39 @@ def block(c, bank, shown, cut=None, extra_cut=None, what_cut=None):
         # L, M, N, O (withdrawn), P, Q: their own words (fixes.L_NOT_LIVE ... Q_NOT_LIVE)
         out.append(esc(c.get("not_live") or "not live yet (comes with the new build)"))
         return out
-    out.append("since %s" % esc(c["since"]))
+    u = c.get("undo") or {}
+    if c.get("fixed"):
+        out.append("since %s · measured once, to %s (not running)" % (esc(c["since"]), esc(_fixes.et_words(_fixes.RETRO_T))))
+    else:
+        out.append("since %s%s" % (esc(c["since"]), (" · UNDONE %s" % esc(u["since"])) if u.get("since") else
+                                   (" · DROPPED %s" % esc(c["dropped"])) if c.get("dropped") else ""))
     if c.get("off") and not c["engaged"]:
         out.append("in the build but switched OFF (the launcher leaves --late-bypass-fix off): nothing to count")
         return out
-    if not c["engaged"]:
+    if not c["engaged"] and not u.get("since") and not c.get("fixed") and not c.get("dropped"):
         out.append("not engaged yet")
         return out
-    out.append("engaged %d time%s, last %s%s" % (c["engaged"], "" if c["engaged"] == 1 else "s",
-                                                 esc(c["last_engaged"] or "?"),
-                                                 (" · %d open" % c["open"]) if c["open"] else ""))
-    out.append("%s net <b>%s</b>%s" % (_mark(c["net_usd"]), esc(usd(c["net_usd"])), esc(_pct(c["net_usd"], bank))))
-    if extra_cut != 0:                                    # K: the skips without the rule, the window with and without;
+    if c.get("fixed"):
+        pass
+    elif c["engaged"]:
+        out.append("engaged %d time%s, last %s%s" % (c["engaged"], "" if c["engaged"] == 1 else "s",
+                                                     esc(c["last_engaged"] or "?"),
+                                                     (" · %d open" % c["open"]) if c["open"] else ""))
+    else:
+        out.append("not engaged" + (" while the rule was on" if (u.get("since") or c.get("dropped")) else " yet"))
+    out.append(net_line(c, bank))
+    if extra_cut != 0:                                   # K: the skips without the rule, the window with and without;
         #                                                   L: what the shadowed jump hedge would have paid / saved / made;
         #                                                   M: the held-back contracts and the true 3rd bet (not in its net)
-        out += [esc(_cut(x, extra_cut)) for x in c.get("extra") or []]
+        #                                                   (k, n): only each row's first k lines, cut to n -- P's net,
+        #                                                   K's and WS's skips, LAD's and STOP's assumptions;
+        #                                                   (k, n, "fixed"): only the measured-once rows' (LAD, STOP)
+        lines = list(c.get("extra") or [])
+        if isinstance(extra_cut, tuple):
+            if len(extra_cut) > 2 and extra_cut[2] == "fixed" and not c.get("fixed"):
+                lines = []
+            lines, extra_cut = lines[:extra_cut[0]], extra_cut[1]
+        out += [esc(_cut(x, extra_cut)) for x in lines]
     for e in c["events"][-shown:] if shown else []:
         out.append("  %s · %s · %s · %s" % (esc(e["et"] or "?"), esc(e["coin"]),
                                          esc(usd(e["usd"]) if e["usd"] is not None else "open"), esc(_cut(e["words"], cut))))
@@ -156,17 +207,32 @@ def block(c, bank, shown, cut=None, extra_cut=None, what_cut=None):
 # (14 changes, 11-08): with K, L, M and N live the blocks with their lines no longer fit even without events, and the
 # money lines matter more than the one-line descriptions (the operator knows the changes; /fixes is read for the $), so
 # the "what" lines go (fourth element 0) before any money line is cut, and the events come back when that makes room.
+# The (k, n) steps came with WS, LAD and STOP (19 rows, 11-14): on the real logs the blocks with every line cut to 120
+# ran over one message, so each row keeps its FIRST line (P's net, K's and WS's skips without the rule, the measured
+# figure's range) before the lines go altogether. The money that must never go (an undone rule's 'since the undo',
+# B's share C counts too) is on the NET LINE itself since the 11-14 review (on the server's logs plus a day of undo
+# events the page fell from (1, 90) straight to no lines at all): the (1, 60) and (1, 40) steps keep each row's first
+# words a while longer, then (1, 90, "fixed") keeps only the measured-once rows' assumption lines (LAD's fill model and
+# range, STOP's ~2.2%/day: an estimate says what it rests on), before the last step drops every line under a net.
 PLAN = ((SHOWN, None, None, None), (2, None, None, None), (1, None, None, None), (1, 110, None, None),
         (1, 60, None, None), (1, 30, None, None), (1, 30, 120, None), (0, None, None, None), (0, None, 120, None),
-        (1, 30, 120, 0), (0, None, None, 0), (0, None, 120, 0), (1, 30, 0, None), (0, None, 0, None), (0, None, 0, 0))
+        (1, 30, 120, 0), (0, None, None, 0), (0, None, 120, 0), (0, None, (2, 100), 0), (0, None, (1, 120), 0),
+        (0, None, (1, 90), 0), (0, None, (1, 60), 0), (0, None, (1, 40), 0), (0, None, (1, 90, "fixed"), 0),
+        (1, 30, 0, None), (0, None, 0, None), (0, None, 0, 0))
 
 
 def render(d, ctx):
     changes, bank = d["changes"], d.get("bank")
     T = _fixes.totals(changes)
-    total = "%s <b>All changes: net %s</b>%s · engaged %d time%s%s" % (
-        _mark(T["net_usd"]), esc(usd(T["net_usd"])), esc(_pct(T["net_usd"], bank)), T["engaged"],
+    g = T.get("groups") or {}
+    split = "".join(" · %s %s" % (name, esc(usd(g[k]))) for k, name in (("pin", "pin"), ("ladder", "ladder"),
+                                                                         ("stops", "stops")) if k in g)
+    total = "%s <b>All changes: net %s</b>%s%s · engaged %d time%s%s" % (
+        _mark(T["net_usd"]), esc(usd(T["net_usd"])), esc(_pct(T["net_usd"], bank)), split, T["engaged"],
         "" if T["engaged"] == 1 else "s", (" · %d open" % T["open"]) if T["open"] else "")
+    if T.get("undos"):                                    # beside the total, never in it (vs keeping the rules)
+        total += " · the undos (vs keeping the rules): %s%s" % (esc(usd(T["undo_usd"])), (" · %d open" % T["undo_open"])
+                                                               if T.get("undo_open") else "")
     top = problems_line(changes)
     gone = retired_line(changes)
     for shown, cut, extra_cut, what_cut in PLAN:

@@ -8,10 +8,18 @@ times any of them have been engaged and the positive or negative overall result 
 
 THE CHANGES and when each counts as engaged (the push-11-04 scoring table):
   A later-buy check     a refusal with gate ws_later_fall / ws_later_skip     pinrules_watch.score_A (reused)
-  B jump cap            jump_capped                                           pinrules_watch.score_B (reused)
+  B jump cap            jump_capped, re-scored here (_b; the 11-14 retro found score_B's -$34.83 wrong, real -$25.12):
+                        the jump hedge the cap stopped against pin's real later hedges AND extra legs on that side; $0
+                        where it could never have filled (the jump hedge in shadow, an off-grid limit before --hedge-tick
+                        round, an ask under the 5c bar); plus, before the J build, a 'belief' alarm on a capped jump: the
+                        odds extra fired only because of the cap (ZEC 11-04 +$2.66). Those extra legs are C's legs too:
+                        B carries them as overlap_usd and totals() counts them once.
   C bigger hedge 1.25x  hedge_extra that filled                               pinrules_watch.score_C (reused)
-  D boost rail side/off boost_rail_kept: the band / late boost legs placed after it in that run (the old "any" rail had
-                        switched the boost off there): their EXTRA contracts' money at the result, fee in
+  D boost rail side/off re-scored (_d, the retro's d_cf.py; the old 'now - was' of the band_boost records showed +$109.38,
+                        real -$22.26): from the old "any" rule's trip in a run (its first boost_rail_kept of each kind),
+                        every market of that run whose first fill came after it is re-sized ORDER BY ORDER at the old
+                        rule's multiple (the staged-entry limits size 1.5x without a band_boost record), its hedges
+                        scaled with the position, the late add's refill in (d_market); real - that, at the result
   E hedge tick round    a hedge whose limit was rounded onto the grid from an off-grid legacy limit: that hedge leg's own
                         settled money (the old build's order was rejected, so the leg would not have existed)
   F cheap jump skip     hedge_cheap_skip: pinrules_watch.score_B's method on the skipped hedge (bet won: + the premium
@@ -23,10 +31,11 @@ THE CHANGES and when each counts as engaged (the push-11-04 scoring table):
   J extra on belief     hedge_extra fired on belief with another trigger label: that leg's own settled money
   K cheap morning skip  a refusal with gate cheap_window (v-cheapwin, 11-07; the operator: "log and track the difference
                         it makes and what it would've been without the rule"), priced by its own shadow
-                        (cheap_window_settled): the contracts pin would have asked x CW_FILL / CW_FIRST_SHARE at the
-                        ladder's average price, plus the belief hedge it would have bought; + when that shadow lost
-                        (saved), - when it won (gave up). The row also says what the window as a whole made with the
-                        rule and what it would have made without it.
+                        (cheap_window_settled) on the retro skeptic's model (cw_shadow_usd: a win at K_WIN of n_ask x the
+                        edge, pin's own hedge-free 6-10 ET cheap first buys; a flip at the K_FILL_FLIP fill, lost, plus
+                        the belief hedge the shadow says would have fired; skips of one close share its budget); + when
+                        that shadow lost (saved), - when it won (gave up). The row also says what the window as a whole
+                        made with the rule and what it would have made without it.
   L jump hedge shadow   a jump_shadow record with would_send (v-0925v JS, 11-08: --hedge-jump-shadow 6 in place of
                         --hedge-jump 6; the operator: "Keep working on jump hedge. It's a big problem currently"): the
                         jump hedge pin WOULD have sent that second, sized as the send site sizes it, nothing sent. Priced
@@ -39,12 +48,14 @@ THE CHANGES and when each counts as engaged (the push-11-04 scoring table):
                         1 / 3.00, the same SIZE; the operator: "Make sure we're tracking how much money is being lost
                         blocking the 3rd"; the 12-08 read reverts B only above $5/day). Two tallies, both from pin's
                         own logs, nothing scaled:
-                        (1) the NET: a full buy pin DID make that the 2-bet budget held back (its signal's budget_left
-                        was the binding cap) on a new coin, or inside the old late window: the contracts the old argv's
-                        third SIZE of room would have let the sweep or the band boost add (pinrun's wideners read
-                        close_budget_for as their room), judged by pin's own settled result of that market: + when the
-                        bet lost (the stake not spent, fee in, at the fill price), - when it won (the gain not made, at
-                        the order's limit, so a ceiling). This is what reverting B gives back.
+                        (1) the NET: a buy pin DID make that the 2-bet budget held back (its OWN signal's budget_left --
+                        the latest signal before the order in the file, never a same-second record of another order --
+                        was the binding cap) on a coin new to the close after its first fill, or inside the old late
+                        window: the contracts the old argv's third SIZE of room would have let the sweep (its tapered
+                        depth), the late boost or the band boost (the UNTAPERED book at the limit, the one-coin room)
+                        add (m_take_old, the retro's retro_m.py), priced on the signal's ladder PAST what filled, at the
+                        market's result, fee and hedge share in: + when the bet lost (the stake not spent), - when it
+                        won (the gain not made). This is what reverting B gives back.
                         (2) `third`, under the net and NOT in it: each close_budget refusal (written before the book is
                         read, so it carries no ask) is read against the trajectory log (pintraj-live-<stamp>.jsonl, one
                         record a second a market: ask, ask_size, fair, held): under the old argv the close had ONE more
@@ -124,6 +135,36 @@ THE CHANGES and when each counts as engaged (the push-11-04 scoring table):
                         ladder filled from the reset until its next start (or the next reset), pro rata by the contracts
                         filled in that span -- the old code would have stayed halted for exactly that span. A span still
                         running, or a market of it not settled yet, is open with the money so far.
+  WS wrong-side skip    v-wrongside / LS20 (--wrongside-rise-c 1.0, live 10-27 9:07 PM ET): each market's first
+                        wrong_side refusal, against never having the rule (the retro skeptic's method): a cheap-window
+                        market (K on) is skipped anyway ($0); else WON = the coin's bet x what pin's own never-hedged won
+                        markets made per contract of bet at that first-ask bucket, a FLIP = the contracts pin holds per
+                        contract of bet there, lost; plus the hedge the trajectory says would have fired (ws_hedge: the
+                        belief hedge, the jump hedge only while it was live and could fill). A hedge covers only what
+                        the buy could hold by its second (ws_position: the refusal's own contracts + one top-up the
+                        trajectory allows before it), and that is the position (pin buys no more of a side it has
+                        hedged): ZEC 11-01, refused 147 at tau 17, hedged at tau 15, is 147, not the bucket's 1.12 x
+                        299. Priced from pin's fills up to the undo. + = saved, - = gave up.
+  LAD the ladder's 4    cplus + fit + single98 + the 82% rail as ONE row against the Option C setting before them, and
+  STOP the 4 stops      FX, jump band, coin race, forecaster as ONE row: both MEASURED ONCE by the 11-14 retro (no log
+                        the phone can re-read prices them: _fixed_row, row["fixed"]), their dates and assumptions said.
+THE UNDO (results\\pin_undo1114.ps1: pin restarted with M, K and WS off and B's cap dropped): each of M, K, WS finds its
+own periods off the start records (rule_spans: extra_coin / late_extra back above 0, cheap_window gone, wrongside_rise_c
+0 or none); its rule's events count only while it was ON, and from the first OFF start on the row scores the UNDO
+against KEEPING the rule (row["undo"], + = the undo made money): M = the excess of every order filled past the 2-bet
+budget (the 3rd bet the rule blocked), K = the whole money of every market closing in the old window whose first buy was
+under the old floor, WS = the whole money of every market whose first buy was on the wrong side without the 1c rise (a
+market both would have skipped is WS's: the earlier gate; a 3rd bet in a market K's or WS's undo counts whole is
+theirs, not M's: never twice). The row's net STAYS the rule's money against never having it (from the undo on pin
+trades as if the rule had never been); the undo's money, against KEEPING the rule, sits beside it (row["undo"]; the
+phone's net line: 'with the rule: net $X · since the undo (vs keeping it): $Y on N markets'), never in the net nor in
+totals()' net (its own undo_usd). WS's rule figure prices off pin's fills up to the undo, so it stops moving then. B
+says when its cap was dropped.
+TRAJECTORIES: M's 3rd bets, P's and WS's results and WS's hedge replay read pin's pintraj log wherever it is now
+(traj_window: plain = a binary search on time, never the whole file; archived = read through once for every market a
+report asks, only those markets' rows kept, persisted in results\\fixes_traj_cache.json keyed by the archive's name, size
+and mtime, so the watcher's fresh process each tick does not read an archive again). _load keeps at most LOAD_KEEP (2)
+states of pin's logs.
 A and B count from 11-01 15:37 ET, C from 11-02 08:35 ET, D to J from the first start record after the 0925r build
 (code_sha ca156bf45704) with another code_sha, K from the first start record that names a cheap_window, L from the
 first start record with hedge_jump_shadow set (pinrun refuses it next to --hedge-jump, so the jump hedge is off there),
@@ -139,8 +180,11 @@ or -cost) - billed_fee(cost, filled)). A leg is matched by ticker, our side (wan
 the nearest cost, then the nearest time; a leg is claimed once per change. Records of older builds may lack fields:
 every read is a .get with a default.
 
-    report(paths=None, now=None) -> [change dict per A..N, then O when a ladder order log is read, then P, then Q when
-        a ladder order log is read]:
+    report(paths=None, now=None) -> [change dict per A..N, then O when a ladder order log is read, then P, WS, then Q when
+        a ladder order log is read, then LAD and STOP (measured once, in every report)]; each dict also carries undo
+        (None, or {since, since_t, net_usd, engaged, open, events, note, line}: the undo vs keeping the rule, never in
+        the row's net_usd), rule_usd (the rule's own net vs never having it: net_usd's figure), fixed (LAD, STOP),
+        overlap_usd (B: its extra legs C also counts), group (pin / ladder / stops):
         {id, name, what, since (ET words or None = not live yet), since_t, engaged, last_engaged, last_t, open,
          net_usd, events: [{t, epoch, et, coin, words, usd (None while open), open}],
          off (True only for G while the launcher leaves --late-bypass-fix off: built, switched off),
@@ -155,8 +199,11 @@ every read is a .get with a default.
          withdrawn (True only for O while O_WITHDRAWN: never live, never in totals, never a problem),
          retired (None, or the short words of a change that is off for good while it is not live: O while withdrawn,
          N while shelved; the phone folds such a change into one short line, its not_live words stay whole here)}
-    totals(changes) -> {engaged, open, net_usd, problems (the ids saying a problem)} over every change but J and a
-        withdrawn one (problems: every change not withdrawn); J's leg is already inside C. L is in: the
+    totals(changes) -> {engaged, open, net_usd, overlap_usd, groups {pin, ladder, stops}, undo_usd, undo_engaged,
+        undo_open, undos, problems (the ids saying a problem)} over every change but J and a withdrawn one (problems:
+        every change not withdrawn); J's leg is already inside C; B's overlap_usd (the extra legs only its cap made
+        happen, C's too) is taken off once; engaged and open leave the measured-once rows and the undos out (the undos'
+        money, vs keeping the rules, is undo_usd, never in net_usd). L is in: the
         premium it keeps and the save it misses are pin's real money, as K's skipped buys are. M is in by its net
         (the held-back contracts of pin's own buys); its `third` list is not. O is in when its row is live (the
         ladder's real money on the bids only the new rail placed), never while withdrawn. P is in (pin's own blocked
@@ -184,13 +231,24 @@ from botdata import paths as _paths       # M: missed.py's result cache (results
 
 BASE_SHA = "ca156bf45704"                 # pin 0925r: D to J start at the first later start record with another sha
 UNKNOWN_AFTER_S = _rw.UNKNOWN_AFTER_S     # a market with no result 3 h after its close: "unknown", still open
-IDS = "ABCDEFGHIJKLMNP"                   # pin's changes: a row each in every report
-LADDER_IDS = "OQ"                         # the ladder's (v-ladder-rail100, v-ladder-dayreset): a row each whenever a
-#                                           ladder order log is read (report: A..N, O, P, Q -- in letter order)
+IDS = ("A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "P", "WS")   # pin's: a row each, always
+LADDER_IDS = ("O", "Q")                   # the ladder's (v-ladder-rail100, v-ladder-dayreset): a row each whenever a
+#                                           ladder order log is read (report: A..N, O, P, WS, Q, LAD, STOP)
+FIXED_IDS = ("LAD", "STOP")               # measured once by the 11-14 retro (no log the phone can re-read): every report
 NAMES = {"A": "later-buy check", "B": "jump cap", "C": "bigger hedge", "D": "boost rail", "E": "hedge tick",
          "F": "cheap jump skip", "G": "late-boost bypass fix", "H": "extra stake cap", "I": "max positions 5",
          "J": "extra on odds", "K": "cheap morning skip", "L": "jump hedge shadow", "M": "3rd bet blocked",
-         "N": "hedge line 0.60", "O": "ladder cash limit 100%", "P": "band99 late-only", "Q": "ladder midnight reset"}
+         "N": "hedge line 0.60", "O": "ladder cash limit 100%", "P": "band99 late-only", "Q": "ladder midnight reset",
+         "WS": "wrong-side skip", "LAD": "ladder's 4 changes", "STOP": "the 4 stops"}
+GROUP = {"LAD": "ladder", "O": "ladder", "Q": "ladder", "STOP": "stops"}   # every other row is pin's
+LOAD_KEEP = 2                             # _load keeps at most this many states of pin's logs (the newest)
+# WS (v-wrongside / LS20, --wrongside-rise-c 1.0, live 2026-10-28 01:07:25Z = 10-27 9:07 PM ET): a FIRST buy with the
+# index across the strike and our side's mid not up 1c in 5 s is refused (gate wrong_side) and the market skipped for
+# the close. pin_paths reads from this run on (the run before it too).
+SINCE_WS = 1793149645.0                   # 2026-10-28T01:07:25Z
+WS_BUCKETS = ((0.0, 0.94), (0.94, 0.96), (0.96, 0.97), (0.97, 0.975), (0.975, 0.9801), (0.9801, 1.0))
+WS_NOT_LIVE = "not live yet (comes with a pin start on --wrongside-rise-c above 0)"
+UNDO_WORDS = "since the undo (vs keeping it)"
 # C's step (v-oddsmult15, 2026-11-14): --hedge-odds-mult 1.5 in place of 1.25; the step is the part of each 1.5x extra
 # leg over the (1.25 - 1) x position the old multiple would have bought
 C_OLD_MULT = 1.25
@@ -245,11 +303,13 @@ M_RULES = {"pin": 0.995, "price_ceiling": 0.98, "band99_ceiling": 0.99, "band99_
            "band_mults": [[0.955, 0.981, 1.5]], "cheap_window": None, "max_edge_c": 10.0, "edge_cap_tau": 20,
            "early_max_edge": 10.0, "min_level": 1.0}
 _MISSED = {"key": None, "data": None}     # missed.py's cache, read once per file state
-# K's shadow scale, measured on pin's live logs 10-16..11-07: orders with an ask under 98c filled 54,063 of the 69,390
-# contracts they asked for, and a market's first buy is 81% (flips) to 84% (wins) of its contracts -- the same on both
-# sides, so scaling the first refused buy up to the whole market tilts the score toward neither the rule nor against it
-CW_FILL = 0.78
-CW_FIRST_SHARE = 0.83
+# K's prices (the 11-14 retro: analyst retro_K, skeptic retro_skeptic_K s9_final.py, measured on pin's own cheap first
+# buys in 6-10 ET closes before the rule, 10-15..11-08). The old 0.78 fill / 0.94 size were off (first-order fill
+# 0.874; a market holds 1.03-1.12 x the first ask) and the win ratio it implied carried jump-hedge costs that cannot
+# happen since 11-08 (the jump hedge is in shadow).
+K_FILL = 0.874                            # the first order's fill (contracts filled / asked), the close's budget share
+K_FILL_FLIP = 0.903                       # a flip is priced on the early leg's fill (it flips before the full leg)
+K_WIN = {"full": 0.909, "early": 1.064}   # a won market's money per contract of n_ask x (1 - px), hedge-free, by leg
 _CACHE = {}                               # (path, size, mtime) tuple -> (Logs, Scan); the phone asks every /fixes
 
 
@@ -318,12 +378,15 @@ def paths_since(paths, since):
     rows.sort()
     keep = [p for s, p in rows if s >= since]
     i = len(rows) - len(keep)
+    if keep and abs(rows[i][0] - since) < 1.0:
+        return keep                                     # a run starts AT `since`: the one before holds nothing of it
     return [p for _s, p in rows[max(0, i - 1):]]
 
 
-def pin_paths(since=SINCE_AB):
+def pin_paths(since=SINCE_WS):
     """pin's live logs for the tracker (botdata.logs.pin_logs: results\\pinrun-live-*.jsonl, RESULTS injectable), the
-    ones log_rotate.py archived after 60 days included: a fix read 2 months after it went live still sees its first day."""
+    ones log_rotate.py archived after 60 days included: a fix read 2 months after it went live still sees its first day.
+    From WS's run on (10-28 01:07:25Z, the oldest change tracked from pin's logs)."""
     return paths_since(_logs.pin_logs(archived=True), since)
 
 
@@ -371,26 +434,42 @@ def cw_in_window(close_s, window):
         return False
 
 
-def cw_contracts(s, r=None):
-    """K: the contracts a skipped market would have held: what pin would have asked for its first buy (n_ask, from the
-    shadow or else the refusal), x CW_FILL / CW_FIRST_SHARE."""
+def cw_n_ask(s, r=None):
+    """K: what pin would have asked for the skipped first buy: n_ask from the shadow, else the refusal (else its size)."""
     n = _f((s or {}).get("n_ask"), None)
     if n is None:
         n = _f((r or {}).get("n_ask"), _f((r or {}).get("size")))
-    return max(0.0, n) * CW_FILL / CW_FIRST_SHARE
+    return max(0.0, n)
 
 
-def cw_shadow_usd(s, r=None):
-    """K: what one skipped market would have made (+) or lost (-) without the rule, fee in: cw_contracts at the
-    ladder's average price (px), plus the belief hedge pin would have bought (hedge_mult x those contracts of the other
-    side at hedge_px). None until the shadow has a yes / no result."""
+def cw_contracts(s, r=None, scale=1.0):
+    """K: the contracts a skipped first buy would have filled: n_ask x K_FILL (pin's own first-order fill on cheap
+    first buys in 6-10 ET closes), x `scale` (the close's budget share, _k)."""
+    return cw_n_ask(s, r) * K_FILL * float(scale)
+
+
+def cw_shadow_usd(s, r=None, scale=1.0):
+    """K: what one skipped market would have made (+) or lost (-) without the rule (the 11-14 skeptic's model D,
+    retro_skeptic_K s9_final.py), fee in. WON: K_WIN[leg] x n_ask x (1 - px) x scale -- the money per contract of
+    edge pin's own hedge-free 6-10 ET cheap first buys made before the rule (fill, later legs, slip and fees inside;
+    the jump-hedge costs the analyst's 0.852 carried cannot happen since 11-08, the jump hedge is in shadow), less the
+    shadow's belief hedge when the trajectory says one would have fired (hedge_mult x the filled contracts at
+    hedge_px: it can still fire). FLIPPED: n_ask x K_FILL_FLIP x scale at px, lost, plus that belief hedge's pay-off.
+    None until the shadow has a yes / no result."""
     res = (s or {}).get("result")
     if res not in ("yes", "no"):
         return None
     side = s.get("want") or (r or {}).get("want")
     won = res == side
-    n = cw_contracts(s, r)
-    usd = _value(n, _f(s.get("px"), _f(s.get("price"), 0.98)), won) if n > 0 else 0.0
+    leg = (r or {}).get("leg") or s.get("leg") or "full"
+    n_ask = cw_n_ask(s, r)
+    px = _f(s.get("px"), _f(s.get("price"), 0.98))
+    if won:
+        usd = K_WIN.get(leg, K_WIN["full"]) * n_ask * (1.0 - px) * float(scale)
+        n = n_ask * K_FILL * float(scale)
+    else:
+        n = n_ask * K_FILL_FLIP * float(scale)
+        usd = _value(n, px, False) if n > 0 else 0.0
     if s.get("hedge_px") is not None and n > 0:
         usd += _value(n * _f(s.get("hedge_mult"), 1.0), _f(s.get("hedge_px")), not won)
     return usd
@@ -431,10 +510,9 @@ def js_outcome(r):
 
 
 def traj_paths(pin_path):
-    """M: where the trajectory log of pin log `pin_path` can be: the same folder, pinrun-live- -> pintraj-live-, as is,
-    then .gz, then the other way round. NOT results\\archive\\ (where log_rotate puts a pintraj log two days after its
-    last write): M's Scan.traj reads a whole file per close, so it is left on the plain file; P, whose net depends on
-    the close, finds the archive through p_traj_path (logfiles.resolve) and keeps only each market's close row."""
+    """The names the trajectory log of pin log `pin_path` can have in its own folder: pinrun-live- -> pintraj-live-, as
+    is, then .gz. (Kept for callers that look in the pin log's folder only; the tracker itself finds a trajectory
+    wherever it is now, results\\archive\\ included, through p_traj_path / traj_window.)"""
     d, b = os.path.split(str(pin_path))
     if "pinrun-live-" not in b:
         return []
@@ -583,11 +661,13 @@ class Scan:
     WANT = ('"start"', '"settled"', '"hedge"', '"hedge_extra"', '"hedge_quote"', '"band_boost"', '"late_boost"',
             '"boost_rail_kept"', '"hedge_cheap_skip"', '"late_bypass_refused"', '"extra_stake_capped"',
             '"open_cap_relaxed"', '"order"', '"cheap_window', '"jump_shadow"', '"close_budget"', '"signal"',
-            '"autosize"', '"sweep_depth"', '"band99_shadow"')
+            '"autosize"', '"sweep_depth"', '"band99_shadow"', '"wrong_side"', '"jump_capped"', '"hedge_alarm"',
+            '"taper"', '"late_refused"')
     LISTS = {"hedge": "hedges", "hedge_extra": "extras", "boost_rail_kept": "kept", "hedge_cheap_skip": "cheap",
              "late_bypass_refused": "late_bypass", "extra_stake_capped": "stake_capped", "open_cap_relaxed": "open_cap",
              "order": "orders", "jump_shadow": "shadow", "signal": "signals", "sweep_depth": "sweeps",
-             "band99_shadow": "b99s"}
+             "band99_shadow": "b99s", "jump_capped": "capped", "hedge_alarm": "alarms", "taper": "tapers",
+             "late_refused": "late_refused"}
 
     def __init__(self, paths):
         self.starts = []                      # (epoch, record, path)
@@ -597,6 +677,7 @@ class Scan:
         self.cw_ref = []                      # K: refusals with gate cheap_window (one per skipped market)
         self.cw_set = {}                      # K: ticker -> its shadow's cheap_window_settled
         self.cb_ref = []                      # M: refusals with gate close_budget (one per market per close)
+        self.ws_ref = []                      # WS: refusals with gate wrong_side (pinrun writes each one twice)
         self.sizes = {}                       # M: path -> [(epoch, SIZE)] from the start record and every autosize
         self._traj = {}                       # M: (path, close_s) -> {ticker: [traj records]}
         for v in self.LISTS.values():
@@ -638,9 +719,12 @@ class Scan:
                     if k == "hedge_quote":
                         quote[(tk, r.get("side"))] = r
                         continue
+                    # (pinrun writes some records twice; two orders of one market in one second each write their own
+                    # taper / order record, which the depth and fill fields tell apart)
                     key = (k, tk, r.get("t"), r.get("want"), r.get("side"), r.get("cost"), r.get("price"), r.get("n"),
                            r.get("client_order_id"), r.get("leg"), r.get("which"), r.get("outcome"), r.get("entry"),
-                           r.get("gate"), r.get("take_n"), r.get("budget_left"), r.get("now"))
+                           r.get("gate"), r.get("take_n"), r.get("budget_left"), r.get("now"), r.get("tapered"),
+                           r.get("flat"), r.get("filled"), r.get("order_id"))
                     if key in seen:
                         continue
                     seen.add(key)
@@ -655,6 +739,8 @@ class Scan:
                             self.cw_ref.append(r)
                         elif r.get("gate") == "close_budget":
                             self.cb_ref.append(r)
+                        elif r.get("gate") == "wrong_side":
+                            self.ws_ref.append(r)
                     elif k == "cheap_window_settled":
                         self.cw_set[tk] = r
                     elif k == "hedge_cheap_skip":
@@ -667,6 +753,7 @@ class Scan:
             getattr(self, v).sort(key=lambda r: (r["_epoch"], r["_i"]))
         self.cw_ref.sort(key=lambda r: r["_epoch"])
         self.cb_ref.sort(key=lambda r: (r["_epoch"], r["_i"]))
+        self.ws_ref.sort(key=lambda r: (r["_epoch"], r["_i"]))
         for v in self.boosts.values():
             v.sort(key=lambda r: r["_epoch"])
         for v in self.sizes.values():
@@ -692,6 +779,15 @@ class Scan:
 
     def latest_start(self):
         return self.starts[-1][1] if self.starts else {}
+
+    def start_at(self, t):
+        """The start record in force at epoch `t` (the latest at or before it), {} before the first."""
+        got = {}
+        for t0, r, _p in self.starts:
+            if t0 > float(t) + 1e-9:
+                break
+            got = r
+        return got
 
     def new_build_since(self):
         """D..J's start: the first start record from SINCE_C on whose code_sha is not the 0925r build's."""
@@ -755,48 +851,32 @@ class Scan:
                     ser = se
         return got, ser
 
-    def traj(self, path, close_s):
-        """M: the trajectory records of one close, {ticker: [records in time order]}, read from the pintraj log with
-        the same stamp as pin log `path` (results\\pintraj-live-<stamp>.jsonl, or its .gz); {} when there is none."""
-        key = (path, int(close_s))
+    def traj(self, path, close_s, wants=None):
+        """The trajectory records of one close, {ticker: [records in time order]}, from the pintraj log of pin log
+        `path` WHEREVER it is now (traj_window: results\\ while plain, read by a binary search on time, never the whole
+        file; results\\archive\\<name>.gz once log_rotate moved it, through the small persisted row cache). `wants`
+        {ticker: from epoch}: the markets asked and the second each is needed from (default: every market of the close
+        from 120 s before it, as N reads it); {} when there is none. Memo'd per (path, close) for one report."""
+        cs = int(_f(close_s))
+        key = (path, cs, tuple(sorted((wants or {}).items())))
         got = self._traj.get(key)
         if got is not None:
             return got
+        w = {(tk, cs): float(t0) for tk, t0 in (wants or {}).items()}
+        got = traj_window(path, w, every=(None if wants else float(cs) - 120.0), close_s=cs)
         out = {}
-        mark = '"close_s": %d' % int(close_s)
-        for tp in traj_paths(path):
-            try:
-                fh = _lf.open(tp, encoding="utf-8", errors="replace")
-            except OSError:
-                continue
-            with fh:
-                for line in fh:
-                    if mark not in line or '"traj"' not in line:
-                        continue
-                    try:
-                        r = json.loads(line)
-                    except ValueError:
-                        continue
-                    if not isinstance(r, dict) or r.get("kind") != "traj" or not r.get("ticker"):
-                        continue
-                    t = _epoch(r.get("t"))
-                    if t is None:
-                        continue
-                    r["_epoch"] = t
-                    out.setdefault(r["ticker"], []).append(r)
-            break
-        for v in out.values():
-            v.sort(key=lambda r: r["_epoch"])
+        for (tk, _c), rows in got.items():
+            out[tk] = rows
         self._traj[key] = out
         return out
 
-    def window_net(self, since, window):
-        """K: pin's own settled money, every leg, on the markets closing inside `window` from `since` on, and how many
-        of those markets have settled."""
+    def window_net(self, since, window, until=None):
+        """K: pin's own settled money, every leg, on the markets closing inside `window` from `since` on (to `until`),
+        and how many of those markets have settled."""
         total, n = 0.0, 0
         for tk, legs in self.by_tk.items():
             c = close_of(tk)
-            if c is None or c < since or not cw_in_window(c, window):
+            if c is None or c < since or (until is not None and c >= until) or not cw_in_window(c, window):
                 continue
             got = [r for r in legs if r.get("result") in ("yes", "no")]
             if got:
@@ -816,17 +896,59 @@ def _load(paths):
     key = tuple(key)
     got = _CACHE.get(key)
     if got is None:
-        # past 8 of its own entries (each a state of pin's logs: the live log grows between asks) _load drops ITS OWN
-        # entries only -- a ladder scan (key ("ladder", path)) stays, so its incremental read is never thrown away
-        mine = [k for k in _CACHE if k and isinstance(k[0], tuple)]
-        if len(mine) > 8:
-            for k in mine:
-                del _CACHE[k]
+        # at most LOAD_KEEP of its own entries (each a state of pin's logs, ~41 MB parsed on the server's: the live log
+        # grows between asks): the oldest go first, and only _load's own -- a ladder scan (key ("ladder", path)) stays,
+        # so its incremental read is never thrown away
+        mine = [k for k in _CACHE if k and isinstance(k, tuple) and isinstance(k[0], tuple)]
+        for k in mine[:max(0, len(mine) - (LOAD_KEEP - 1))]:
+            del _CACHE[k]
         got = _CACHE[key] = (_rw.Logs(list(paths)), Scan(list(paths)))
     return got
 
 
 # ---------------------------------------------------------------------------
+# A rule's periods (the 11-14 undo: results\pin_undo1114.ps1 restarts pin with M, K and WS off and B's cap dropped):
+# from the first start record that switches the rule on, every start record's state until the next one. A rule's own
+# events count only in its ON spans; from the first OFF span on, its row scores the UNDO against keeping the rule.
+def rule_spans(S, on):
+    """[(from epoch, to epoch or None, on?, start record)] from the first start record with on(record) True."""
+    out, started = [], False
+    for i, (t, r, _p) in enumerate(S.starts):
+        o = bool(on(r))
+        if not (started or o):
+            continue
+        started = True
+        out.append((t, S.starts[i + 1][0] if i + 1 < len(S.starts) else None, o, r))
+    return out
+
+
+def span_at(spans, e):
+    """The span of `spans` that epoch `e` falls in, or None (before the first)."""
+    got = None
+    for sp in spans:
+        if e + 1e-9 >= sp[0] and (sp[1] is None or e < sp[1] - 1e-9):
+            got = sp
+    return got
+
+
+def undo_since(spans):
+    """The epoch of the first OFF span after an ON one (the undo), or None while the rule has never been switched off."""
+    return next((sp[0] for sp in spans if not sp[2]), None)
+
+
+def _m_on(r):
+    return _f(r.get("extra_coin"), None) == 0.0 and _f(r.get("late_extra"), None) == 0.0
+
+
+def _k_on(r):
+    w = r.get("cheap_window")
+    return isinstance(w, (list, tuple)) and len(w) == 3
+
+
+def _ws_on(r):
+    return _f(r.get("wrongside_rise_c"), 0.0) > 0.0
+
+
 def _status(tk, result, now, close_s=None):
     if result is not None:
         return "scored"
@@ -875,48 +997,318 @@ def _abc(L, now, since, cstep=None):
     return out
 
 
+def _other(side):
+    return "no" if side == "yes" else "yes"
+
+
+def jump_live(st):
+    """True when start record `st` runs the jump hedge for real: no --hedge-jump-shadow (pinrun refuses it next to
+    --hedge-jump), and --hedge-jump set (a record of an older build without the field ran it: 10-24..11-08)."""
+    st = st or {}
+    return st.get("hedge_jump_shadow") is None and ("hedge_jump" not in st or st.get("hedge_jump") is not None)
+
+
+def _b(S, now, since):
+    """B (--hedge-jump-max 8) against never having the cap, from pin's own logs (the 11-14 retro's score_b.py):
+    (a) each jump_capped (the first a position): the jump hedge the cap stopped, walked up the logged ladder to its
+    limit, against what pin's real later hedges AND extra legs on that side did (a jump hedge covers the whole
+    position, so the belief-line hedge and its extra never go out). It moves no money when it could not have filled:
+    while the jump hedge is in shadow (11-08 on), an off-grid limit before --hedge-tick round (Kalshi refused every
+    such order 11-01..11-04), an ask under --jump-hedge-min-ask (nothing is sent). (b) before the build that let the
+    odds extra fire on any label (J's), a 'belief' hedge alarm on a jump at or over the cap: the cap turned the label
+    to belief, so the 1.25x extra fired only because of it -- its own money is B's (+ when it paid). The extra legs in
+    both are C's legs too (tally "extras": the total counts them once). Returns (events, tally)."""
+    out = []
+    t = {"priced": 0, "zero": 0, "label": 0, "extras": 0.0, "open": 0}
+    seen, capped_tk = set(), set()
+    for c in S.capped:
+        if c["_epoch"] < since:
+            continue
+        key = (c["ticker"], c.get("want"))
+        if key in seen:
+            continue
+        seen.add(key)
+        capped_tk.add(c["ticker"])
+        tk, want = c["ticker"], c.get("want")
+        side = c.get("side") or _other(want)
+        st = S.start_at(c["_epoch"])
+        res = S.result(tk)
+        status = _status(tk, res, now, c.get("close_s"))
+        n, ask = _f(c.get("n")), _f(c.get("ask"), None)
+        lim = _f(c.get("limit"), None)
+        if lim is None and ask is not None:
+            lim = min(ask + 0.10, 0.999)
+        head = "a %s sd jump against %s with %s s left: the cap skipped a jump hedge of %s %s asking %s" % (
+            ("%.1f" % _f(c.get("jump_sd"))) if c.get("jump_sd") is not None else "?", _side(want), c.get("tau", "?"),
+            _g2(n), _side(side), _cents(ask))
+        why = None
+        bar = st.get("jump_hedge_min_ask")
+        if not jump_live(st):
+            why = "the jump hedge was in shadow then (it sends nothing either way)"
+        elif ask is None or n <= 0:
+            why = "nothing to hedge"
+        elif (st.get("hedge_tick") or "") != "round" and off_grid(lim):
+            why = ("its %s limit was off Kalshi's price grid (before --hedge-tick round Kalshi refused every such order): "
+                   "nothing would have filled" % _cents(lim))
+        elif bar is not None and ask < _f(bar) - 1e-9:
+            why = "under the %s bar nothing would have been sent" % _cents(bar)
+        if why:
+            t["zero"] += 1
+            out.append(_event(c, head + "; " + why + ": no money either way", 0.0, "scored"))
+            continue
+        fills = _rw.walk(c.get("ladder"), n, lim, [(ask, c.get("ask_size") or n)])
+        if status != "scored":
+            t["open"] += 1
+            out.append(_event(c, head + "; not settled yet", None, status))
+            continue
+        flip = res == side
+        jv = _rw.value(fills, flip)
+        legs = [h for h in S.hedges + S.extras if h["ticker"] == tk and h.get("side") == side
+                and h["_epoch"] >= c["_epoch"] - 1e-9 and h.get("status") == "executed" and _f(h.get("n")) > 0
+                and h.get("price") is not None]
+        rv = sum(_value(_f(h.get("n")), _f(h.get("price")), flip) for h in legs)
+        xv = sum(_value(_f(h.get("n")), _f(h.get("price")), flip) for h in legs if h.get("kind") == "hedge_extra")
+        usd = rv - jv
+        t["priced"] += 1
+        t["extras"] += round(xv, 2)
+        words = head + "; the bet %s: pin's later hedges on that side %s %s%s, the jump hedge (%s at %s) would have %s %s, " \
+                       "so the cap %s %s" % (
+                           "LOST (a flip)" if flip else "won", "made" if rv >= 0 else "lost", _rw.usd(abs(rv), False),
+                           (" (%s of it extra legs, C's too)" % _rw.usd(xv)) if abs(xv) > 0.004 else "",
+                           _g2(_rw.got(fills)), _cents(_rw.avg_px(fills)), "made" if jv >= 0 else "lost",
+                           _rw.usd(abs(jv), False), "made" if usd >= 0 else "cost", _rw.usd(abs(usd), False))
+        out.append(_event(c, words, usd, "scored"))
+    j_since = S.new_build_since()
+    seen_a = set()
+    for a in S.alarms:
+        if a["_epoch"] < since or (j_since is not None and a["_epoch"] >= j_since) or a.get("trigger") != "belief":
+            continue
+        cap = S.start_at(a["_epoch"]).get("hedge_jump_max")
+        if cap is None or a.get("jump_sd") is None or _f(a.get("jump_sd")) < _f(cap) - 1e-9:
+            continue
+        tk, want = a["ticker"], a.get("want")
+        if tk in capped_tk or (tk, want) in seen_a:
+            continue
+        seen_a.add((tk, want))
+        side = _other(want)
+        res = S.result(tk)
+        status = _status(tk, res, now, a.get("close_s"))
+        ex = [x for x in S.extras if x["ticker"] == tk and x.get("side") == side and x["_epoch"] >= a["_epoch"] - 1e-9
+              and x.get("status") == "executed" and _f(x.get("n")) > 0 and x.get("price") is not None]
+        words = ("a %.1f sd jump at %.0f%% odds our way: the cap turned the alarm to 'belief', so the odds extra fired "
+                 "(before the J build it rode only that label)" % (_f(a.get("jump_sd")), 100 * _f(a.get("belief"))))
+        if not ex:
+            t["label"] += 1
+            out.append(_event(a, words + "; no extra leg filled: no money either way", 0.0, "scored"))
+            continue
+        if status != "scored":
+            t["open"] += 1
+            out.append(_event(a, words + "; not settled yet", None, status))
+            continue
+        usd = sum(_value(_f(x.get("n")), _f(x.get("price")), res == side) for x in ex)
+        t["label"] += 1
+        t["extras"] += round(usd, 2)
+        words += "; %s extra %s at %s %s %s (C counts these too)" % (
+            _g2(sum(_f(x.get("n")) for x in ex)), _side(side), _cents(_f(ex[0].get("price"))),
+            "made" if usd >= 0 else "lost", _rw.usd(abs(usd), False))
+        out.append(_event(a, words, usd, "scored"))
+    return out, t
+
+
+def _b_extra(t, dropped):
+    """B's lines under its net: when the cap was dropped, then the capped alarms that moved no money. The extra legs
+    only the cap made happen (C's legs too) are row["overlap_usd"]: the phone says them ON B's net line ('of it +$X is
+    C's extra legs too'), where no shrink step drops them (the 11-14 review), and totals() takes them once."""
+    out = []
+    if dropped is not None:                              # (its since line says DROPPED too)
+        out.append("the cap was DROPPED %s (pin started without --hedge-jump-max): nothing to count since"
+                   % et_words(dropped))
+    if t["zero"]:
+        out.append("%d capped alarm%s moved no money (the jump hedge in shadow since 11-08, an off-grid limit before "
+                   "--hedge-tick round, or under the 5c bar)" % (t["zero"], "" if t["zero"] == 1 else "s"))
+    return out
+
+
+D_BAND = (0.955, 0.981, 1.5)              # the old rule's band boost (0925r: BAND_MULTS), switched off after a trip
+D_LATE_MULT, D_LATE_TAU = 1.5, 10         # ... and its late boost (LATE_MULT inside LATE_TAU)
+D_EARLY_FRAC = 0.333                      # the early leg's share of the bet (pinrun EARLY_FRAC)
+
+
+def _d_bm(p, on, band=D_BAND):
+    """The old code's band multiple at ask p: 1.5 in the band while the band boost is on, else 1."""
+    if not on or p is None:
+        return 1.0
+    return band[2] if band[0] - 1e-9 <= float(p) <= band[1] + 1e-9 else 1.0
+
+
+def _d_count(o):
+    try:
+        return float((o.get("body") or {}).get("count"))
+    except (TypeError, ValueError):
+        return _f(o.get("filled"))
+
+
+def _start_of(S, path):
+    for _t, r, p in S.starts:
+        if p == path:
+            return r
+    return {}
+
+
+def d_market(S, path, tk, lst, band_off, late_off, res):
+    """D: one market of a run after the old rule's trip, re-sized order by order the way the 0925r code would have
+    (the analyst's d_cf.py, 11-14 retro): after a band trip band_mult is 1 everywhere in pin's sizing (the staged
+    caps too: early = EARLY_FRAC x S x m, top-up / full = S x m - held, late add = min(take, 0.5 S, 1.5 S - held)),
+    after a late trip LATE_MULT is 1; each order's counterfactual = min(its real count, that cap), its fill = min(the
+    real fill, that count) (the same IOC limit and book). The late add tops the position up to 1.5 S - held: with a
+    smaller position it buys MORE, from the book the smaller earlier legs left within 15 s (the refill). Hedges scale
+    with the position they cover (the covering hedge by the covered order's cf / real fill, an extra leg by (mult - 1)
+    x base_n x that). Money at the market's result, fee in per order. Returns (effect, legs, hedges, changed): effect
+    = real - counterfactual (+ = the rail off made more)."""
+    st = _start_of(S, path)
+    sc = _f(((st.get("coin_size_frac") or {}).get(str(tk).split("-", 1)[0])), 1.0) or 1.0
+    held_cf = {"yes": 0.0, "no": 0.0}
+    legs, eff, changed = [], 0.0, False
+    boosts = [b for b in S.boosts.get(path, []) if b.get("ticker") == tk]
+    orders = [r for r in lst if r.get("kind") == "order"]
+    for r in orders:
+        fill = _f(r.get("filled"))
+        if fill <= 0:
+            continue
+        want = r.get("want")
+        px = _f(r.get("exec_price") if r.get("exec_price") is not None else r.get("limit_sent"))
+        p = r.get("ask_seen")
+        tau = _f(r.get("tau_at_send"), 99.0)
+        leg = r.get("leg") or "full"
+        size = S.size_at(path, r["_epoch"])[0] or 0.0
+        S_ = float(size) * sc
+        c = _d_count(r)
+        late_cf = D_LATE_MULT if (tau <= D_LATE_TAU and not late_off) else 1.0
+        m_cf = max(_d_bm(p, not band_off), late_cf)
+        prev = max([o["_i"] for o in orders if o.get("want") == want and o["_i"] < r["_i"]] or [-1])
+        bb = [b for b in boosts if b.get("kind") == "band_boost" and b.get("want") == want
+              and prev < b["_i"] < r["_i"] and 0 <= r["_epoch"] - b["_epoch"] <= 2]
+        lb = [b for b in boosts if b.get("kind") == "late_boost" and b.get("want") == want
+              and prev < b["_i"] < r["_i"] and 0 <= r["_epoch"] - b["_epoch"] <= 2]
+        if leg == "early":
+            cap = D_EARLY_FRAC * S_ * m_cf
+        elif leg in ("topup", "full"):
+            cap = max(0.0, S_ * m_cf - held_cf.get(want, 0.0))
+        elif leg == "late_add":
+            cap = min(0.5 * S_, max(0.0, 1.5 * S_ - held_cf.get(want, 0.0)))
+        else:
+            cap = c
+        if tau <= D_LATE_TAU and band_off and not late_off and bb:
+            cap = min(cap, _f(bb[-1].get("was"), c))           # the band boost widened it in the late window
+        if tau <= D_LATE_TAU and late_off and lb and m_cf < D_LATE_MULT:
+            cap = min(cap, _f(lb[-1].get("was"), c),
+                      max(0.0, S_ * m_cf - held_cf.get(want, 0.0)) if leg != "late_add" else c)
+        f_cf = min(fill, min(c, cap))
+        if leg == "late_add":
+            left = sum(L["fill"] - L["fill_cf"] for L in legs if L["want"] == want and r["_epoch"] - L["e"] <= 15)
+            take = _f(bb[-1].get("was"), c) if bb else c + left
+            f_cf = max(0.0, min(take, cap, fill + left))
+        if not size:
+            f_cf = fill                                   # no SIZE in the log: nothing to re-size it by
+        if abs(fill - f_cf) > 1e-6:
+            changed = True
+        if res is not None:
+            eff += _value(fill, px, res == want) - (_value(f_cf, px, res == want) if f_cf > 0 else 0.0)
+        held_cf[want] = held_cf.get(want, 0.0) + f_cf
+        legs.append({"e": r["_epoch"], "leg": leg, "want": want, "px": px, "fill": fill, "fill_cf": f_cf})
+    hedges = []
+    for h in lst:
+        if h.get("kind") not in ("hedge", "hedge_extra") or h.get("status") != "executed" or _f(h.get("n")) <= 0:
+            continue
+        n, side = _f(h.get("n")), h.get("side")
+        pos_side = "no" if side == "yes" else "yes"
+        pos = _f(h.get("asked"), n) if h.get("kind") == "hedge" else _f(h.get("base_n"))
+        ent = h.get("entry")
+        cand = [L for L in legs if L["want"] == pos_side and L["e"] <= h["_epoch"] + 1e-6]
+        scale = 1.0
+        if cand:
+            L0 = min(cand, key=lambda L: (abs(L["fill"] - pos), abs(L["px"] - _f(ent, L["px"]))))
+            scale = (L0["fill_cf"] / L0["fill"]) if L0["fill"] > 0 else 1.0
+        if h.get("kind") == "hedge":
+            n_cf = min(n, _f(h.get("asked"), n) * scale)
+        else:
+            n_cf = min(n, (_f(h.get("mult"), 1.25) - 1.0) * _f(h.get("base_n")) * scale)
+        hp = _f(h.get("price"))
+        if abs(n - n_cf) > 1e-6:
+            changed = True
+        if res is not None:
+            eff += _value(n, hp, res == side) - (_value(n_cf, hp, res == side) if n_cf > 0 else 0.0)
+        hedges.append({"n": n, "n_cf": n_cf, "side": side})
+    return eff, legs, hedges, changed
+
+
 def _d(S, now, since):
-    """D: each boost_rail_kept and the money of the boost legs placed after it in that run."""
-    out, claimed = [], set()
+    """D: the boost rail off (0925t, --boost-rail off) against the 0925r rule "any", which switched the band boost
+    (and, on its own trip, the late boost) off for the rest of a run at the first losing leg of a boosted market. The
+    trip is where pinrun writes boost_rail_kept (the first of each kind in a run, from `since` on); every market of
+    that run whose first fill came after it is re-sized order by order (d_market) -- not only the band_boost records:
+    the staged-entry limits size 1.5x without one -- hedges and the late-add refill in. One event per market whose
+    contracts differ, usd = real - counterfactual, open until the market settles. Returns (events, tally)."""
+    out = []
+    tally = {"trips": 0, "runs": 0, "markets": 0, "changed": 0, "open": 0, "same": 0}
+    trips = {}
     for K in S.kept:
         if K["_epoch"] < since:
             continue
-        which = K.get("which") or "band"
-        kind = "late_boost" if which == "late" else "band_boost"
-        later = [k2["_epoch"] for k2 in S.kept if k2["_path"] == K["_path"] and (k2.get("which") or "band") == which
-                 and k2["_epoch"] > K["_epoch"]]
-        end = min(later) if later else float("inf")
-        legs = [b for b in S.boosts.get(K["_path"], []) if b.get("kind") == kind and K["_epoch"] < b["_epoch"] <= end]
-        total, scored, opened = 0.0, 0, 0
-        for b in legs:
-            extra = _f(b.get("now")) - _f(b.get("was"))
-            if extra <= 0:
-                continue
-            leg = S.leg(b["ticker"], b.get("want"), b.get("price"), b["_epoch"], claimed)
-            if leg is None or leg.get("result") not in ("yes", "no"):
-                opened += 1
-                continue
-            total += _value(extra, _f(leg.get("cost"), _f(b.get("price"), 0.97)), leg["result"] == b.get("want"))
-            scored += 1
-        bs = K.get("boosted_side")
-        bs = "/".join(bs) if isinstance(bs, (list, tuple)) else str(bs or "?")
-        words = ("a losing %s leg (%s) on a market whose %s side had the %s boost: the boost stayed on, the old rule "
-                 "switched it off for the run" % (_side(K.get("leg_side")), _rw.usd(_f(K.get("pnl_c")) / 100.0),
-                                                  _side(bs), which))
-        if K.get("rail") == "off" and str(K.get("leg_side")) in str(K.get("boosted_side")):
-            words = ("a losing boosted %s leg (%s): the rail is off, so the %s boost stayed on; the old rule switched it "
-                     "off for the run" % (_side(K.get("leg_side")), _rw.usd(_f(K.get("pnl_c")) / 100.0), which))
-        if legs:
-            words += "; %d boosted leg%s since: the extra contracts %s %s" % (
-                len(legs), "" if len(legs) == 1 else "s", "made" if total >= 0 else "lost", _rw.usd(abs(total), False))
-            if opened:
-                words += " (%d still open)" % opened
+        trips.setdefault(K["_path"], {}).setdefault(K.get("which") or "band", K)
+    tally["runs"] = len(trips)
+    tally["trips"] = sum(len(v) for v in trips.values())
+    recs = {}
+    for pool in (S.orders, S.hedges, S.extras):
+        for r in pool:
+            if r["_path"] in trips:
+                recs.setdefault((r["_path"], r["ticker"]), []).append(r)
+    for (path, tk), lst in sorted(recs.items(), key=lambda kv: min(r["_epoch"] for r in kv[1])):
+        lst.sort(key=lambda r: r["_i"])
+        fills = [r for r in lst if r.get("kind") == "order" and _f(r.get("filled")) > 0]
+        if not fills:
+            continue
+        t0 = fills[0]["_epoch"]
+        tp = trips[path]
+        band_off = "band" in tp and t0 > tp["band"]["_epoch"]
+        late_off = "late" in tp and t0 > tp["late"]["_epoch"]
+        if not (band_off or late_off):
+            continue
+        tally["markets"] += 1
+        res = S.result(tk)
+        eff, legs, hedges, changed = d_market(S, path, tk, lst, band_off, late_off, res)
+        if not changed:
+            tally["same"] += 1
+            continue
+        tally["changed"] += 1
+        st = _status(tk, res, now)
+        trip = tp["band"] if band_off else tp["late"]
+        real = sum(L["fill"] for L in legs)
+        cf = sum(L["fill_cf"] for L in legs)
+        notes = (["its hedges scaled with it"] if hedges else []) + (["the late add's refill in"] if any(
+            L["leg"] == "late_add" and L["fill_cf"] > L["fill"] + 1e-6 for L in legs) else [])
+        words = ("bought after the old rule's %s-boost trip (%s, a losing %s leg): the boost stayed on, so %s contracts "
+                 "instead of the old rule's %s%s" % (
+                     "band" if band_off else "late", et_words(trip["_epoch"], with_day=False), _side(trip.get("leg_side")),
+                     _g2(real), _g2(cf), (" (%s)" % ", ".join(notes)) if notes else ""))
+        if st == "scored":
+            won = res == fills[0].get("want")
+            words += "; the bet %s: the boost rail off %s %s" % ("won" if won else "LOST", "made" if eff >= 0 else "cost",
+                                                                 _rw.usd(abs(eff), False))
         else:
-            words += "; no boosted leg since yet"
-        out.append(_event(K, words, total, "scored" if not opened else "pending"))
-        if opened:
-            out[-1]["usd"] = round(total, 2) if scored else None    # the settled part counts now, the rest when it settles
-    return out
+            tally["open"] += 1
+            words += "; not settled yet"
+        out.append(_event(fills[0], words, eff if st == "scored" else None, st))
+    return out, tally
+
+
+def _d_extra(t):
+    if not t["runs"]:
+        return ["the old rule has not tripped in any run since the build (no boost_rail_kept yet): nothing to re-size"]
+    return ["re-sized order by order as the old rule would have: %d market%s after %d trip%s, %d sized the same%s; the "
+            "boost itself (1.5x on every 95.5-98.1c buy) is not this row" % (
+                t["changed"], "" if t["changed"] == 1 else "s", t["trips"], "" if t["trips"] == 1 else "s", t["same"],
+                (" · %d open" % t["open"]) if t["open"] else "")]
 
 
 def _e(S, now, since):
@@ -1084,23 +1476,86 @@ def _j(S, now, since):
     return out
 
 
-def _k(S, now, since):
-    """K: each market the cheap window skipped, priced by its own shadow: + saved (the skipped buy would have lost), -
-    gave up (it would have won). Returns (events, {won, flipped, open, without_usd})."""
-    out, tally = [], {"won": 0, "flipped": 0, "open": 0, "without_usd": 0.0}
-    for r in S.cw_ref:
-        if r["_epoch"] < since:
+def market_money(S, tk):
+    """pin's own settled money in market `tk`, every leg (its buys, hedges and extras, fee in: pinrun writes one
+    settled record per side and cost, legs at one price merged, all in the pass that books the market), or None until
+    the market has settled."""
+    legs = [r for r in S.by_tk.get(tk, []) if r.get("result") in ("yes", "no")]
+    if not legs:
+        return None
+    return sum(_f(r.get("pnl_c")) for r in legs) / 100.0
+
+
+def first_looks(S, spans):
+    """[(ticker, its first filled order, the signals of it up to that order)] for every market whose first filled order
+    falls in an OFF span of `spans` (after the undo): the looks a rule judging FIRST buys would have judged."""
+    first, sigs = {}, {}
+    for o in S.orders:
+        if _f(o.get("filled")) > 0:
+            k = o["ticker"]
+            if k not in first or (o["_epoch"], o["_i"]) < (first[k]["_epoch"], first[k]["_i"]):
+                first[k] = o
+    for sg in S.signals:
+        if sg.get("live") is not False:
+            sigs.setdefault(sg["ticker"], []).append(sg)
+    out = []
+    for tk, o in sorted(first.items(), key=lambda kv: kv[1]["_epoch"]):
+        sp = span_at(spans, o["_epoch"])
+        if sp is None or sp[2]:
             continue
+        looks = [s for s in sigs.get(tk, []) if s["_i"] <= o["_i"] and s["_epoch"] >= sp[0] - 1e-9]
+        out.append((tk, o, looks, sp))
+    return out
+
+
+def _undo_event(S, now, tk, o, words, verb_won="made"):
+    """One market the undone rule would have skipped: its whole money (every leg of pin's, hedges in) is what the undo
+    made (+) or lost (-) against keeping the rule. Open until every leg has settled."""
+    usd = market_money(S, tk)
+    res = S.result(tk)
+    st = _status(tk, res if usd is not None else None, now)
+    if st == "scored":
+        words += "; the market %s: the undo %s %s" % ("won" if usd >= 0 else "LOST", verb_won if usd >= 0 else "cost",
+                                                     _rw.usd(abs(usd), False))
+    else:
+        words += "; not settled yet" if st == "pending" else "; no result 3 h after the close (unknown)"
+    return _event(o, words, usd if st == "scored" else None, st)
+
+
+def _k(S, now, spans):
+    """K: each market the cheap window skipped while the rule was ON (the first refusal a market), priced by
+    cw_shadow_usd: + saved (the skipped buy would have lost), - gave up (it would have won). Skips of one close share
+    its budget in refusal order (a later one gets only what the earlier ones left of the refusal's budget_left).
+    Returns (events, {won, flipped, open, without_usd})."""
+    out, tally = [], {"won": 0, "flipped": 0, "open": 0, "without_usd": 0.0}
+    picked, seen = [], set()
+    for r in S.cw_ref:
+        sp = span_at(spans, r["_epoch"])
+        if sp is None or not sp[2] or r["ticker"] in seen:
+            continue
+        seen.add(r["ticker"])
+        picked.append(r)
+    scale, spent = {}, {}
+    for r in picked:
+        cs = int(_f(r.get("close_s"), close_of(r["ticker"]) or 0))
+        w = cw_n_ask(S.cw_set.get(r["ticker"]), r) * K_FILL
+        bl = _f(r.get("budget_left"), None)
+        room = max(0.0, (bl if bl is not None else 1e12) - spent.get(cs, 0.0))
+        got = min(w, room)
+        scale[id(r)] = (got / w) if w > 0 else 1.0
+        spent[cs] = spent.get(cs, 0.0) + got
+    for r in picked:
         tk, side = r["ticker"], r.get("want")
         s = S.cw_set.get(tk)
-        shadow = cw_shadow_usd(s, r) if s else None
+        shadow = cw_shadow_usd(s, r, scale[id(r)]) if s else None
         st = _status(tk, (s or {}).get("result") if shadow is not None else None, now, r.get("close_s"))
-        words = "skipped a first %s buy at %s with %s s left (about %.0f contracts)" % (
-            _side(side), _cents(r.get("price")), r.get("tau", "?"), cw_contracts(s, r))
+        words = "skipped a first %s buy at %s with %s s left (about %.0f contracts%s)" % (
+            _side(side), _cents(r.get("price")), r.get("tau", "?"), cw_contracts(s, r, scale[id(r)]),
+            ", the close's budget shared" if scale[id(r)] < 0.999 else "")
         if st == "scored":
             won = s.get("result") == side
             tally["won" if won else "flipped"] += 1
-            tally["without_usd"] += shadow
+            tally["without_usd"] += round(shadow, 2)     # the events' cents, so the line and the net agree
             hp = s.get("hedge_px")
             hedge = (" with the %s hedge pin would have bought at %s" % (_side("no" if side == "yes" else "yes"),
                                                                           _cents(hp))) if hp is not None else ""
@@ -1113,8 +1568,9 @@ def _k(S, now, since):
     return out, tally
 
 
-def _k_extra(S, tally, since, window):
-    """K's two lines under the net: what the skipped buys would have done, and the window with and without the rule."""
+def _k_extra(S, tally, since, window, until=None):
+    """K's lines under the net: what the skipped buys would have done, the window with and without the rule (from
+    `since` to `until`, the undo, when there is one) and the assumptions its prices rest on."""
     if window is None:
         return []
     span = "%s to %s ET" % (_hour(window[0]), _hour(window[1]))
@@ -1123,10 +1579,326 @@ def _k_extra(S, tally, since, window):
     lines = ["without the rule: the %d settled skip%s would have %s %s (%d won, %d flipped, hedges in)%s" % (
         n, "" if n == 1 else "s", "made" if w >= 0 else "lost", _rw.usd(abs(w), False), tally["won"], tally["flipped"],
         (" \u00b7 %d still open" % tally["open"]) if tally["open"] else "")]
-    kept, markets = S.window_net(since, window)
-    lines.append("closes %s since the rule (%d settled market%s): pin made %s with it, %s without it" % (
-        span, markets, "" if markets == 1 else "s", _rw.usd(kept), _rw.usd(kept + w)))
+    kept, markets = S.window_net(since, window, until)
+    lines.append("closes %s %s (%d settled market%s): pin made %s with it, %s without it" % (
+        span, "while the rule was on" if until else "since the rule", markets, "" if markets == 1 else "s",
+        _rw.usd(kept), _rw.usd(kept + w)))
+    lines.append("priced on pin's own 6-10 ET cheap first buys before the rule: a win at %.3f (full leg) / %.3f (early "
+                 "leg) of n_ask x the edge, hedge-free; a flip at a %.3f fill (assumptions)" % (
+                     K_WIN["full"], K_WIN["early"], K_FILL_FLIP))
     return lines
+
+
+def _k_undo(S, now, spans, skip_tks=()):
+    """K after the undo (a start record without cheap_window): each market closing inside the old window whose first
+    buy -- any look of pin's before its first fill -- was under the old floor: the rule would have skipped the whole
+    market, so its whole money is what the undo made (+) or lost (-) against keeping the rule. A market the wrong-side
+    rule would have skipped first (pinrun's gate order) is WS's, not counted here (skip_tks). Returns (events, tally,
+    the tickers counted: M's undo leaves their 3rd bets to this row, the whole market is here)."""
+    out, t, tks = [], {"n": 0, "open": 0, "ws": 0}, set()
+    last_on = [sp[3] for sp in spans if sp[2]]
+    if not last_on or undo_since(spans) is None:
+        return out, t, tks
+    w = last_on[-1].get("cheap_window")
+    for tk, o, looks, _sp in first_looks(S, spans):
+        cs = close_of(tk)
+        if cs is None or not cw_in_window(cs, w):
+            continue
+        cheap = [s for s in looks if s.get("price") is not None and _f(s.get("price")) < float(w[2]) - 1e-9]
+        if not cheap:
+            continue
+        if tk in skip_tks:
+            t["ws"] += 1
+            continue
+        s0 = cheap[0]
+        words = "%s: a first %s buy at %s with %s s left in a %s close (the rule skipped such markets)" % (
+            UNDO_WORDS, _side(s0.get("want")), _cents(_f(s0.get("price"))), s0.get("tau", "?"),
+            et_words(cs, with_day=False))
+        ev = _undo_event(S, now, tk, o, words)
+        tks.add(tk)
+        t["n"] += 1
+        t["open"] += 1 if ev["open"] else 0
+        out.append(ev)
+    return out, t, tks
+
+
+# ---------------------------------------------------------------------------
+# WS (v-wrongside / LS20, --wrongside-rise-c 1.0, live 10-27 9:07 PM ET): each first buy refused as wrong_side, priced
+# against never having the rule (the 11-14 retro's skeptic, retro_skeptic_WS mine.py / mine2.py, the conservative one)
+def ws_bucket(p):
+    """The first-ask bucket (WS_BUCKETS) a price falls in (under 94c: the first; 98.01c and over: the last)."""
+    p = _f(p)
+    for lo, hi in WS_BUCKETS:
+        if lo <= p < hi:
+            return (lo, hi)
+    return WS_BUCKETS[0] if p < WS_BUCKETS[0][1] else WS_BUCKETS[-1]
+
+
+def ws_stats(S, since, until=None):
+    """pin's OWN 15-minute markets with a fill from `since` on (and, with `until` -- the undo --, a first fill before
+    it: the rule's figure stops moving once the rule is off), by the first fill's ask bucket: {bucket: {"won":
+    [market money / the coin's bet] of the won markets pin never hedged (top-ups, slip, fees in), "held": [contracts on
+    the first side / the bet] of every settled market}} -- what a skipped first buy at that price would have become."""
+    first = {}
+    for o in S.orders:
+        if "15M-" not in str(o["ticker"]) or _f(o.get("filled")) <= 0 or o["_epoch"] < since:
+            continue
+        if until is not None and o["_epoch"] >= until - 1e-9:
+            continue
+        k = o["ticker"]
+        if k not in first or (o["_epoch"], o["_i"]) < (first[k]["_epoch"], first[k]["_i"]):
+            first[k] = o
+    hedged = {h["ticker"] for h in S.hedges + S.extras if h.get("status") == "executed" and _f(h.get("n")) > 0}
+    out = {}
+    for tk, o in first.items():
+        usd = market_money(S, tk)
+        res = S.result(tk)
+        size = S.size_at(o["_path"], o["_epoch"])[0]
+        if usd is None or res is None or not size:
+            continue
+        bet = m_full(tk, size, None, _start_of(S, o["_path"]))
+        if bet <= 0:
+            continue
+        b = out.setdefault(ws_bucket(o.get("ask_seen") if o.get("ask_seen") is not None else o.get("exec_price")),
+                           {"won": [], "held": []})
+        held = sum(_f(x.get("filled")) for x in S.orders if x["ticker"] == tk and x.get("want") == o.get("want"))
+        b["held"].append((o.get("leg") or "full", held / bet))
+        if res == o.get("want") and tk not in hedged:
+            b["won"].append(usd / bet)
+    return out
+
+
+def _mean(xs):
+    return sum(xs) / len(xs) if xs else None
+
+
+def ws_rates(stats, bucket, leg="full"):
+    """(won $ per contract of bet, contracts held per contract of bet -- over the markets whose first fill was the same
+    kind of leg --, how many won markets priced it) for `bucket`; a bucket pin has no market in takes every bucket's
+    pool (n 0, said on the line)."""
+    b = stats.get(bucket) or {}
+    u = _mean(b.get("won") or [])
+    n = len(b.get("won") or [])
+    h = _mean([x for lg, x in b.get("held") or [] if lg == leg]) or _mean([x for _lg, x in b.get("held") or []])
+    if u is None:
+        u = _mean([x for v in stats.values() for x in v.get("won") or []])
+        n = 0
+    if h is None:
+        h = _mean([x for v in stats.values() for lg, x in v.get("held") or [] if lg == leg])
+    return (u or 0.0), (h if h is not None else 1.0), n
+
+
+def ws_hedge(rows, want, st):
+    """The hedge pin would have bought on a skipped position, replayed on the trajectory's seconds after the refusal
+    (rows in time order, tau 1 or more) with the start record `st` in force: the belief hedge the first second our
+    side's belief (the row's fair is the Yes probability) is under hedge_belief and the other side has an ask (x
+    hedge_odds_mult with hedge_odds_min_tau or more left); the jump hedge only while it is LIVE (hedge_jump set, no
+    hedge_jump_shadow), on a 1-s index move against us of hedge_jump sd or more, under hedge_jump_max, at or over
+    jump_hedge_min_ask, and on Kalshi's grid before --hedge-tick round (else Kalshi refused it). Returns (kind, tau,
+    ask, mult, the second's epoch) or None."""
+    hb = _f(st.get("hedge_belief"), 0.40)
+    mult = _f(st.get("hedge_odds_mult"), 1.0) or 1.0
+    min_tau = _f(st.get("hedge_odds_min_tau"), 11.0)
+    live = jump_live(st)
+    jsd, jmax, bar = _f(st.get("hedge_jump"), 6.0), st.get("hedge_jump_max"), st.get("jump_hedge_min_ask")
+    slip = _f(st.get("hedge_slip"), 0.10)
+    sign = 1.0 if want == "no" else -1.0
+    prev, worst = None, None
+    for x in rows:
+        tau = _f(x.get("tau"), 0.0)
+        if tau < 1:
+            continue
+        sp, sg = _f(x.get("spot"), None), _f(x.get("sigma"), None)
+        if prev is not None and sp is not None and sg:
+            mv = (sp - prev) * sign / sg
+            worst = mv if worst is None else max(worst, mv)
+        if sp is not None:
+            prev = sp
+        ask = _f(x.get("opp_ask") if x.get("want") == want else x.get("ask"), None)
+        if ask is None or not 0.0 < ask < 1.0 or x.get("want") not in ("yes", "no"):
+            continue
+        fair = _f(x.get("fair"), None)
+        if fair is not None and (fair if want == "yes" else 1.0 - fair) < hb:
+            return ("belief", int(tau), ask, mult if (mult > 1.0 and tau >= min_tau) else 1.0, x["_epoch"])
+        if (live and worst is not None and worst >= jsd and not (jmax is not None and worst >= _f(jmax))
+                and not (bar is not None and ask < _f(bar) - 1e-9)
+                and not ((st.get("hedge_tick") or "") != "round" and off_grid(min(ask + slip, 0.999)))):
+            return ("jump", int(tau), ask, 1.0, x["_epoch"])
+    return None
+
+
+def ws_position(rows, r, want, hedge, n_held, rules):
+    """WS: the fills [(n, price)] a skipped first buy could hold by the second its replayed hedge fires -- the refusal's
+    own contracts (its `size`, what pin was about to take) at its price, plus ONE top-up (pinrun's max_per_market 2) at
+    the first trajectory second after the refusal and before the hedge where pin's confidence and price gates pass on
+    our side (belief at PIN or more, our ask at or under the price ceiling, tau_min or more left, a book): min(its ask
+    size, what is left of n_held) at that ask; n_held at most in all. pin buys no more of a side once it has hedged
+    into the other (pinrun A63, _both_sides_block), so that is the position the hedge covers and the market settles
+    (the 11-14 review: ZEC 11-01 was refused 147 at tau 17 and its jump hedge fired at tau 15; the bucket's 1.12 x the
+    bet, 335, could never be held two seconds after a 147-contract order). None when the refusal carries no size (an
+    older record: the bucket's n_held stands) or no hedge fires."""
+    take = _f(r.get("size"), None)
+    if take is None or take <= 0 or hedge is None:
+        return None
+    fills = [(min(take, n_held), _f(r.get("price")))]
+    room = n_held - fills[0][0]
+    for x in rows:
+        if x["_epoch"] <= r["_epoch"] + 1e-9:
+            continue                                      # the refusal's own second
+        if x["_epoch"] >= hedge[4] - 1e-9 or room < float(rules["min_level"]):
+            break
+        if x.get("want") != want:
+            continue                                      # the favoured side is the other: our belief is under 50%
+        ask, size, fair = _f(x.get("ask"), None), _f(x.get("ask_size"), 0.0), _f(x.get("fair"), None)
+        if ask is None or fair is None or size <= 0 or _f(x.get("tau"), 0.0) < float(rules["tau_min"]):
+            continue
+        if (fair if want == "yes" else 1.0 - fair) < float(rules["pin"]) or ask > float(rules["price_ceiling"]) + 1e-9:
+            continue
+        fills.append((min(size, room), ask))
+        break
+    return fills
+
+
+def _ws(S, now, spans, stats):
+    """WS while the rule is ON: each market's first wrong_side refusal (pinrun refuses the market for the close). Never
+    having the rule, the buy goes on to the gates below it -- a cheap-window market (K on, closing in its window, under
+    its floor) is skipped there anyway: $0 -- and is held to the market's result: WON = the coin's bet x what pin's own
+    never-hedged won markets made per contract of bet at that first-ask bucket (ws_stats); a FLIP = the contracts pin
+    holds per contract of bet at that bucket, lost at the refusal's price; either way plus the hedge the trajectory
+    says would have fired (ws_hedge: its premium on a win, its pay-off on a flip). When a hedge fires the position is
+    what the buy could hold by the hedge's second (ws_position: the refusal's own contracts + one top-up the
+    trajectory allows before it; pin buys no more of a side once it has hedged into the other), won or lost at its
+    own prices, and the hedge covers exactly that. + = the rule saved (the buy would have lost), - = it gave up. The
+    result: pin's own settled record, else the trajectory's last second, else missed.py's cache. `stats`: ws_stats up
+    to the undo, so the rule's figure stops moving once it is off. Returns (events, tally)."""
+    out = []
+    t = {"won": 0, "flipped": 0, "open": 0, "k": 0, "without": 0.0, "hedges": 0, "pooled": 0, "by_hedge": 0}
+    picked, seen = [], set()
+    for r in S.ws_ref:
+        sp = span_at(spans, r["_epoch"])
+        k = (int(_f(r.get("close_s"))), r["ticker"])
+        if sp is None or not sp[2] or k in seen:
+            continue
+        seen.add(k)
+        picked.append(r)
+    wants = {}
+    for r in picked:
+        cs = int(_f(r.get("close_s"), close_of(r["ticker"]) or 0))
+        wants.setdefault(r["_path"], {})[(r["ticker"], cs)] = r["_epoch"]
+    rows = {path: traj_window(path, w) for path, w in wants.items()}
+    for r in picked:
+        tk, want = r["ticker"], r.get("want")
+        cs = int(_f(r.get("close_s"), close_of(tk) or 0))
+        p = _f(r.get("price"))
+        st = S.start_at(r["_epoch"])
+        trj = (rows.get(r["_path"]) or {}).get((tk, cs), [])
+        words = "refused a first %s buy at %s with %s s left (the index across the strike, our mid %s in 5 s)" % (
+            _side(want), _cents(p), r.get("tau", "?"),
+            ("up %.1fc" % _f(r.get("mid_rise_c"))) if _f(r.get("mid_rise_c"), 0.0) > 0 else
+            ("down %.1fc" % abs(_f(r.get("mid_rise_c")))) if r.get("mid_rise_c") is not None else "unknown")
+        w = st.get("cheap_window")
+        if _k_on(st) and cw_in_window(cs, w) and p < float(w[2]) - 1e-9:
+            t["k"] += 1
+            out.append(_event(r, words + "; the cheap window would have skipped it too: no money either way", 0.0, "scored"))
+            continue
+        res, how = m_result(S, tk, trj)
+        status = _status(tk, res, now, cs)
+        if status != "scored":
+            t["open"] += 1
+            out.append(_event(r, words + ("; not settled yet" if status == "pending" else
+                                          "; no result 3 h after the close (unknown)"), None, status))
+            continue
+        bet = m_full(tk, _f(r.get("size_now"), S.size_at(r["_path"], r["_epoch"])[0] or 0.0), None, st)
+        u, hr, nmk = ws_rates(stats, ws_bucket(p), r.get("leg") or "full")
+        if not nmk:
+            t["pooled"] += 1
+        n_held = bet * hr
+        won = res == want
+        after = [x for x in trj if x["_epoch"] >= r["_epoch"] - 1e-9]
+        hedge = ws_hedge(after, want, st) if n_held > 0 else None
+        pos = ws_position(after, r, want, hedge, n_held, m_rules(st))
+        if pos is not None:                               # hedged: the position is frozen at what it held by then
+            n_pos = _rw.got(pos)
+            cf = _rw.value(pos, won)
+            t["by_hedge"] += 1
+            held = "%s contracts, all it could hold by its hedge's second (the refusal's %s at %s%s; pin buys no more " \
+                   "of a side it has hedged), %s" % (_g2(n_pos), _g2(pos[0][0]), _cents(pos[0][1]),
+                                                     (" + a %s top-up at %s" % (_g2(pos[1][0]), _cents(pos[1][1])))
+                                                     if len(pos) > 1 else "", "won" if won else "lost")
+        else:
+            n_pos = n_held
+            cf = bet * u if won else _value(n_held, p, False)
+            held = ("the bet of %s at pin's own %.4f a contract on won markets first bought at that price" % (_g2(bet), u)
+                    if won else "%s contracts, what pin holds at that price, lost" % _g2(n_held))
+            if hedge is not None:                         # an older refusal record without its size
+                held += "; no size on the refusal, so its hedge covers the bucket's %s contracts" % _g2(n_held)
+        hv = 0.0
+        if hedge is not None:
+            hv = _value(n_pos * hedge[3], hedge[2], not won)
+            t["hedges"] += 1
+        cf += hv
+        t["won" if won else "flipped"] += 1
+        t["without"] += round(cf, 2)
+        words += "; it %s (%s): the buy would have %s %s (%s%s)" % (
+            "WON" if won else "FLIPPED", how, "made" if cf >= 0 else "lost", _rw.usd(abs(cf), False), held,
+            ("; its %s hedge at %s with %d s left %s %s" % (hedge[0], _cents(hedge[2]), hedge[1],
+                                                           "cost" if hv < 0 else "got back", _rw.usd(abs(hv), False)))
+            if hedge is not None else "")
+        words += ", so the rule %s that" % ("gave up" if cf >= 0 else "saved")
+        out.append(_event(r, words, -cf, "scored"))
+    return out, t
+
+
+def _ws_undo(S, now, spans):
+    """WS after the undo (a start record with wrongside_rise_c 0 or none): each market whose first buy -- any look of
+    pin's before its first fill (the signal logs the side and the rise either way) -- was on the wrong side with our
+    mid up less than the old bar (known: an unknown rise never blocks): the rule would have skipped the market, so
+    its whole money is what the undo made (+) or lost (-) against keeping the rule. Returns (events, tally, tickers)."""
+    out, t, tks = [], {"n": 0, "open": 0}, set()
+    last_on = [sp[3] for sp in spans if sp[2]]
+    if not last_on or undo_since(spans) is None:
+        return out, t, tks
+    bar = _f(last_on[-1].get("wrongside_rise_c"), 1.0)
+    for tk, o, looks, _sp in first_looks(S, spans):
+        if "15M-" not in str(tk):
+            continue                                      # the hourly ladder: the rule never judged it
+        bad = [s for s in looks if s.get("spot_wrong") is True and s.get("mid_rise_c") is not None
+               and _f(s.get("mid_rise_c")) < bar - 1e-9]
+        if not bad:
+            continue
+        s0 = bad[0]
+        words = "%s: a first %s buy at %s with %s s left on the wrong side, our mid %s in 5 s (the rule skipped such " \
+                "markets)" % (UNDO_WORDS, _side(s0.get("want")), _cents(_f(s0.get("price"))), s0.get("tau", "?"),
+                              ("up %.1fc" % _f(s0.get("mid_rise_c"))) if _f(s0.get("mid_rise_c")) > 0 else
+                              ("down %.1fc" % abs(_f(s0.get("mid_rise_c")))))
+        ev = _undo_event(S, now, tk, o, words)
+        tks.add(tk)
+        t["n"] += 1
+        t["open"] += 1 if ev["open"] else 0
+        out.append(ev)
+    return out, t, tks
+
+
+def _ws_extra(t):
+    n = t["won"] + t["flipped"]
+    line = "without the rule: the %d settled refusal%s would have %s %s (%d won, %d flipped%s)" % (
+        n, "" if n == 1 else "s", "made" if t["without"] >= 0 else "lost", _rw.usd(abs(t["without"]), False), t["won"],
+        t["flipped"], (", %d with the hedge the trajectory says would have fired" % t["hedges"]) if t["hedges"] else "")
+    if t["k"]:
+        line += " · %d the cheap window would have skipped anyway ($0)" % t["k"]
+    if t["open"]:
+        line += " · %d open" % t["open"]
+    return [line, "priced on pin's own fills since 10-28%s: a win at what its never-hedged won markets made a contract of "
+                  "bet at that first price, a flip at the contracts it holds there; a replayed hedge covers only what the "
+                  "buy could hold by its second, the refusal's own contracts + one top-up the trajectory allows (pin buys "
+                  "no more of a side it has hedged)%s (assumptions; a flip costs $90-180)" % (
+                      (" to the undo" if t.get("until") else ""),
+                      (", %d so sized" % t["by_hedge"]) if t.get("by_hedge") else "")]
+
+
+def _ws_what(st):
+    return ("no first buy with the index across the strike unless our mid rose %sc in 5 s (the market is skipped); each "
+            "refusal is priced by what it would have done" % ("%g" % _f((st or {}).get("wrongside_rise_c"), 1.0)))
 
 
 def _l(S, now, since):
@@ -1263,103 +2035,276 @@ def _m_tally():
             "t_won": 0, "t_lost": 0, "t_open": 0, "t_won_usd": 0.0, "t_lost_usd": 0.0, "t_net": 0.0}
 
 
-def _m_held(S, now, since, start, rules, tally):
-    """M (1): pin's own full buys the 2-bet budget held back. A signal whose budget_left was what bound the order that
-    followed it (asked >= budget_left, filled whole), on a coin not yet bought in the close or inside the old late
-    window, where the old argv's room (budget_left + one SIZE) would have let the sweep or the band boost add more:
-    more = min(band mult x SIZE, the book under the order's limit, the old room) - asked. The bet's own settled result
-    prices it: lost -> + (more x the fill price + fee, the stake not spent); won -> - (more x (1 - the limit) - fee,
-    the gain not made, at the limit: a ceiling)."""
-    out, claimed = [], set()
-    for sg in S.signals:
-        if sg["_epoch"] < since or (sg.get("leg") or "full") != "full" or sg.get("live") is False:
+M_LATE_PIN = 0.9975                       # the late boost's confidence bar (pinrun LATE_PIN, the shipped --late-pin)
+
+
+def m_ladder_slice(ladder, limit, skip, n):
+    """[(contracts, price)] of `n` contracts off the ask ladder at or under `limit`, after its first `skip` (what the
+    order itself filled): the book past the real fill, where a bigger order would have walked."""
+    out, got, left_skip = [], 0.0, float(skip)
+    for lv in sorted((x for x in (ladder or []) if isinstance(x, (list, tuple)) and len(x) >= 2),
+                     key=lambda x: _f(x[0])):
+        p, q = _f(lv[0]), _f(lv[1])
+        if p > float(limit) + 1e-9 or got >= float(n) - 1e-9:
+            break
+        eat = min(q, left_skip)
+        q -= eat
+        left_skip -= eat
+        if q <= 0:
             continue
-        tk, want = sg["ticker"], sg.get("want")
-        left = _f(sg.get("budget_left"), None)
-        if left is None:
+        g = min(q, float(n) - got)
+        out.append((g, p))
+        got += g
+    return out
+
+
+def m_one_coin_cap(full, bank, hwm, mult):
+    """pinrun's one-coin room for a widened buy: mult x full, held to (bank - 0.8 x hwm) / 0.98, never under full; the
+    full bet alone (1x) when no bank reading is in the log (the smaller room: never flattering the rule's cost)."""
+    if bank is None or hwm is None or hwm <= 0:
+        return float(full)
+    return max(float(full), min(float(mult) * float(full), (float(bank) - 0.8 * float(hwm)) / 0.98))
+
+
+def m_contexts(S):
+    """Every entry order of pin's logs, in each log's own order, with what M reads around it: its own signal (the
+    latest of that ticker and side before it in the file, within 3 s), the contracts the close filled before it
+    (spent_before), whether its coin is new in the close, what this side of the market already held, SIZE then."""
+    got = getattr(S, "_mctx", None)
+    if got is not None:
+        return got
+    import bisect
+    sig_by = {}
+    for s in S.signals:
+        sig_by.setdefault((s["_path"], s["ticker"], s.get("want")), []).append(s)
+    for v in sig_by.values():
+        v.sort(key=lambda s: s["_i"])
+    keys = {k: [s["_i"] for s in v] for k, v in sig_by.items()}
+    by_path = {}
+    for o in S.orders:
+        by_path.setdefault(o["_path"], []).append(o)
+    out = []
+    for path, ords in by_path.items():
+        ords.sort(key=lambda o: o["_i"])
+        spent, coins, held = {}, {}, {}
+        for o in ords:
+            tk, want = o["ticker"], o.get("want")
+            cs = close_of(tk)
+            k = (path, tk, want)
+            j = bisect.bisect_left(keys.get(k, []), o["_i"])
+            sg = sig_by[k][j - 1] if j > 0 else None
+            if sg is not None and not (0 <= o["_epoch"] - sg["_epoch"] <= 3):
+                sg = None
+            filled = _f(o.get("filled"))
+            asked = _f((o.get("body") or {}).get("count"), None)
+            if asked is None:
+                asked = filled
+            before = spent.get(cs, 0.0)
+            size, series = S.size_at(path, o["_epoch"])
+            tau = o.get("tau_at_send") if o.get("tau_at_send") is not None else (sg or {}).get("tau")
+            out.append({"o": o, "sg": sg, "tk": tk, "want": want, "cs": cs, "filled": filled, "asked": asked,
+                        "spent_before": before, "new_coin": m_coin(tk) not in coins.get(cs, set()), "size": size,
+                        "series": series, "held_tk": held.get((tk, want), 0.0), "tau": tau, "path": path})
+            if filled > 0:
+                spent[cs] = before + filled
+                coins.setdefault(cs, set()).add(m_coin(tk))
+                held[(tk, want)] = held.get((tk, want), 0.0) + filled
+    S._mctx = out
+    return out
+
+
+def _m_bank(S, path, e):
+    """The bank and its high-water mark pin's boost records carry, the latest at or before epoch `e` in log `path`."""
+    best = None
+    for r in S.boosts.get(path, []):
+        if r.get("bank") is None or r["_epoch"] > e + 1e-9:
             continue
-        o = None
-        for x in S.orders:
-            if (x["ticker"] == tk and x.get("want") == want and x["_i"] > sg["_i"] and 0 <= x["_epoch"] - sg["_epoch"] <= 2
-                    and id(x) not in claimed):
-                o = x
-                break
-        if o is None:
+        if best is None or r["_epoch"] >= best["_epoch"]:
+            best = r
+    return (_f(best.get("bank"), None), _f(best.get("hwm"), None)) if best else (None, None)
+
+
+def _m_hedge_share(S, tk, side, n):
+    """The hedge money of `n` contracts of our `side` in market `tk` (_p_book: the other side's settled legs no order
+    claims, pro rata by our side's contracts); 0.0 when there is none."""
+    orders = [o for o in S.orders if o["ticker"] == tk]
+    _legs, n_side, hedge, _in = _p_book(S, tk, orders)
+    return _p_share(n_side, hedge, side, n)
+
+
+def m_take_old(S, x, start, rules):
+    """M: what the old argv (--extra-coin 1 --late-extra 1, one more SIZE of close budget) would have asked for the
+    budget-bound order of context `x` (the 11-14 retro's retro_m.py, pinrun's wideners): its room is budget_left +
+    one full bet; the sweep takes min(full, the TAPERED depth the order's own taper record read (else the book at the
+    limit), the room); the late boost (10 s or less left, a late_boost record or confidence at LATE_PIN with no
+    late_refused) and the band boost (95.5-98.1c) take min(the one-coin room at their multiple, the UNTAPERED book at
+    the limit, the room); a side already held stops at full x the multiple less what it holds; never over 1.5 x full.
+    Returns (take, how)."""
+    o, sg = x["o"], x["sg"]
+    tk = x["tk"]
+    full = m_full(tk, x["size"], x["series"], start)
+    bl = _f(sg.get("budget_left"))
+    limit = _f(o.get("limit_sent"), _f(o.get("exec_price")))
+    ladder = sg.get("ladder") if isinstance(sg.get("ladder"), list) else []
+    flat = sum(_f(lv[1]) for lv in ladder if isinstance(lv, (list, tuple)) and len(lv) >= 2
+               and _f(lv[0]) <= limit + 1e-9)
+    tp = None
+    for r in S.tapers:
+        if r["_path"] == x["path"] and r["ticker"] == tk and sg["_i"] - 1 < r["_i"] < o["_i"]:
+            tp = r
+    deep = _f(tp.get("tapered")) if tp else flat
+    price = _f(sg.get("price"))
+    tau = int(_f(x["tau"]))
+    late_tau = int(_f(rules.get("late_tau"), 10) or 10)
+    room = bl + M_EXTRA * full
+    take, how = x["asked"], "the sweep"
+    if deep > take:
+        take = max(take, min(full, deep, room))
+    bank, hwm = _m_bank(S, x["path"], o["_epoch"])
+    if tau <= late_tau:
+        lb = [b for b in S.boosts.get(x["path"], []) if b.get("kind") == "late_boost" and b["ticker"] == tk
+              and b.get("t") == o.get("t")]
+        lr = [r for r in S.late_refused if r["ticker"] == tk and r.get("t") == o.get("t")]
+        conf = _f(sg.get("fair")) if x["want"] == "yes" else 1.0 - _f(sg.get("fair"))
+        if lb or (not lr and conf >= M_LATE_PIN):
+            t2 = min(m_one_coin_cap(full, bank, hwm, D_LATE_MULT), flat, room)
+            if t2 > take + 1e-9:
+                take, how = t2, "the late boost"
+    bm = m_band_mult(price, rules)
+    if bm > 1.0:
+        t2 = min(m_one_coin_cap(full, bank, hwm, bm), flat, room)
+        if t2 > take + 1e-9:
+            take, how = t2, "the band boost"
+    mult46 = max(bm, D_LATE_MULT if tau <= late_tau else 1.0)
+    if x["held_tk"] > 0:
+        take = min(take, full * mult46 - x["held_tk"])
+    return min(take, 1.5 * full), how
+
+
+def _m_held(S, now, spans, start, rules, tally):
+    """M (1), while the rule is ON: pin's own buys the 2-bet budget held back. An order whose signal's budget_left was
+    what bound it (asked >= budget_left), on a coin new to the close after its first fill or inside the old late window
+    (late_extra_tau), filled whole: the old argv would have asked m_take_old; the contracts over what went out are
+    priced on the signal's ladder PAST what the order filled, up to its limit (the book a bigger order walks; not the
+    limit, which is a floor on the gain), at the market's result, fee in, with their share of the market's hedges. +
+    when the bet lost (the stake not spent), - when it won (the gain not made). What reverting B gives back."""
+    out = []
+    for x in m_contexts(S):
+        o, sg = x["o"], x["sg"]
+        sp = span_at(spans, o["_epoch"])
+        if sp is None or not sp[2] or sg is None or not x["size"]:
             continue
-        claimed.add(id(o))
-        asked = _f((o.get("body") or {}).get("count"), None)
-        if asked is None:
-            asked = _f(o.get("filled"))
-        filled = _f(o.get("filled"))
-        if asked < left - 0.01:
+        bl = _f(sg.get("budget_left"), None)
+        if bl is None or x["asked"] < bl - 0.01:
             continue                                      # the budget was not what bound this buy
-        if filled < asked - 0.01:
-            tally["unfilled"] += 1                        # the book did not even fill what went out
-            continue
-        size, series = S.size_at(sg["_path"], sg["_epoch"])
-        cs = close_of(tk)
-        if not size or cs is None:
-            continue
-        before = [x for x in S.orders if _f(x.get("filled")) > 0 and x["_i"] < o["_i"] and close_of(x["ticker"]) == cs]
-        new_coin = m_coin(tk) not in {m_coin(x["ticker"]) for x in before}
-        tau = o.get("tau_at_send") if o.get("tau_at_send") is not None else sg.get("tau")
-        late = tau is not None and int(_f(tau)) <= int(rules["late_extra_tau"])
-        if not (new_coin or late):
+        late = x["tau"] is not None and int(_f(x["tau"])) <= int(rules["late_extra_tau"])
+        if not (late or (x["new_coin"] and x["spent_before"] > 0)):
             tally["no_room"] += 1                         # the old argv gave this one nothing more either
             continue
-        price = _f(sg.get("price"), _f(o.get("exec_price")))
-        limit = _f(o.get("limit_sent"), price)
-        full = m_full(tk, size, series, start)
-        cap = m_band_mult(price, rules) * full
-        sweep = [w for w in S.sweeps if w["ticker"] == tk and w.get("t") == sg.get("t")]
-        if sweep:
-            avail = _f(sweep[-1].get("ladder"), None)
-        else:
-            lad = sg.get("ladder")
-            avail = sum(_f(x[1]) for x in lad if _f(x[0]) <= limit + 1e-9) if isinstance(lad, list) else None
-        if avail is None:
-            tally["no_book"] += 1
+        if x["filled"] < x["asked"] - 0.01:
+            tally["unfilled"] += 1                        # the book did not even fill what went out
             continue
-        more = min(cap, avail, left + M_EXTRA * full) - asked
-        if more < 1.0:
-            continue                                      # the cap or the book would have stopped it anyway
+        take, how = m_take_old(S, x, start, rules)
+        more = max(0.0, take - x["asked"])
+        limit = _f(o.get("limit_sent"), _f(o.get("exec_price")))
+        fills = m_ladder_slice(sg.get("ladder"), limit, x["filled"], more)
+        got = _rw.got(fills)
+        if got < 1.0:
+            tally["no_book"] += 1                         # the cap or the book would have stopped it anyway
+            continue
+        tk, want = x["tk"], x["want"]
         res = S.result(tk)
-        st = _status(tk, res, now, cs)
-        px = _f(o.get("exec_price"), price)
-        words = ("a full %s buy at %s with %s s left was held to the 2-bet budget: %.0f went out (the book had %.0f under %s; "
-                 "the old argv's third bet had room for %.0f more%s)" % (
-                     _side(want), _cents(px), tau if tau is not None else "?", asked, avail, _cents(limit), more,
-                     ", a new coin" if new_coin else ", inside the late window"))
+        st = _status(tk, res, now, x["cs"])
+        words = ("a %s buy at %s with %s s left was held to the 2-bet budget: %s went out; with the old 3rd bet %s would "
+                 "have bought %s more (at %s, the book past what filled, under the %s limit%s)" % (
+                     _side(want), _cents(_f(o.get("exec_price"), _f(sg.get("price")))),
+                     x["tau"] if x["tau"] is not None else "?", _g2(x["asked"]), how, _g2(got),
+                     _cents(_rw.avg_px(fills)), _cents(limit), ", inside the late window" if late else ", a new coin"))
         usd = None
         tally["held"] += 1
         if st == "scored":
+            gain = _rw.value(fills, res == want) + _m_hedge_share(S, tk, want, got)
+            usd = -gain
             if res == want:
-                usd = -_value(more, limit, True)
                 tally["won"] += 1
-                tally["won_usd"] += -usd
-                words += "; the bet won, so holding them back gave up %s (at the %s limit: a ceiling)" % (
-                    _rw.usd(abs(usd), False), _cents(limit))
+                tally["won_usd"] += gain
+                words += "; the bet won, so holding them back gave up %s" % _rw.usd(abs(usd), False)
             else:
-                usd = -_value(more, px, False)
                 tally["lost"] += 1
-                tally["lost_usd"] += usd
+                tally["lost_usd"] += -gain
                 words += "; the bet LOST, so holding them back saved %s" % _rw.usd(abs(usd), False)
         else:
             tally["open"] += 1
             words += "; not settled yet" if st == "pending" else "; no result 3 h after the close (unknown)"
-        out.append(_event(sg, words, usd, st))
+        out.append(_event(o, words, usd, st))
     return out
 
 
-def _m_third(S, now, since, start, rules, tally):
-    """M (2): the true 3rd bets. Per close with close_budget refusals: one more SIZE of room; every refused market's
-    trajectory seconds from its refusal to tau_min, in time order; the first that m_judge passes takes
-    min(its contracts, the room), one bet a market, until the room is under a contract."""
+def _m_undo(S, now, spans, skip_tks=()):
+    """M after the undo (a start record with extra_coin and late_extra back above 0): every order that filled past the
+    2-bet budget (filled > 2 x SIZE - what the close had filled before it): its excess contracts -- the deepest fills of
+    that order, off its signal's ladder (else at its average price) -- are the 3rd bet the rule would have blocked;
+    their money at the market's result, fee in, with their share of the market's hedges, is what the undo made (+) or
+    lost (-) against keeping the rule (retro_m.py's PRE method). A market K's or WS's undo counts whole (skip_tks: the
+    cheap window or the wrong-side rule would have skipped it, so its 3rd bet is inside their figure) is theirs, never
+    counted twice (the 11-14 review: a 3rd bet is often the first buy of a new coin, so a losing one would count
+    $200-400 twice). Returns (events, tally)."""
+    out, t = [], {"n": 0, "open": 0, "kws": 0}
+    if undo_since(spans) is None:
+        return out, t
+    for x in m_contexts(S):
+        o, sg = x["o"], x["sg"]
+        sp = span_at(spans, o["_epoch"])
+        if sp is None or sp[2] or not x["size"]:
+            continue
+        base_left = 2.0 * float(x["size"]) - x["spent_before"]
+        if x["filled"] <= base_left + 0.01:
+            continue
+        if x["tk"] in skip_tks:
+            t["kws"] += 1
+            continue
+        excess = x["filled"] - max(0.0, base_left)
+        limit = _f(o.get("limit_sent"), _f(o.get("exec_price")))
+        fills = m_ladder_slice((sg or {}).get("ladder"), limit, x["filled"] - excess, excess)
+        if _rw.got(fills) < excess - 0.5:
+            fills = [(excess, _f(o.get("exec_price"), limit))]
+        tk, want = x["tk"], x["want"]
+        res = S.result(tk)
+        st = _status(tk, res, now, x["cs"])
+        words = "%s: a %s buy filled %s past the 2-bet budget at %s with %s s left (the 3rd bet the rule blocked)" % (
+            UNDO_WORDS, _side(want), _g2(_rw.got(fills)), _cents(_rw.avg_px(fills)),
+            x["tau"] if x["tau"] is not None else "?")
+        usd = None
+        t["n"] += 1
+        if st == "scored":
+            usd = _rw.value(fills, res == want) + _m_hedge_share(S, tk, want, _rw.got(fills))
+            words += "; the bet %s: the undo %s %s" % ("won" if res == want else "LOST", "made" if usd >= 0 else "cost",
+                                                      _rw.usd(abs(usd), False))
+        else:
+            t["open"] += 1
+            words += "; not settled yet" if st == "pending" else "; no result 3 h after the close (unknown)"
+        out.append(_event(o, words, usd, st))
+    return out, t
+
+
+def _m_third(S, now, spans, start, rules, tally):
+    """M (2): the true 3rd bets, while the rule is ON. Per close with close_budget refusals: one more SIZE of room;
+    every refused market's trajectory seconds from its refusal to tau_min, in time order (the trajectory wherever it is
+    now: traj_window, every market of a run asked at once); the first that m_judge passes takes min(its contracts, the
+    room), one bet a market, until the room is under a contract."""
     third = []
     by_close = {}
     for r in S.cb_ref:
-        if r["_epoch"] >= since and r.get("close_s") is not None:
+        sp = span_at(spans, r["_epoch"])
+        if sp is not None and sp[2] and r.get("close_s") is not None:
             by_close.setdefault((r["_path"], int(_f(r["close_s"]))), []).append(r)
+    wants = {}
+    for (path, cs), refs in by_close.items():
+        w = wants.setdefault(path, {})
+        for r in refs:
+            k = (r["ticker"], cs)
+            w[k] = min(w.get(k, r["_epoch"]), r["_epoch"])
+    got = {path: traj_window(path, w) for path, w in wants.items()}
     for (path, cs), refs in sorted(by_close.items(), key=lambda kv: kv[1][0]["_epoch"]):
         tally["closes"] += 1
         tally["refused"] += len(refs)
@@ -1372,7 +2317,7 @@ def _m_third(S, now, since, start, rules, tally):
             tally["gate"] += len(refs)
             continue
         room = M_EXTRA * float(size)
-        trajs = S.traj(path, cs)
+        trajs = {tk: rows for (tk, c), rows in got.get(path, {}).items() if c == cs}
         buys = [o for o in S.orders if _f(o.get("filled")) > 0 and close_of(o["ticker"]) == cs]
         cands = []
         for i, r in enumerate(refs):
@@ -1441,13 +2386,15 @@ def _m_third(S, now, since, start, rules, tally):
     return third
 
 
-def _m(S, now, since, start):
-    """M: (events, third, tally); see _m_held and _m_third."""
+def _m(S, now, spans, start, skip_tks=()):
+    """M: (events, third, tally, undo events, undo tally); see _m_held, _m_third and _m_undo (`skip_tks`: the markets
+    K's and WS's undos count whole)."""
     rules = m_rules(start)
     tally = _m_tally()
-    events = _m_held(S, now, since, start, rules, tally)
-    third = _m_third(S, now, since, start, rules, tally)
-    return events, third, tally
+    events = _m_held(S, now, spans, start, rules, tally)
+    third = _m_third(S, now, spans, start, rules, tally)
+    undo, ut = _m_undo(S, now, spans, skip_tks)
+    return events, third, tally, undo, ut
 
 
 def _m_extra(tally):
@@ -1455,12 +2402,12 @@ def _m_extra(tally):
     true 3rd bet the refusals would have placed (not in the net: the old build dropped it too)."""
     t = tally
     if t["held"]:
-        first = "held back: %d full buy%s cut to the 2-bet budget where the old argv had room for a 3rd; the contracts not bought " \
-                "would have made %s on %d won, lost %s on %d flipped%s" % (
-                    t["held"], "" if t["held"] == 1 else "s", _rw.usd(t["won_usd"], False), t["won"],
-                    _rw.usd(t["lost_usd"], False), t["lost"], (" · %d open" % t["open"]) if t["open"] else "")
+        first = "held back: would have made %s on %d won, lost %s on %d flipped%s (%d buy%s cut to the 2-bet budget where " \
+                "the old argv had room for a 3rd; priced on the book past each fill, hedges in)" % (
+                    _rw.usd(t["won_usd"], False), t["won"], _rw.usd(t["lost_usd"], False), t["lost"],
+                    (" · %d open" % t["open"]) if t["open"] else "", t["held"], "" if t["held"] == 1 else "s")
     else:
-        first = "held back: no full buy has been cut to the 2-bet budget yet where the old argv had room for a 3rd"
+        first = "held back: no buy has been cut to the 2-bet budget yet where the old argv had room for a 3rd"
     net = t["t_net"]
     second = "a true 3rd bet, NOT in the net (the old build dropped it too, at its base check): %d close%s hit the budget, %d " \
              "would have gone out (%d had no offer, %d failed a gate, %d found the slot taken), won %s on %d, lost %s on %d, so " \
@@ -1943,6 +2890,14 @@ def traj_close_rows(tp, close_s, pad=5.0):
     then only the seconds around the close are read: the log runs ~50 MB a day and P asks one close at a time, so a
     whole read per close would be gigabytes a /fixes. {} when the file or the rows are not there, and for an archive (a
     gzip stream cannot be searched by offset: p_traj reads one through traj_gz_rows)."""
+    return traj_plain_window(tp, close_s, float(close_s) - pad, float(close_s) + pad, max_tau=1)
+
+
+def traj_plain_window(tp, close_s, t_start, t_end, max_tau=None):
+    """{ticker: [trajectory rows of the close `close_s`, each with _epoch]} written from `t_start` to `t_end` in the
+    PLAIN pintraj log `tp` (rows at tau `max_tau` or less only, when given): a binary search on the file's time order to
+    `t_start`, then only those seconds are read -- never the whole file (it runs ~50 MB a day). {} when the file or the
+    rows are not there, and for an archive (a gzip stream cannot be searched: traj_gz_window reads those)."""
     out = {}
     if _lf.is_gz(tp):
         return out
@@ -1953,7 +2908,7 @@ def traj_close_rows(tp, close_s, pad=5.0):
     with fh:
         try:
             lo, hi = 0, os.fstat(fh.fileno()).st_size
-            target, end = float(close_s) - pad, float(close_s) + pad
+            target, end = float(t_start), float(t_end)
             while hi - lo > (1 << 16):
                 mid = (lo + hi) // 2
                 fh.seek(mid)
@@ -1984,12 +2939,181 @@ def traj_close_rows(tp, close_s, pad=5.0):
                     r = json.loads(ln)
                 except ValueError:
                     continue
-                if (isinstance(r, dict) and r.get("kind") == "traj" and r.get("ticker")
-                        and _f(r.get("tau"), 99.0) <= 1):
-                    out.setdefault(r["ticker"], []).append(r)
+                if not (isinstance(r, dict) and r.get("kind") == "traj" and r.get("ticker")):
+                    continue
+                if max_tau is not None and _f(r.get("tau"), 99.0) > max_tau:
+                    continue
+                e = _epoch(r.get("t"))
+                if e is None or e < target - 1e-6:
+                    continue
+                r["_epoch"] = e
+                out.setdefault(r["ticker"], []).append(r)
         except (OSError, ValueError, OverflowError):
             return out
     return out
+
+
+# ---------------------------------------------------------------------------
+# The trajectory of an ARCHIVED run (results\archive\pintraj-live-<stamp>.jsonl.gz, log_rotate two days after its last
+# write): a gzip stream cannot be searched, so it is read through ONCE for every market a report asks of it, and only
+# those markets' rows (the fields below) are kept -- in memory, and in a small JSON next to the results folder's logs
+# (TRAJ_CACHE) keyed by the archive's name + size + mtime, so a fresh process (the 5-minute watcher) does not read the
+# archive again. An archive never changes; an entry whose archive is gone or changed is dropped at the next write.
+TRAJ_CACHE = "fixes_traj_cache.json"
+TRAJ_KEEP = ("t", "tau", "want", "held", "fair", "ask", "ask_size", "opp_ask", "spot", "sigma")
+_TRAJ_WIN = {}                            # (archive path, size, mtime_ns) -> {(ticker, close_s): {"from", "rows"}}
+_TRAJ_DISK = {"path": None, "key": None, "data": None}
+
+
+def _fk_str(fk):
+    return "%s|%s|%s" % (os.path.basename(fk[0]), fk[1], fk[2])
+
+
+def traj_cache_path(tp):
+    """The persisted row cache of archive `tp`: results\\fixes_traj_cache.json (the archive's results folder)."""
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(str(tp)))), TRAJ_CACHE)
+
+
+def _disk(tp):
+    """The persisted cache next to archive `tp`, read once per file state: {"closes": {...}, "windows": {...}}."""
+    p = traj_cache_path(tp)
+    try:
+        st = os.stat(p)
+        key = (st.st_size, st.st_mtime_ns)
+    except OSError:
+        key = None
+    if _TRAJ_DISK["path"] != p or _TRAJ_DISK["key"] != key:
+        d = _paths.read_json(p) if key is not None else None
+        if not isinstance(d, dict):
+            d = {}
+        d.setdefault("closes", {})
+        d.setdefault("windows", {})
+        _TRAJ_DISK.update(path=p, key=key, data=d)
+    return _TRAJ_DISK["data"]
+
+
+def _disk_save(tp, section, fk, entries):
+    """Write one archive's entries into the persisted cache (atomic; a failure -- a test's write fence, a full disk --
+    only costs a re-read next time). Entries of archives that are gone or changed are dropped."""
+    d = _disk(tp)
+    p = traj_cache_path(tp)
+    d.setdefault(section, {})[_fk_str(fk)] = entries
+    ad = os.path.dirname(os.path.abspath(str(tp)))
+    for sec in ("closes", "windows"):
+        for k in list(d.get(sec, {})):
+            name, size, mt = (k.split("|") + ["", "", ""])[:3]
+            try:
+                st = os.stat(os.path.join(ad, name))
+                if str(st.st_size) != size or str(st.st_mtime_ns) != mt:
+                    del d[sec][k]
+            except OSError:
+                del d[sec][k]
+    try:
+        _paths.write_json_atomic(p, d)
+        st = os.stat(p)
+        _TRAJ_DISK.update(path=p, key=(st.st_size, st.st_mtime_ns), data=d)
+    except Exception:                                   # noqa: BLE001  (the fence, a locked file: read again next time)
+        pass
+
+
+def _trim(r):
+    return {k: r.get(k) for k in TRAJ_KEEP if r.get(k) is not None or k in ("fair", "ask", "opp_ask")}
+
+
+def traj_gz_window(tp, wants):
+    """{(ticker, close_s): [its trajectory rows from its `from` epoch on, the TRAJ_KEEP fields and _epoch]} of ARCHIVE
+    `tp` for `wants` {(ticker, close_s): from epoch}. Rows come from memory, else the persisted cache, else ONE read
+    through the archive for every key not held yet (then kept in both); [] for a market the archive has no row of."""
+    try:
+        st = os.stat(tp)
+    except OSError:
+        return {}
+    fk = (tp, st.st_size, st.st_mtime_ns)
+    mem = _TRAJ_WIN.get(fk)
+    if mem is None:
+        for k in [k for k in _TRAJ_WIN if k[0] == tp]:
+            del _TRAJ_WIN[k]
+        mem = _TRAJ_WIN[fk] = {}
+        for ks, v in (_disk(tp).get("windows", {}).get(_fk_str(fk)) or {}).items():
+            tk, _s, cs = ks.rpartition("|")
+            try:
+                mem[(tk, int(cs))] = {"from": float(v["from"]), "rows": list(v["rows"])}
+            except (KeyError, TypeError, ValueError):
+                continue
+    want = {(str(t), int(_f(c))): float(f0) for (t, c), f0 in wants.items()}
+    miss = {k: f0 for k, f0 in want.items() if k not in mem or mem[k]["from"] > f0 + 1e-6}
+    if miss:
+        marks = {b'"close_s": %d' % c for _t, c in miss}
+        found = {k: [] for k in miss}
+        try:
+            fh = _lf.open(tp, "rb")
+        except OSError:
+            fh = None
+        if fh is not None:
+            try:
+                with fh:
+                    for ln in fh:
+                        if b'"traj"' not in ln or not any(m in ln for m in marks):
+                            continue
+                        try:
+                            r = json.loads(ln)
+                        except ValueError:
+                            continue
+                        if not (isinstance(r, dict) and r.get("kind") == "traj" and r.get("ticker")):
+                            continue
+                        k = (r["ticker"], int(_f(r.get("close_s"))))
+                        if k not in miss:
+                            continue
+                        e = _epoch(r.get("t"))
+                        if e is None or e < miss[k] - 1e-6:
+                            continue
+                        found[k].append(_trim(r))
+            except (OSError, EOFError):
+                pass                                    # a damaged archive: what was read counts
+            for k, rows in found.items():
+                mem[k] = {"from": miss[k], "rows": rows}
+            _disk_save(tp, "windows", fk, {"%s|%d" % k: v for k, v in mem.items()})
+    out = {}
+    for k, f0 in want.items():
+        rows = []
+        for r in (mem.get(k) or {}).get("rows") or []:
+            e = _epoch(r.get("t"))
+            if e is not None and e >= f0 - 1e-6:
+                rows.append(dict(r, _epoch=e))
+        rows.sort(key=lambda r: r["_epoch"])
+        out[k] = rows
+    return out
+
+
+def traj_window(pin_path, wants, every=None, close_s=None):
+    """{(ticker, close_s): [trajectory rows from its `from` epoch on, in time order, each with _epoch]} for `wants`
+    {(ticker, close_s): from epoch}, from pin log `pin_path`'s pintraj log wherever it is now (p_traj_path): plain = a
+    binary search per close (traj_plain_window), archived = traj_gz_window (read once, persisted). `every` (an epoch,
+    with `close_s`): every market of that close from then on -- plain logs only (N, shelved). A trajectory archived
+    between the look and the read is looked up once more."""
+    for _try in (0, 1):
+        tp = p_traj_path(pin_path)
+        if tp is None:
+            return {}
+        if _lf.is_gz(tp):
+            return {} if every is not None else traj_gz_window(tp, wants)
+        by_cs = {}
+        for (tk, cs), t0 in wants.items():
+            by_cs.setdefault(int(_f(cs)), {})[tk] = float(t0)
+        if every is not None and close_s is not None:
+            by_cs.setdefault(int(_f(close_s)), {})
+        out = {}
+        for cs, tks in by_cs.items():
+            t_start = min(list(tks.values()) + ([float(every)] if every is not None else []))
+            rows = traj_plain_window(tp, cs, t_start - 2.0, float(cs) + 5.0)
+            for tk, rs in rows.items():
+                if tk not in tks and every is None:
+                    continue
+                t0 = tks.get(tk, every)
+                out[(tk, cs)] = [r for r in rs if r["_epoch"] >= float(t0) - 1e-6]
+        if out or os.path.exists(tp):
+            return out
+    return {}
 
 
 def p_traj_path(pin_path):
@@ -2021,6 +3145,13 @@ def traj_gz_rows(tp, keys):
         for k in [k for k in _P_CLOSES if k[0] == tp]:    # an older state of the same file (an archive never changes)
             del _P_CLOSES[k]
         got = _P_CLOSES[fk] = {}
+        # the persisted rows (results\fixes_traj_cache.json): a fresh process (the watcher's tick) reads no archive again
+        for ks, v in (_disk(tp).get("closes", {}).get(_fk_str(fk)) or {}).items():
+            tk, _s, cs = ks.rpartition("|")
+            try:
+                got[(tk, int(cs))] = [dict(x) for x in v]
+            except (TypeError, ValueError):
+                continue
     miss = {(str(t), int(_f(c))) for t, c in keys} - set(got)
     if not miss:
         return got
@@ -2048,6 +3179,7 @@ def traj_gz_rows(tp, keys):
         pass                                            # a damaged archive: what was read counts, the rest has no row
     for k in miss:
         got[k] = [found[k]] if k in found else []
+    _disk_save(tp, "closes", fk, {"%s|%d" % k: v for k, v in got.items()})
     return got
 
 
@@ -2615,6 +3747,44 @@ def _q_row(scans, now):
 
 
 # ---------------------------------------------------------------------------
+# LAD and STOP: measured ONCE by the 11-14 retro (two reviewers each; RETRO.md section 1, the conservative figure),
+# because no log the phone can read prices them again: the ladder's never-changed world is a replay of the paper
+# engine's order stream (ladder-live.jsonl, 600+ MB; the ladder's order log alone over the same days gives $193.02,
+# 57% over the replay, so it is not used), and the stopped bots write no logs to price (FX and the jump band would have
+# stopped themselves by 11-13, the race's run ended 11-03, the forecaster stays paused). Their rows say so and when.
+RETRO_T = 1794680160.0                    # 2026-11-14T18:16:00Z = 1:16 PM ET, the log copies the retro priced
+LAD_SINCE = 1792683635.0                  # 2026-10-22T15:40:35Z: cplus, the first of the four
+LAD_PARTS = ((LAD_SINCE, "all four vs the Option C argv (pot/7.8, 98c only, one bid a market, 70% rail)", 123.40),)
+LAD_WHAT = ("the ladder's cplus (2 bids a market), fit sizing, single98 and the 82% cash rail, together against the Option "
+            "C setting before them")
+LAD_LINES = ("the 11-14 replay's central fill model; $119.42 to $140.63 across both reviewers' methods; not re-run (it "
+             "needs the paper engine's 600 MB log)",
+             "risk not yet paid for: the worst single-market loss rose from ~$170 to ~$443 (two 226-lot bids)")
+STOP_PARTS = ((1793971712.0, "FX", "FX taker cut 11-06 (subs 4/5, $182.13 moved)", 31.6),          # 13:28:32Z
+              (1793971802.0, "jump band", "jump-band live cut 11-06 (sub 3, $52.09 moved)", -6.7),   # 13:30:02Z
+              (1793152932.0, "race", "coin race pause 10-27", -20.0),                                # 10-28 02:02:12Z
+              (1793155002.0, "forecaster", "forecaster pause 10-27 ($114.56 to the ladder)", 23.0))  # 10-28 02:36:42Z
+STOP_WHAT = "the FX taker cut, the jump-band cut, the coin race and forecaster pauses, against keeping them"
+STOP_LINES = ("rests on the moved money earning ~2.2%/day in pin and the ladder (~$67, an assumption); the bots alone "
+              "would have made ~$21 more kept",
+              "the 11-14 retro's conservative reviewer, per stop; not running: the stopped bots write no logs to price "
+              "after their windows")
+
+
+def _fixed_row(cid, what, parts, lines, coin=None):
+    """A row measured once (LAD, STOP): one event per measured part, scored, dated at the change; net = their sum."""
+    evs = []
+    for p in parts:
+        t0, c, words, usd = (p[0], p[1], p[2], p[3]) if len(p) == 4 else (p[0], coin, p[1], p[2])
+        evs.append(_event({"t": None, "_epoch": t0, "ticker": None},
+                          "%s: %s %s (measured to %s)" % (words, "made" if usd >= 0 else "cost", _rw.usd(abs(usd), False),
+                                                          et_words(RETRO_T)), usd, "scored", coin=c))
+    row = _change(cid, what, min(p[0] for p in parts), evs, extra=list(lines))
+    row["fixed"] = True
+    return row
+
+
+# ---------------------------------------------------------------------------
 def whats(start):
     """One plain line per change, read off the newest start record's flags where they matter."""
     rail = start.get("boost_rail") or "side"
@@ -2666,7 +3836,8 @@ def _change(cid, what, since, events, off=False, extra=None, not_live=None, thir
             "open": sum(1 for e in events if e["open"]), "net_usd": round(sum(scored), 2) if events else 0.0,
             "events": events, "off": bool(off), "extra": list(extra or []), "not_live": not_live,
             "third": sorted(third or [], key=lambda e: e["epoch"] or 0), "problem": None if withdrawn else problem,
-            "withdrawn": bool(withdrawn), "retired": (retired if since is None else None)}
+            "withdrawn": bool(withdrawn), "retired": (retired if since is None else None), "undo": None,
+            "fixed": False, "overlap_usd": 0.0, "group": GROUP.get(cid, "pin"), "dropped": None}
 
 
 def report(paths=None, now=None):
@@ -2686,26 +3857,52 @@ def report(paths=None, now=None):
     since = {"A": SINCE_AB, "B": SINCE_AB, "C": SINCE_C}
     cstep, c_line = _c_step(S, now)                            # v-oddsmult15: C's 1.25x->1.5x step, under its total
     abc = _abc(L, now, since, cstep)
+    b_evs, b_tally = _b(S, now, SINCE_AB)                      # B re-scored (the 11-14 retro): no longer score_B's
+    b_drop = next((t for t, r, _p in S.starts if t > SINCE_AB and r.get("hedge_jump_max") is None
+                   and any(t0 < t and r0.get("hedge_jump_max") is not None for t0, r0, _p0 in S.starts)), None)
     st = S.latest_start() if new is not None else {}
     W = whats(st)                                              # the new flags' values once the build is live
-    out = [_change(k, W[k], since[k], abc[k], extra=([c_line] if k == "C" and c_line else None)) for k in "ABC"]
-    later = {"D": _d, "E": _e, "G": _g, "H": _h, "I": _i, "J": _j}
+    out = []
+    for k in "ABC":
+        if k == "B":
+            row = _change("B", W["B"], since["B"], b_evs, extra=_b_extra(b_tally, b_drop))
+            row["overlap_usd"] = round(b_tally["extras"], 2)   # C counts these extra legs too: totals() takes them once
+            row["dropped"] = et_words(b_drop)                  # the undo dropped the cap: the phone says so
+            out.append(row)
+        else:
+            out.append(_change(k, W[k], since[k], abc[k], extra=([c_line] if k == "C" and c_line else None)))
+    later = {"E": _e, "G": _g, "H": _h, "I": _i, "J": _j}
     for k in "DEFGHIJ":
         if new is None:
             out.append(_change(k, W[k], None, []))
             continue
-        evs = _f_cheap(L, S, now, new) if k == "F" else later[k](S, now, new)
+        extra = None
+        if k == "D":
+            evs, dt = _d(S, now, new)
+            extra = _d_extra(dt)
+        else:
+            evs = _f_cheap(L, S, now, new) if k == "F" else later[k](S, now, new)
         # G is in the build but switched off unless the launcher says --late-bypass-fix on (11-04: it would have
         # trimmed 23 winning late adds to save one loss; held as a break-even safety filter)
         off = (k == "G" and (st.get("late_bypass_fix") or "off") != "on")
-        out.append(_change(k, W[k], new, evs, off))
+        out.append(_change(k, W[k], new, evs, off, extra=extra))
+    # WS's undo first: a market both WS and K would have skipped is WS's (wrong_side is the earlier gate in pinrun)
+    ws_spans = rule_spans(S, _ws_on)
+    ws_u, ws_ut, ws_tks = _ws_undo(S, now, ws_spans)
     # K: from the first start record that names a cheap window (v-cheapwin), its words off that record
+    k_spans = rule_spans(S, _k_on)
     k_since, k_window = S.cw_since()
+    k_tks = set()
     if k_since is None:
         out.append(_change("K", _k_what(None), None, []))
     else:
-        evs, tally = _k(S, now, k_since)
-        out.append(_change("K", _k_what(k_window), k_since, evs, extra=_k_extra(S, tally, k_since, k_window)))
+        evs, tally = _k(S, now, k_spans)
+        k_undo = undo_since(k_spans)
+        extra = _k_extra(S, tally, k_since, k_window, k_undo)
+        u_evs, ut, k_tks = _k_undo(S, now, k_spans, ws_tks)
+        row = _change("K", _k_what(k_window), k_since, evs, extra=extra)
+        out.append(_with_undo(row, k_undo, u_evs, ut, ("%d more the wrong-side rule would have skipped first: in WS's "
+                                                       "row" % ut["ws"]) if ut.get("ws") else None))
     # L: from the first start record with hedge_jump_shadow set (v-0925v JS), its words off that record
     l_since, l_start = S.js_since()
     if l_since is None:
@@ -2718,8 +3915,12 @@ def report(paths=None, now=None):
     if m_since is None:
         out.append(_change("M", _m_what(None), None, [], not_live=M_NOT_LIVE))
     else:
-        evs, third, tally = _m(S, now, m_since, m_start)
-        out.append(_change("M", _m_what(m_start), m_since, evs, extra=_m_extra(tally), third=third))
+        m_spans = rule_spans(S, _m_on)
+        # a market K's or WS's undo counts whole is theirs: its 3rd bet is inside their figure (never counted twice)
+        evs, third, tally, u_evs, ut = _m(S, now, m_spans, m_start, ws_tks | k_tks)
+        row = _change("M", _m_what(m_start), m_since, evs, extra=_m_extra(tally), third=third)
+        out.append(_with_undo(row, undo_since(m_spans), u_evs, ut, ("%d more in a market K's or WS's row counts whole"
+                                                                    % ut["kws"]) if ut.get("kws") else None))
     # N: from the first start record with hedge_belief at the new line (v-hedgeline60), its words off that record
     n_since, n_start = S.hl_since()
     if n_since is None:
@@ -2740,10 +3941,67 @@ def report(paths=None, now=None):
     else:
         evs, tally = _p(S, now, p_since, p_start)
         out.append(_change("P", _p_what(p_start), p_since, evs, extra=_p_extra(tally, p_since)))
+    # WS: from the first start record with wrongside_rise_c above 0 (v-wrongside), its words off that record
+    if not ws_spans:
+        out.append(_change("WS", _ws_what(None), None, [], not_live=WS_NOT_LIVE))
+    else:
+        ws_until = undo_since(ws_spans)                    # the rule's figure stops moving once the rule is off
+        evs, wt = _ws(S, now, ws_spans, ws_stats(S, ws_spans[0][0], ws_until))
+        wt["until"] = ws_until
+        row = _change("WS", _ws_what(ws_spans[0][3]), ws_spans[0][0], evs, extra=_ws_extra(wt))
+        out.append(_with_undo(row, undo_since(ws_spans), ws_u, ws_ut))
     # Q: the ladder's midnight reset (v-ladder-dayreset), whenever a ladder order log is read
     if lad:
         out.append(_q_row(scans, now))
+    # LAD and STOP: measured once by the 11-14 retro, in every report
+    out.append(_fixed_row("LAD", LAD_WHAT, LAD_PARTS, LAD_LINES, coin="ladder"))
+    out.append(_fixed_row("STOP", STOP_WHAT, STOP_PARTS, STOP_LINES))
     return out
+
+
+def _with_undo(row, since, evs, t, note=None):
+    """A row from its rule's undo on (`since`: the first start record with the rule off; None = never undone): the
+    UNDO is scored against keeping the rule (`evs`: + = the undo made money), its events kept apart from the rule's
+    (row["undo"]: {since, since_t, net_usd, engaged, open, events, note, line}). The row's net STAYS the rule's money
+    against never having it (row["rule_usd"], the same figure): from the undo on pin trades as if the rule had never
+    been, so against never making it the undo adds nothing. The undo's own money answers another question (against
+    KEEPING the rule), so it sits beside the net, never inside it nor in totals()' net (the 11-14 review: summed, an
+    undone rule the retro found costly drifts toward + as the undo's expected wins come in, and can turn green). The
+    phone puts both on the net line ('with the rule: net $X · since the undo (vs keeping it): $Y on N markets'), so no
+    shrink step can drop either; a note (another row counts some of its markets whole) is the row's last line."""
+    row["rule_usd"] = row["net_usd"]
+    if since is None:
+        row["undo"] = None
+        return row
+    evs = sorted(evs, key=lambda e: e["epoch"] or 0)
+    u = round(sum(e["usd"] for e in evs if e["usd"] is not None), 2)
+    row["undo"] = {"since": et_words(since), "since_t": since, "net_usd": u, "engaged": len(evs),
+                   "open": sum(1 for e in evs if e["open"]), "events": evs, "note": note}
+    row["undo"]["line"] = undo_line(row)
+    if note:
+        row["extra"] = list(row["extra"]) + ["since the undo: " + note]
+    return row
+
+
+def undo_counted(row):
+    """What an undone row's undo money is on: 'on 2 bets · 1 open' (M: the 3rd bets), 'on 1 market' (K, WS)."""
+    u = row.get("undo") or {}
+    n = int(u.get("engaged") or 0)
+    return "on %d %s%s%s" % (n, "bet" if row.get("id") == "M" else "market", "" if n == 1 else "s",
+                             (" · %d open" % u["open"]) if u.get("open") else "")
+
+
+def undo_line(row):
+    """'with the rule: -$57.62 (to Nov 14 2:30 PM ET) · since the undo (vs keeping it): +$3.10 on 2 bets · 1 open': an
+    undone row's two periods, each against its own alternative, in words (row["undo"]["line"]; the note at the end
+    when there is one). The phone builds its net line from the same figures (undo_counted), the money never cut."""
+    u = row.get("undo") or {}
+    line = "with the rule: %s (to %s) · %s: %s %s" % (
+        _rw.usd(row.get("rule_usd", 0.0)), u.get("since") or "?", UNDO_WORDS, _rw.usd(u.get("net_usd", 0.0)),
+        undo_counted(row))
+    if u.get("note"):
+        line += " · " + u["note"]
+    return line
 
 
 def totals(changes):
@@ -2752,8 +4010,22 @@ def totals(changes):
     counted once. L is in: what it keeps or misses is pin's real money (the premium not spent, the save the odds line
     then paid more for), as K's skipped buys are. M is in by its net (the contracts the 2-bet budget held back on pin's
     own buys); its true-3rd-bet list is not. P and Q are in. problems: the ids of every change not withdrawn (J too)
-    that says one (change["problem"]: O on the 100% rail without the marking code, while O is not withdrawn)."""
+    that says one (change["problem"]: O on the 100% rail without the marking code, while O is not withdrawn).
+    An undone rule (M, K, WS) is in by its net, the rule's money against never having it; the undos' money (against
+    KEEPING the rules, another question) is never in net_usd, engaged or open: undo_usd, undo_engaged (their markets
+    or bets), undo_open and undos (the undone ids) carry it beside the total."""
     cs = [c for c in changes if c["id"] != "J" and not c.get("withdrawn")]
-    return {"engaged": sum(c["engaged"] for c in cs), "open": sum(c["open"] for c in cs),
-            "net_usd": round(sum(c["net_usd"] for c in cs), 2),
+    live = [c for c in cs if not c.get("fixed")]
+    overlap = round(sum(_f(c.get("overlap_usd")) for c in cs), 2)
+    groups = {}
+    for c in cs:
+        g = GROUP.get(c["id"], "pin")
+        groups[g] = groups.get(g, 0.0) + c["net_usd"] - _f(c.get("overlap_usd"))
+    und = [c for c in cs if c.get("undo")]
+    return {"engaged": sum(c["engaged"] for c in live), "open": sum(c["open"] for c in live),
+            "net_usd": round(sum(c["net_usd"] for c in cs) - overlap, 2), "overlap_usd": overlap,
+            "groups": {g: round(v, 2) for g, v in groups.items()},
+            "undo_usd": round(sum(_f(c["undo"].get("net_usd")) for c in und), 2),
+            "undo_engaged": sum(int(c["undo"].get("engaged") or 0) for c in und),
+            "undo_open": sum(int(c["undo"].get("open") or 0) for c in und), "undos": [c["id"] for c in und],
             "problems": [c["id"] for c in changes if c.get("problem") and not c.get("withdrawn")]}
