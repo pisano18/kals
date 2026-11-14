@@ -58,10 +58,37 @@ THE CHANGES and when each counts as engaged (the push-11-04 scoring table):
                         kept OUT of the net because the old build dropped the very same bet at its base check
                         (pinrun's close_budget_base, R4 2026-09-22: "the third bet is granted, priced, sized for, and
                         then dropped"): reverting B alone would place none of these.
+  C's step              v-oddsmult15 (2026-11-14; the operator allows the money change only if "you can track the result of
+                        each change vs if it never was implemented"): --hedge-odds-mult 1.5 in place of 1.25. C keeps its
+                        total (every extra leg's own money); a line under it prices the STEP: of each hedge_extra with
+                        mult 1.5, the contracts over what 1.25x would have bought -- max(0, filled - 0.25 x the position),
+                        the position being the record's orig_n -- at the leg's most expensive fills when the record has a
+                        per-fill `fills` list, else at the order's limit_sent (real hedge_extra records carry only the
+                        average price, and the step is the deepest, dearest part of the leg: the average would flatter
+                        it; the limit is the most it allowed itself to pay, never better than reality, and the line says
+                        "priced at the limit, a conservative bound"; a leg with neither is said NOT PRICED, never $0),
+                        won or lost by the market, fee in as score_C bills it: "of which the 1.25x->1.5x step: +$Y on Z
+                        fires".
+  O ladder cash limit   v-ladder-rail100 (2026-11-14, the same rule from the operator): the LADDER's money rail goes from
+                        82% of its pot to 100% (--pot-per-contract 5.9756 --commit-frac 1.0 in place of --fit --commit-frac
+                        0.82 --big-coins-above 7000: the same bid size, 6 bids a close instead of 5). ladder_live.py marks
+                        each bid it places with over_82 (would the old 0.82 x pot rail have refused it?) and carries the
+                        mark onto every live_fill of it. Priced from the ladder's own order log
+                        (results\\ladder-live-orders.jsonl), per settled market: the market's live_settle pnl x (the
+                        over-82 contracts filled / all contracts filled there), one event per over-82 bid that filled.
+                        A bid that never filled cost nothing either way. A ladder start on the 100% rail whose record has
+                        no argv / old_limit comes from the OLDER ladder code, which never marks a bid: while it is the
+                        latest start, O says "ON THE 100% RAIL BUT NOT TRACKED" as its problem (a warning line in its
+                        block and counted on top of /fixes), never a quiet 'none yet'; an ended such window is said as
+                        a NOT TRACKED line under the net. O is the ladder's change, not pin's: its row is
+                        in the report whenever a ladder order log is there to read (on the server always; a test's
+                        folder of pin logs has none, so IDS stays pin's fourteen and LADDER_IDS holds O).
 A and B count from 11-01 15:37 ET, C from 11-02 08:35 ET, D to J from the first start record after the 0925r build
 (code_sha ca156bf45704) with another code_sha, K from the first start record that names a cheap_window, L from the
 first start record with hedge_jump_shadow set (pinrun refuses it next to --hedge-jump, so the jump hedge is off there),
-M from the first start record with extra_coin 0 and late_extra 0 (the start record carries both and bank_brake).
+M from the first start record with extra_coin 0 and late_extra 0 (the start record carries both and bank_brake), C's
+step from the first start record with hedge_odds_mult 1.5 (else its first 1.5x leg), O from the first ladder start
+record whose argv has --commit-frac 1.0 (or whose auto block says commit_frac 1.0).
 An engagement whose market has not settled is "open" (not in net $).
 
 A settled leg's pnl_c is pin's own figure for the whole leg, the taker fee INSIDE it (pinrun: pnl = filled * (1 - cost
@@ -69,17 +96,21 @@ or -cost) - billed_fee(cost, filled)). A leg is matched by ticker, our side (wan
 the nearest cost, then the nearest time; a leg is claimed once per change. Records of older builds may lack fields:
 every read is a .get with a default.
 
-    report(paths=None, now=None) -> [change dict per A..M]:
+    report(paths=None, now=None) -> [change dict per A..N, then O when a ladder order log is read]:
         {id, name, what, since (ET words or None = not live yet), since_t, engaged, last_engaged, last_t, open,
          net_usd, events: [{t, epoch, et, coin, words, usd (None while open), open}],
          off (True only for G while the launcher leaves --late-bypass-fix off: built, switched off),
          extra (lines under the net; K's with / without the rule; L's paid vs saved and the alarms not counted; M's
          held-back contracts and the true-3rd-bet line),
          not_live (the phone's words while since is None, or None for the default),
-         third (M only: the true-3rd-bet events, the same shape as events, not in net_usd; [] elsewhere)}
-    totals(changes) -> {engaged, open, net_usd} over every change but J; J's leg is already inside C. L is in: the
+         third (M only: the true-3rd-bet events, the same shape as events, not in net_usd; [] elsewhere),
+         problem (None, or words the phone puts on a warning line and counts on top of /fixes: O_UNTRACKED while the
+         latest ladder start runs the 100% rail on code that does not mark the bids -- O can then count nothing)}
+    totals(changes) -> {engaged, open, net_usd, problems (the ids saying a problem)} over every change but J (problems:
+        every change); J's leg is already inside C. L is in: the
         premium it keeps and the save it misses are pin's real money, as K's skipped buys are. M is in by its net
-        (the held-back contracts of pin's own buys); its `third` list is not.
+        (the held-back contracts of pin's own buys); its `third` list is not. O is in when its row is (the ladder's
+        real money on the bids only the new rail placed).
 """
 import calendar
 import json
@@ -102,11 +133,27 @@ from botdata import paths as _paths       # M: missed.py's result cache (results
 
 BASE_SHA = "ca156bf45704"                 # pin 0925r: D to J start at the first later start record with another sha
 UNKNOWN_AFTER_S = _rw.UNKNOWN_AFTER_S     # a market with no result 3 h after its close: "unknown", still open
-IDS = "ABCDEFGHIJKLMN"
+IDS = "ABCDEFGHIJKLMN"                    # pin's changes: a row each in every report
+LADDER_IDS = "O"                          # the ladder's (v-ladder-rail100): a row whenever a ladder order log is read
 NAMES = {"A": "later-buy check", "B": "jump cap", "C": "bigger hedge", "D": "boost rail", "E": "hedge tick",
          "F": "cheap jump skip", "G": "late-boost bypass fix", "H": "extra stake cap", "I": "max positions 5",
          "J": "extra on odds", "K": "cheap morning skip", "L": "jump hedge shadow", "M": "3rd bet blocked",
-         "N": "hedge line 0.60"}
+         "N": "hedge line 0.60", "O": "ladder cash limit 100%"}
+# C's step (v-oddsmult15, 2026-11-14): --hedge-odds-mult 1.5 in place of 1.25; the step is the part of each 1.5x extra
+# leg over the (1.25 - 1) x position the old multiple would have bought
+C_OLD_MULT = 1.25
+C_NEW_MULT = 1.5
+C_STEP = "the 1.25x->1.5x step"
+# O (v-ladder-rail100, 2026-11-14): the ladder's money rail 82% -> 100% of its pot; ladder_live.py marks each bid the old
+# rail would have refused (over_82) on its 'placed' record and on every 'live_fill' of it
+O_LOG = "ladder-live-orders.jsonl"        # ladder_live.ORDER_LOG's name in results\ (bots/ladder.py Logs.path)
+O_OLD_FRAC = 0.82
+O_HEAD = "the bids the old 82% limit would have refused"
+O_NOT_LIVE = ("not live yet (comes with the ladder's restart on --commit-frac 1.0; until then its cash limit is 82% of "
+              "its pot)")
+# the latest ladder start runs the 100% rail on code that does not mark the bids (its start record has no argv / old_limit):
+# O cannot count anything, so it is the row's problem (report: change["problem"]; /fixes puts it on top), never 'none yet'
+O_UNTRACKED = "ON THE 100% RAIL BUT NOT TRACKED (the ladder code that marks the bids is not running)"
 L_NOT_LIVE = "not live yet (comes with the next pin restart)"
 M_NOT_LIVE = "not live yet (comes with the first pin start on call B)"
 N_NOT_LIVE = ("SHELVED 11-09, never deployed: the deep dive found no out-of-sample edge (-$1.79 to +$1.53 a day at "
@@ -712,8 +759,9 @@ def _side(s):
     return str(s or "?").capitalize()
 
 
-def _abc(L, now, since):
-    """A, B, C events off pinrules_watch's own scoring, from each rule's live moment."""
+def _abc(L, now, since, cstep=None):
+    """A, B, C events off pinrules_watch's own scoring, from each rule's live moment. `cstep` (_c_step's map): a 1.5x
+    extra leg's C event also says what its 1.25x->1.5x step was."""
     out = {"A": [], "B": [], "C": []}
     for ev in _rw.score_events(L, now):
         rule = ev["rule"]
@@ -725,6 +773,15 @@ def _abc(L, now, since):
         words = "it %s: %s" % (what, v if ev["status"] == "scored" else "not settled yet")
         if ev["status"] == "scored" and ev["rule"] == "A" and ev.get("buy") is not None:
             words += " (the buy would have %s %s)" % ("made" if ev["buy"] >= 0 else "lost", _rw.usd(abs(ev["buy"]), False))
+        if rule == "C" and cstep:
+            # score_events' id for an extra leg: C|ticker|want|t|order_id
+            parts = str(ev.get("id") or "").split("|", 4)
+            hit = cstep.get((ev["ticker"], ev["t"], parts[4] if len(parts) == 5 else "None"))
+            if hit is not None and hit[0] > 1e-9:
+                words += "; %s: %s of those contracts%s%s" % (C_STEP, _g2(hit[0]), (", %s" % _rw.usd(hit[1]))
+                                                              if hit[1] is not None else "", hit[2] if len(hit) > 2 else "")
+            elif hit is not None:
+                words += "; %s: none (it filled no more than 1.25x would have)" % C_STEP
         r = {"t": ev["t"], "_epoch": t, "ticker": ev["ticker"]}
         out[rule].append(_event(r, words, ev.get("effect"), ev["status"]))
     return out
@@ -1472,6 +1529,409 @@ def _n_what(st):
 
 
 # ---------------------------------------------------------------------------
+# C's step (v-oddsmult15, 2026-11-14): the part of each 1.5x extra leg over what 1.25x would have bought
+def _g2(x):
+    """A contract count in words: 20 -> '20', 7.5 -> '7.5', 1.333 -> '1.33'."""
+    return "%g" % round(float(x), 2)
+
+
+def c_is_step(x):
+    """True for a hedge_extra record of the 1.5x multiple (its `mult` field, pinrun's HEDGE_ODDS_MULT at the time)."""
+    return abs(_f((x or {}).get("mult"), 0.0) - C_NEW_MULT) < 1e-6
+
+
+def c_position(x):
+    """The position an extra leg was sized on: the record's orig_n (pinrun's odds_extra(orig_n): extra_of = (mult - 1) x
+    orig_n), else extra_of / (mult - 1), else base_n (the covering hedge's fill); 0.0 when none reads."""
+    x = x or {}
+    n = _f(x.get("orig_n"), None)
+    if n is not None and n > 0:
+        return n
+    m, e = _f(x.get("mult"), None), _f(x.get("extra_of"), None)
+    if m is not None and m > 1.0 + 1e-9 and e is not None and e > 0:
+        return e / (m - 1.0)
+    return max(0.0, _f(x.get("base_n")))
+
+
+def c_step_n(x):
+    """The step's contracts: max(0, filled - (1.25 - 1) x the position) -- what the leg filled past the old share."""
+    return max(0.0, _f((x or {}).get("n")) - (C_OLD_MULT - 1.0) * c_position(x))
+
+
+def c_step_limit(x):
+    """The most the leg was allowed to pay a contract: its order's limit_sent (pinrun logs it on every live hedge_extra),
+    never under the leg's own average price (a buy fills at or under its limit; the dearer of the two is kept should a
+    record disagree), or None when the record has no usable limit."""
+    x = x or {}
+    lim = _f(x.get("limit_sent"), None)
+    if lim is None or not 0.0 < lim < 1.0:
+        return None
+    avg = _f(x.get("price"), None)
+    return max(lim, avg) if avg is not None and 0.0 < avg < 1.0 else lim
+
+
+def c_step_priced(x, step):
+    """The step's fills [(n, price)] and how they were priced: "fills" = the leg's MOST EXPENSIVE fills when the record
+    lists them (a `fills` list of [n, p] or {"n"/"count", "price"/"p"}; the step is the last part a bigger order walks
+    into); "limit" = without a list (real hedge_extra records carry only the average `price`, and the step is the
+    deepest, dearest part of the leg, so the average would flatter it), the step's contracts at the order's limit_sent,
+    the most it allowed itself to pay -- never better than reality, a conservative bound (a listed fills total short of
+    the step has its rest priced so too); None = no fills list covering the step and no limit: ([], None), NOT priced
+    (never read as $0)."""
+    rows = []
+    for f in (x or {}).get("fills") or []:
+        if isinstance(f, dict):
+            n, p = f.get("n", f.get("count")), f.get("price", f.get("p"))
+        elif isinstance(f, (list, tuple)) and len(f) >= 2:
+            n, p = f[0], f[1]
+        else:
+            continue
+        n, p = _f(n, None), _f(p, None)
+        if n is not None and n > 0 and p is not None and 0.0 < p < 1.0:
+            rows.append((p, n))
+    if step <= 1e-9:
+        return [], None
+    out, left = [], float(step)
+    for p, n in sorted(rows, reverse=True):
+        if left <= 1e-9:
+            break
+        g = min(n, left)
+        out.append((g, p))
+        left -= g
+    if left <= 1e-9:
+        return out, "fills"
+    lim = c_step_limit(x)
+    if lim is None:
+        return [], None
+    return out + [(left, lim)], "limit"
+
+
+def c_step_fills(x, step):
+    """The step's fills [(n, price)] (c_step_priced without the basis): the dearest listed fills, else the limit; []
+    when neither prices it."""
+    return c_step_priced(x, step)[0]
+
+
+def c_step_since(S):
+    """The step's start: the first start record (from SINCE_C on) with hedge_odds_mult 1.5 or more, else the first 1.5x
+    extra leg's time, else None (C then has no line under its total)."""
+    for t, r, _p in S.starts:
+        m = _f(r.get("hedge_odds_mult"), None)
+        if t >= SINCE_C and m is not None and m >= C_NEW_MULT - 1e-9:
+            return t
+    legs = [x["_epoch"] for x in S.extras if c_is_step(x)]
+    return min(legs) if legs else None
+
+
+def _c_step(S, now):
+    """C's step over every 1.5x extra leg that filled -> ({(ticker, t, order_id): (step contracts, usd or None, a note
+    for the words)} for C's event words, C's line under its total or None). usd = the step's fills at the result, fee in (score_C's
+    pinrules_watch.value): + when the hedge side won (a flip: the extra contracts paid), - when the bet won. A leg with
+    no per-fill list is priced at its limit (c_step_priced: a conservative bound, counted in `limit` and said on the
+    line); a leg neither prices is counted `unpriced` and said on the line, never added as $0."""
+    since = c_step_since(S)
+    if since is None:
+        return {}, None
+    t = {"fires": 0, "n": 0.0, "usd": 0.0, "flips": 0, "won": 0, "open": 0, "zero": 0, "limit": 0, "unpriced": 0}
+    keys = {}
+    for x in S.extras:
+        if (not c_is_step(x) or x["_epoch"] < SINCE_C or x.get("status") != "executed" or _f(x.get("n")) <= 0):
+            continue
+        key = (x["ticker"], x.get("t"), str(x.get("order_id")))
+        step = c_step_n(x)
+        if step <= 1e-9:
+            t["zero"] += 1                    # the book (or the stake cap) let it fill no more than 1.25x would have
+            keys[key] = (0.0, 0.0, "")
+            continue
+        res = S.result(x["ticker"])
+        if _status(x["ticker"], res, now, x.get("close_s")) != "scored":
+            t["open"] += 1
+            keys[key] = (step, None, "")
+            continue
+        flip = res == x.get("side")
+        fills, basis = c_step_priced(x, step)
+        if basis is None:
+            t["unpriced"] += 1                # no fills list and no limit on the record: said on the line, not $0
+            keys[key] = (step, None, ", NOT PRICED (no fills or limit on the record)")
+            continue
+        if basis == "limit":
+            t["limit"] += 1
+        usd = round(_rw.value(fills, flip), 2)
+        t["fires"] += 1
+        t["n"] += step
+        t["usd"] += usd
+        t["flips" if flip else "won"] += 1
+        keys[key] = (step, usd, " at the limit" if basis == "limit" else "")
+    return keys, _c_step_line(t, since)
+
+
+def _c_step_line(t, since):
+    """C's line under its total: 'of which the 1.25x->1.5x step: +$Y on Z fires (...)'; none yet reads so. The fires
+    priced at their order's limit (no per-fill prices on the record) are said so, as are any it could not price."""
+    if not (t["fires"] or t["open"] or t["zero"] or t.get("unpriced")):
+        return "of which %s: none yet (no 1.5x extra leg has filled since %s)" % (C_STEP, et_words(since))
+    line = "of which %s: %s on %d fire%s" % (C_STEP, _rw.usd(round(t["usd"], 2)), t["fires"], "" if t["fires"] == 1 else "s")
+    if t.get("limit"):                        # first, so a line cut short on the phone still says it
+        line += ", %s at the limit, a conservative bound" % (
+            "priced" if t["limit"] == t["fires"] else "%d priced" % t["limit"])
+    if t.get("unpriced"):
+        line += ", %d more NOT PRICED (no fills or limit on the record)" % t["unpriced"]
+    if t["fires"]:
+        line += " (%s contracts over the 1.25x share: %d flip%s it paid on, %d won bet%s it cost)" % (
+            _g2(t["n"]), t["flips"], "" if t["flips"] == 1 else "s", t["won"], "" if t["won"] == 1 else "s")
+    if t["zero"]:
+        line += " · %d filled no more than 1.25x would have" % t["zero"]
+    if t["open"]:
+        line += " · %d open" % t["open"]
+    return line
+
+
+# ---------------------------------------------------------------------------
+# O (v-ladder-rail100, 2026-11-14): the ladder's bids the old 82% rail would have refused, priced by their markets
+def ladder_paths():
+    """The ladder's order log in RESULTS (results\\ladder-live-orders.jsonl) as a list, [] when it is not there."""
+    p = _paths.results(O_LOG)
+    return [p] if os.path.exists(p) else []
+
+
+def is_ladder_log(p):
+    """True for a ladder order log's path (ladder-live-orders*.jsonl), which report() reads for O, never as pin's."""
+    return os.path.basename(str(p)).lower().startswith("ladder-live-orders")
+
+
+class LadderScan:
+    """O: what change O reads from one ladder order log (ladder_live.py's Broker log: one ever-growing file that
+    log_rotate leaves alone, 26 MB on 11-14 at ~1,500 records a day): its start records, every live_fill and
+    live_settle, and the 'placed' records marked over_82. Kept between calls (in _CACHE) and brought up to date by
+    parsing only the bytes the log grew by; a log that shrank, or whose first or last kept bytes changed, is read
+    afresh. Lines are picked by their text before any JSON is parsed (the log is ~95% placed / cancelled / live_market)."""
+
+    MARK = 256
+    CHUNK = 4 << 20                           # read 4 MB at a time (the first read of the server's log is all of it)
+    TOKENS = (b'"live_fill"', b'"live_settle"', b'"start"')
+
+    def __init__(self, path):
+        self.path = path
+        self.reset()
+
+    def reset(self):
+        self.pos, self.head, self.mark = 0, b"", b""
+        self.starts, self.fills, self.settles, self.placed82 = [], [], [], []
+
+    def _kept(self, fh, size):
+        if size < self.pos:
+            return False
+        fh.seek(0)
+        if fh.read(len(self.head)) != self.head:
+            return False
+        fh.seek(self.pos - len(self.mark))
+        return fh.read(len(self.mark)) == self.mark
+
+    def update(self):
+        try:
+            fh = open(self.path, "rb")
+        except OSError:
+            return self
+        try:
+            with fh:
+                size = os.fstat(fh.fileno()).st_size
+                if self.pos and not self._kept(fh, size):
+                    self.reset()
+                fh.seek(self.pos)
+                while self.pos < size:
+                    raw = fh.read(min(self.CHUNK, size - self.pos))
+                    cut = raw.rfind(b"\n") + 1    # the last line, until its newline arrives, waits for the next call
+                    if not cut:
+                        break
+                    for ln in raw[:cut].split(b"\n"):
+                        self._take(ln)
+                    if self.pos == 0:
+                        self.head = raw[:min(cut, self.MARK)]
+                    self.pos += cut
+                    self.mark = (self.mark + raw[max(0, cut - self.MARK):cut])[-self.MARK:]
+                    fh.seek(self.pos)
+        except OSError:
+            pass
+        return self
+
+    def _take(self, ln):
+        placed = b'"placed"' in ln and (b'"over_82":true' in ln or b'"over_82": true' in ln)
+        if not placed and not any(k in ln for k in self.TOKENS):
+            return
+        try:
+            r = json.loads(ln)
+        except ValueError:
+            return
+        if not isinstance(r, dict):
+            return
+        t = _epoch(r.get("t"))
+        if t is None:
+            return
+        r["_epoch"] = t
+        ev = r.get("ev") or r.get("kind")
+        if ev == "start":
+            self.starts.append(r)
+        elif ev == "live_fill":
+            self.fills.append(r)
+        elif ev == "live_settle":
+            self.settles.append(r)
+        elif ev == "placed" and r.get("over_82") is True:
+            self.placed82.append(r)
+
+
+def _ladder_scans(paths):
+    """A LadderScan per ladder log, kept in _CACHE (the phone asks every /fixes) and brought up to date."""
+    out = []
+    for p in paths:
+        key = ("ladder", p)
+        sc = _CACHE.get(key)
+        if sc is None:
+            sc = _CACHE[key] = LadderScan(p)
+        out.append(sc.update())
+    return out
+
+
+def o_rail100(start):
+    """True when a ladder start record runs the 100% rail: its argv's --commit-frac (or --commit-frac=) is 1.0; a
+    record without the flag in its argv (or with no argv: those before v-ladder-rail100) is read off its auto block's
+    commit_frac (--auto-size runs log it)."""
+    st = start or {}
+    argv = st.get("argv")
+    if isinstance(argv, (list, tuple)):
+        for i, a in enumerate(argv):
+            a = str(a)
+            if a == "--commit-frac" and i + 1 < len(argv):
+                v = _f(argv[i + 1], None)
+            elif a.startswith("--commit-frac="):
+                v = _f(a.split("=", 1)[1], None)
+            else:
+                continue
+            return v is not None and v >= 1.0 - 1e-9
+    cf = _f((st.get("auto") or {}).get("commit_frac"), None)
+    return cf is not None and cf >= 1.0 - 1e-9
+
+
+def o_tracked(start):
+    """True when a ladder start record comes from the ladder code that MARKS the bids (v-ladder-rail100: over_82 on its
+    'placed' and 'live_fill' records): that code's start record always carries `argv` and `old_limit` (None under a fixed
+    --size). The older code wrote neither, and never marks a bid -- on the 100% rail it would leave O at 'none yet'
+    forever, so such a start is O's problem (O_UNTRACKED), never a quiet zero."""
+    st = start or {}
+    return "argv" in st and "old_limit" in st
+
+
+def o_untracked(starts):
+    """The windows the ladder ran the 100% rail on code that does not mark the bids: [(from, to or None)] in time order,
+    one per such start record, each up to the next start record (None: it is the latest, so still running)."""
+    out = []
+    for i, r in enumerate(starts):
+        if o_rail100(r) and not o_tracked(r):
+            out.append((r["_epoch"], starts[i + 1]["_epoch"] if i + 1 < len(starts) else None))
+    return out
+
+
+def _o(scans, now):
+    """O -> (since, events, tally) or (None, [], None) before the first start on the 100% rail. One event per over-82
+    bid that filled (by ticker and paper_id), dated by its first fill: usd = its market's live_settle pnl (summed, a
+    late fill's own settle in) x its contracts / every contract filled in that market since the start, open until the
+    market has a live_settle. tally: bids (settled), won, lost, open, n (their contracts), usd, placed (over-82 bids
+    placed since, filled or not), filled (of those, filled), untracked (o_untracked's windows: the 100% rail on code
+    that does not mark the bids; one still open = O's problem)."""
+    starts = sorted((r for sc in scans for r in sc.starts), key=lambda r: r["_epoch"])
+    since = next((r["_epoch"] for r in starts if o_rail100(r)), None)
+    if since is None:
+        return None, [], None
+    untracked = o_untracked(starts)
+    fills = sorted((r for sc in scans for r in sc.fills if r["_epoch"] >= since), key=lambda r: r["_epoch"])
+    markets = {}
+    for r in fills:
+        tk, d = r.get("ticker"), _f(r.get("delta"))
+        if not tk or d <= 0:
+            continue
+        m = markets.setdefault(tk, {"all": 0.0, "bids": {}})
+        m["all"] += d
+        if r.get("over_82") is True:
+            b = m["bids"].setdefault(r.get("paper_id"), {"n": 0.0, "side": r.get("side"), "px": r.get("px"), "rec": r})
+            b["n"] += d
+    pnl, result = {}, {}
+    for sc in scans:
+        for s in sc.settles:
+            tk = s.get("ticker")
+            if s["_epoch"] < since or tk not in markets:
+                continue
+            pnl[tk] = pnl.get(tk, 0.0) + _f(s.get("pnl"))
+            if s.get("result") in ("yes", "no"):
+                result[tk] = s["result"]
+    placed = sum(1 for sc in scans for r in sc.placed82 if r["_epoch"] >= since)
+    t = {"bids": 0, "won": 0, "lost": 0, "open": 0, "n": 0.0, "usd": 0.0, "placed": placed, "filled": 0,
+         "untracked": untracked}
+    out = []
+    for tk, m in markets.items():
+        for _pid, b in m["bids"].items():
+            t["filled"] += 1
+            share = (" (%s of the %s contracts the market filled: that share of its %s)" % (
+                _g2(b["n"]), _g2(m["all"]), _rw.usd(pnl[tk]))) if tk in pnl and m["all"] > b["n"] + 1e-9 else ""
+            words = "a bid the old 82%% limit would have refused: %s %s at %s filled%s" % (
+                _g2(b["n"]), _side(b["side"]), _cents(_f(b["px"], None)), share)
+            usd = None
+            if tk in pnl:
+                st = "scored"
+                usd = pnl[tk] * b["n"] / m["all"]
+                won = (result[tk] == b["side"]) if tk in result else usd >= 0
+                t["bids"] += 1
+                t["won" if won else "lost"] += 1
+                t["n"] += b["n"]
+                t["usd"] += round(usd, 2)
+                words += "; it %s, so it %s %s" % ("won" if won else "LOST", "made" if usd >= 0 else "cost",
+                                                   _rw.usd(abs(usd), False))
+            else:
+                st = _status(tk, None, now)
+                t["open"] += 1
+                words += "; not settled yet" if st == "pending" else "; no settle 3 h after the close (unknown)"
+            out.append(_event({"t": b["rec"].get("t"), "_epoch": b["rec"]["_epoch"], "ticker": tk}, words, usd, st))
+    return since, out, t
+
+
+def o_problem(t):
+    """O's problem words (the phone's warning line on /fixes) or None: the latest ladder start runs the 100% rail on code
+    that does not mark the bids, so nothing past the old limit can be counted while it runs."""
+    w = (t or {}).get("untracked") or []
+    return O_UNTRACKED if w and w[-1][1] is None else None
+
+
+def _o_extra(t, since):
+    """O's lines under its net: the plain line ('the bids the old 82% limit would have refused: +$X on N bids (W won,
+    L lost) since <date>', 'none yet' before any settles) and, once any was placed, how many filled. A window on the
+    100% rail without the marking code is said first (never a quiet 'none yet'): still running = ON THE 100% RAIL BUT
+    NOT TRACKED since its start; ended = those hours' bids are not in this row."""
+    s = et_words(since)
+    out = []
+    for t0, t1 in t.get("untracked") or []:
+        if t1 is None:
+            out.append("%s since %s: no bid past the old limit is marked, so none can be counted" % (O_UNTRACKED, et_words(t0)))
+        else:
+            out.append("NOT TRACKED %s to %s (the 100%% rail on ladder code that does not mark the bids): the bids past "
+                       "the old limit then are not in this row" % (et_words(t0), et_words(t1)))
+    if not t["bids"]:
+        line = "%s: none %s%syet since %s" % (O_HEAD, "marked " if out else "", "settled " if t["open"] else "", s)
+    else:
+        line = "%s: %s on %d bid%s (%d won, %d lost) since %s" % (
+            O_HEAD, _rw.usd(round(t["usd"], 2)), t["bids"], "" if t["bids"] == 1 else "s", t["won"], t["lost"], s)
+    if t["open"]:
+        line += " · %d open" % t["open"]
+    out.append(line)
+    if t["placed"]:
+        out.append("%d bid%s placed past the old limit, %d filled (%s contracts settled); a bid that never filled cost "
+                   "nothing" % (t["placed"], "" if t["placed"] == 1 else "s", t["filled"], _g2(t["n"])))
+    return out
+
+
+def _o_what():
+    return ("the ladder may rest bids up to 100% of its pot (was 82%: --commit-frac 1.0, the same bid size, 6 bids a close "
+            "instead of 5); each bid the old limit would have refused is priced by its market's own result")
+
+
+# ---------------------------------------------------------------------------
 def whats(start):
     """One plain line per change, read off the newest start record's flags where they matter."""
     rail = start.get("boost_rail") or "side"
@@ -1513,7 +1973,7 @@ def _l_what(st):
                             _cents(bar) if bar is not None else "5.0c"))
 
 
-def _change(cid, what, since, events, off=False, extra=None, not_live=None, third=None):
+def _change(cid, what, since, events, off=False, extra=None, not_live=None, third=None, problem=None):
     events = sorted(events, key=lambda e: e["epoch"] or 0)
     scored = [e["usd"] for e in events if e["usd"] is not None]
     last = events[-1]["epoch"] if events else None
@@ -1521,21 +1981,28 @@ def _change(cid, what, since, events, off=False, extra=None, not_live=None, thir
             "engaged": len(events), "last_engaged": et_words(last), "last_t": last,
             "open": sum(1 for e in events if e["open"]), "net_usd": round(sum(scored), 2) if events else 0.0,
             "events": events, "off": bool(off), "extra": list(extra or []), "not_live": not_live,
-            "third": sorted(third or [], key=lambda e: e["epoch"] or 0)}
+            "third": sorted(third or [], key=lambda e: e["epoch"] or 0), "problem": problem}
 
 
 def report(paths=None, now=None):
-    """Every change A..M scored (see the module note). `paths`: explicit logs (tests); default pin's live logs from
-    11-01 on. `now`: the clock (pending vs unknown)."""
+    """Every change A..N scored, then O when a ladder order log is read (see the module note). `paths`: explicit logs
+    (tests; a ladder-live-orders*.jsonl among them is O's, the rest pin's); default pin's live logs from 11-01 on and
+    the ladder's order log in RESULTS when it is there. `now`: the clock (pending vs unknown)."""
     now = time.time() if now is None else float(now)
-    paths = pin_paths() if paths is None else list(paths)
+    if paths is None:
+        paths, lad = pin_paths(), ladder_paths()
+    else:
+        paths = list(paths)
+        lad = [p for p in paths if is_ladder_log(p)]
+        paths = [p for p in paths if not is_ladder_log(p)]
     L, S = _load(paths)
     new = S.new_build_since()
     since = {"A": SINCE_AB, "B": SINCE_AB, "C": SINCE_C}
-    abc = _abc(L, now, since)
+    cstep, c_line = _c_step(S, now)                            # v-oddsmult15: C's 1.25x->1.5x step, under its total
+    abc = _abc(L, now, since, cstep)
     st = S.latest_start() if new is not None else {}
     W = whats(st)                                              # the new flags' values once the build is live
-    out = [_change(k, W[k], since[k], abc[k]) for k in "ABC"]
+    out = [_change(k, W[k], since[k], abc[k], extra=([c_line] if k == "C" and c_line else None)) for k in "ABC"]
     later = {"D": _d, "E": _e, "G": _g, "H": _h, "I": _i, "J": _j}
     for k in "DEFGHIJ":
         if new is None:
@@ -1574,6 +2041,14 @@ def report(paths=None, now=None):
     else:
         evs, tally = _n(S, now, n_since, n_start)
         out.append(_change("N", _n_what(n_start), n_since, evs, extra=_n_extra(tally)))
+    # O: the ladder's change (v-ladder-rail100), whenever a ladder order log is read: from the first ladder start on
+    # --commit-frac 1.0, the bids the old 82% rail would have refused, priced by their markets
+    if lad:
+        o_since, evs, tally = _o(_ladder_scans(lad), now)
+        if o_since is None:
+            out.append(_change("O", _o_what(), None, [], not_live=O_NOT_LIVE))
+        else:
+            out.append(_change("O", _o_what(), o_since, evs, extra=_o_extra(tally, o_since), problem=o_problem(tally)))
     return out
 
 
@@ -1581,7 +2056,9 @@ def totals(changes):
     """{engaged, open, net_usd} over every change except J: a J leg is also a C engagement (C scores every executed
     extra), so J stays out of the sum and that leg is counted once. L is in: what it keeps or misses is pin's real
     money (the premium not spent, the save the odds line then paid more for), as K's skipped buys are. M is in by
-    its net (the contracts the 2-bet budget held back on pin's own buys); its true-3rd-bet list is not."""
+    its net (the contracts the 2-bet budget held back on pin's own buys); its true-3rd-bet list is not. problems: the
+    ids of every change (J too) that says one (change["problem"]: O on the 100% rail without the marking code)."""
     cs = [c for c in changes if c["id"] != "J"]
     return {"engaged": sum(c["engaged"] for c in cs), "open": sum(c["open"] for c in cs),
-            "net_usd": round(sum(c["net_usd"] for c in cs), 2)}
+            "net_usd": round(sum(c["net_usd"] for c in cs), 2),
+            "problems": [c["id"] for c in changes if c.get("problem")]}

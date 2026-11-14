@@ -78,9 +78,28 @@ DAY_STOP_FRAC, COMMIT_FRAC = 0.20, 0.70
 # v-ladder-caps (IDEA_LEDGER F23, 2026-10-03): per-market and per-quarter-hour caps as multiples of the bid size
 # (contracts resting + held). 0 = off (the default; the rails above are then exactly as before).
 LIMBO_S = 60.0                                   # v-ladder-limbo: a failed cancel's remainder counts at most this long
+SETTLE_RETRY_S = 60.0                            # v-ladder-settlemiss: a held market the engine gave up on is looked up at most this often
+START_TRIES, START_BACKOFF_S = 5, 1.2            # v-ladder-start429: the start balance read = 1 try + 4 retries, 1.2 s apart
 MARKET_CAP_X = 0                                 # --market-cap-x 2: at most 2 bids' worth in one market
 CLOSE_CAP_X = 0                                  # --close-cap-x 5: at most 5 bids' worth across one close's markets
 REPLACE_WAIT_RAILS = ("max_commit", "max_contracts", "market_cap", "close_cap")   # v-ladder-replace: rails that count the bid being replaced
+
+# v-ladder-rail100 (2026-11-14; the operator allows the money change only if "you can track the result of each change vs
+# if it never was implemented"): the money rail goes from 82% of the pot (--fit --commit-frac 0.82, live since 10-31) to
+# 100% (--pot-per-contract 5.9756 --commit-frac 1.0: the same bid size, floor(pot / 5.9756) = floor(0.82 x pot / 4.90),
+# so 6 bids of 98c a close fit instead of 5). NOTHING about what is placed changes here: each bid the rails admit is also
+# checked against the OLD rail -- round(0.82 x the same pot, 2), as apply_size rounds MAX_COMMIT -- and the answer rides
+# on its 'placed' record (over_82 true/false, old_limit = that 0.82 x pot figure) and on every 'live_fill' of it, so
+# botdata/fixes.py (change O on the phone's /fixes) can price exactly the bids the old limit would have refused. The
+# money the old rail sees is the OLD WORLD's: today's exposure less what the over-82 bids themselves rest, hold or have
+# in a cancel (those bids never existed under 0.82). Counting them would mark a moved 97.9c -> 98c re-bid of one of the
+# first five markets as over 82% once the 6th bid rests, and price the same extra bid twice. A MOVED bid is judged as
+# the old world placed it: under 0.82 a move on a full rail WAITED for the old bid's cancel (v-ladder-replace) and was
+# then placed, so the old bid(s) it replaces are left out of its own check (their fills stay counted); and while such a
+# move, placed at once by the new rail, still has its old bid counted, the move itself is left out of the old world's
+# money (under 0.82 it was still waiting) -- else every ordinary move with five bids resting would read over 82%.
+RAIL100_OLD_FRAC = 0.82
+COMMIT_POT = None                                # the pot MAX_COMMIT was last set from (apply_size(pot=)); None under --size
 
 # v-ladder-optc (2026-10-22, operator: "Okay option c"): --coins limits which 15-minute series the ladder bids on
 # (None = every coin, as before); --pot-per-contract sets the size divisor (default 14 = as before). Option C =
@@ -118,7 +137,7 @@ def apply_size(size, pot=None):
     10 contracts / $12 committed / -$6 day stop per contract of size; start balance $25 + $12 per extra contract.
     v-sub-autosize: with `pot` (--auto-size) the contract rail still comes from the size, but the money rail is 70%
     of the pot, there is no start cap, and the day stop is left to AutoSize (-20% of the day's first pot)."""
-    global SIZE, MAX_CONTRACTS, MAX_COMMIT, DAY_STOP, MAX_SUB_BALANCE
+    global SIZE, MAX_CONTRACTS, MAX_COMMIT, DAY_STOP, MAX_SUB_BALANCE, COMMIT_POT
     n = int(size)
     if not (1 <= n <= SIZE_MAX):
         raise SystemExit("--size %s is outside 1..%d" % (size, SIZE_MAX))
@@ -128,9 +147,20 @@ def apply_size(size, pot=None):
         MAX_COMMIT = 12.00 * n
         DAY_STOP = -6.00 * n
         MAX_SUB_BALANCE = 25.00 + 12.00 * (n - 1)
+        COMMIT_POT = None                        # v-ladder-rail100: a fixed rail is no share of a pot: no old 82% rail
     else:
         MAX_COMMIT = round(COMMIT_FRAC * float(pot), 2)
         MAX_SUB_BALANCE = None                   # the operator's order: no cap on what the subaccount may hold
+        COMMIT_POT = float(pot)                  # v-ladder-rail100: old_limit() is 0.82 x this same pot
+
+
+def old_limit():
+    """v-ladder-rail100 (2026-11-14): the money rail the OLD --commit-frac 0.82 would have set from the pot the current
+    rail came from -- round(0.82 x pot, 2), exactly as apply_size rounds MAX_COMMIT -- or None when the rail is not a
+    share of a pot (a fixed --size: there the commit fraction never applied)."""
+    if COMMIT_POT is None:
+        return None
+    return round(RAIL100_OLD_FRAC * float(COMMIT_POT), 2)
 
 
 def size_for_pot(pot):
@@ -143,7 +173,7 @@ def size_for_pot(pot):
     return max(1, min(SIZE_MAX, int(math.floor(float(pot) / POT_PER_CONTRACT + 1e-9))))
 
 
-def read_pot(sender, sub):
+def read_pot(sender, sub, info=None):
     """The subaccount's pot in dollars: cash + the cost of what it holds (Kalshi's market_exposure, the cost basis
     of each open position), or None when either read is unreadable. The unit is READ, never inferred (hard rule 5,
     as the main bot's read_bank).
@@ -157,42 +187,96 @@ def read_pot(sender, sub):
     DOLLAR string), so the cents field is a cross-check, not the source: NaN / inf / garbage dollars are refused; a
     cents value that is present must still read and agree to the cent (else refused, as before; the tolerance stays
     this file's 0.011, so 1c agrees and 2c is refused whatever the float rounding); `balance` alone is still
-    refused -- dividing it by 100 would be inferring the unit."""
+    refused -- dividing it by 100 would be inferring the unit.
+
+    v-ladder-start429 (2026-11-13): `info` (an optional dict) is emptied at every call and, when the read fails, filled
+    with the HTTP status, the path that failed and why, so AutoSize's 'pot_unreadable' record says WHICH read failed and
+    HOW. Before, the record carried no field at all: the 18-95 a day were assumed to be 429s on the balance bucket (1 call
+    a second, shared with pin and the phone) but the log could not show it, nor tell them from a real outage. The pot
+    and every refusal are exactly as before."""
+    if info is not None:
+        info.clear()
+
+    def bad(st, path, why):
+        if info is not None:
+            info.update(status=st, path=path, why=why)
+        return None
     st, bal = sender("GET", "/portfolio/balance", None, {"subaccount": int(sub), "exchange_index": POOL})
     if st != 200 or not isinstance(bal, dict):
-        return None
+        return bad(st, "/portfolio/balance", "http %s" % st if st != 200 else "body is not an object")
     cents, dollars = bal.get("balance"), bal.get("balance_dollars")
     if dollars is None:
-        return None                              # cents alone: refused (the unit would be inferred)
+        return bad(st, "/portfolio/balance", "no balance_dollars")   # cents alone: refused (the unit would be inferred)
     try:
         cash = float(dollars)
     except (TypeError, ValueError):
-        return None
+        return bad(st, "/portfolio/balance", "balance_dollars unreadable")
     if cash != cash or abs(cash) == float("inf"):
-        return None                              # NaN / inf dollars: unreadable
+        return bad(st, "/portfolio/balance", "balance_dollars not finite")   # NaN / inf dollars: unreadable
     if cents is not None:
         try:
             c = float(cents) / 100.0
         except (TypeError, ValueError):
-            return None                          # a cents value that is there but unreadable: refused
+            return bad(st, "/portfolio/balance", "balance (cents) unreadable")   # there but unreadable: refused
         if not abs(c - cash) <= 0.011:
-            return None                          # present and disagreeing (or NaN): refused, as before
+            return bad(st, "/portfolio/balance", "cents and dollars disagree")   # present and disagreeing (or NaN): refused
     st2, pos = sender("GET", "/portfolio/positions", None,
                       {"subaccount": int(sub), "count_filter": "position", "settlement_status": "unsettled"})
     if st2 != 200 or not isinstance(pos, dict) or not isinstance(pos.get("market_positions"), list):
-        return None
+        return bad(st2, "/portfolio/positions", "http %s" % st2 if st2 != 200 else "no market_positions list")
     held = 0.0
     for x in pos["market_positions"]:
         if not isinstance(x, dict):
-            return None
+            return bad(st2, "/portfolio/positions", "a position is not an object")
         try:
             if x.get("market_exposure_dollars") is not None:
                 held += abs(float(x["market_exposure_dollars"]))
             else:
                 held += abs(float(x["market_exposure"])) / 100.0
         except Exception:
-            return None
+            return bad(st2, "/portfolio/positions", "a position's exposure is unreadable")
     return round(cash + held, 4)
+
+
+def start_read_transient(st):
+    """v-ladder-start429: a status worth another try at start -- 429 (the 1-a-second balance bucket pin and the phone
+    share), a 5xx, or no HTTP answer at all (ordercli.send returns -1 on a timeout / dropped connection). Any other
+    status (401 bad key, 400/404 bad subaccount) will not change in five seconds: refused at once, as before."""
+    return st == 429 or not isinstance(st, int) or st < 0 or st >= 500
+
+
+def read_start_balance(sender, sub, sleep=time.sleep):
+    """v-ladder-start429 (2026-11-13): the subaccount balance read at start -> (dollars, the statuses seen).
+
+    Before this, main made ONE read and raised SystemExit on any failure. Kalshi's /portfolio/balance bucket is 1 call a
+    second shared with pin and the phone (the running ladder logs 18-95 'pot_unreadable' a day from it), so a 429 at the
+    moment of a restart -- the 04:50 ET weekly one, or boot_all's after a crash -- made the ladder refuse to start, and
+    nothing tried again until boot_all's next 10-minute check: ~10 minutes of closes missed for one busy second. Now a
+    429, a 5xx or a dropped connection is tried again up to 4 more times, START_BACKOFF_S (1.2 s, past the bucket's
+    1 s) apart, before refusing; the refusal names every status it saw. A 200 whose balance_dollars is missing or not a
+    finite number, and any other status, are refused at once (another read would not change them); the unit is read,
+    never inferred (hard rule 5), as before."""
+    seen, st, bal = [], None, None
+    for i in range(START_TRIES):
+        if i:
+            sleep(START_BACKOFF_S)
+        try:
+            st, bal = sender("GET", "/portfolio/balance", None, {"subaccount": int(sub), "exchange_index": POOL})
+        except Exception as e:                  # ordercli.send returns -1 itself; a raise is treated the same way
+            st, bal = -1, repr(e)
+        seen.append(st)
+        if st == 200:
+            try:
+                v = float(bal["balance_dollars"])
+            except Exception:
+                v = float("nan")
+            if v == v and abs(v) != float("inf"):
+                return v, seen
+            raise SystemExit("subaccount balance unreadable (%s %s); refusing" % (st, str(bal)[:200]))
+        if not start_read_transient(st):
+            break
+    raise SystemExit("subaccount balance unreadable (HTTP %s after %d read(s), statuses %s: %s); refusing"
+                     % (st, len(seen), seen, str(bal)[:200]))
 
 
 def start_refusal(sub_bal, pot, live, auto):
@@ -219,10 +303,11 @@ class AutoSize:
     P.SIZE in step). tick() reads at most every POT_REREAD_S; consider() changes the size (and MAX_COMMIT) only when
     flat, sets the day stop at the day's first applied rescale, and writes a 'rescale' record on every change."""
 
-    def __init__(self, log, reader, now, flat, lock=None, on_apply=None):
+    def __init__(self, log, reader, now, flat, lock=None, on_apply=None, fail_info=None):
         self.log, self.reader, self.now, self.flat = log, reader, now, flat
         self.lock = lock if lock is not None else threading.Lock()
         self.on_apply = on_apply
+        self.fail_info = fail_info  # v-ladder-start429: the dict read_pot(info=) fills -> status/path/why in 'pot_unreadable'
         self.pot = self.size = self.day = self.last_read = None
         self.waiting = False
         self.reads = 0
@@ -278,7 +363,7 @@ class AutoSize:
         pot = self.reader()
         self.reads += 1
         if pot is None:
-            self.log.write("pot_unreadable")
+            self.log.write("pot_unreadable", **dict(self.fail_info or {}))   # v-ladder-start429: + status, path, why
             return None
         with self.lock:
             return self.consider(pot, now)
@@ -352,6 +437,12 @@ class Broker:
         self.held = {}            # ticker -> {"side", "n", "cost"}
         self.day, self.day_pnl = None, 0.0
         self.halted = self.stopped = False
+        self.halt_day = None      # v-ladder-dayreset: the ET day the day stop fired on (the halt lasts that day only)
+        self.results = {}         # v-ladder-settlemiss: ticker -> its settled result, so a late fill is booked at once
+        self.ticker_close = {}    # v-ladder-settlemiss: ticker -> close_s of every market admitted live
+        self.settle_asked = {}    # v-ladder-settlemiss: ticker -> when the poller last looked its result up itself
+        self.settle_seen = {}     # v-ladder-settlemiss: ticker -> the last lookup's (status, result, market status)
+        self.held82 = {}          # v-ladder-rail100: ticker -> the cost of the over-82 bids' fills inside held[ticker]
         self.lock = threading.Lock()
         self._w = []
         self.sizer = None         # AutoSize under --auto-size; its tick runs on the poller thread
@@ -437,6 +528,64 @@ class Broker:
             return "close_cap"
         return None
 
+    def counted_ids(self):
+        """The paper ids exposure() counts: sending/resting, or a remainder in a cancel or in limbo (v-ladder-rail100)."""
+        cnt = {id(v) for v in self.open_orders() + self.pending()}
+        return [q for q, v in self.live.items() if id(v) in cnt]
+
+    def exposure_82(self, skip=()):
+        """v-ladder-rail100 (2026-11-14): the money the OLD 82% rail would have seen at this moment -- exposure()'s money
+        less (1) what the over-82 bids themselves rest, hold or have in a cancel (under the old rail they never existed);
+        (2) a moved bid the new rail placed AT ONCE while a bid it replaces is still counted (its 'waits_for'): under the
+        old rail it was still waiting for that cancel (v-ladder-replace), so only the bid it replaces counted -- its
+        resting remainder and any fill it got meanwhile are left out until then; (3) `skip`: the paper ids a bid being
+        judged would have waited for (its own check: the old world placed it once they were gone, so it saw the money
+        without their resting remainder; their fills stay counted, in held). Called under self.lock (sync)."""
+        ids = self.counted_ids()
+        idset, skip = set(ids), set(skip)
+        c = sum(h["cost"] for h in self.held.values()) - sum(self.held82.values())
+        for q in ids:
+            v = self.live[q]
+            if v.get("over_82"):
+                continue
+            if any(w in idset for w in v.get("waits_for") or ()):
+                if v["ticker"] in self.held:        # its fills went into held (no result yet): the old world had none
+                    c -= float(v["px"]) * float(v["filled"])
+                continue
+            if q in skip:
+                continue
+            c += float(v["px"]) * self.open_left(v)
+        return c
+
+    def replaced_ids(self, ticker, desired):
+        """v-ladder-rail100: the paper ids a new bid on `ticker` would have WAITED for under the old rail (v-ladder-replace)
+        -- the market's bids the engine no longer wants that are still counted (sending, resting, cancelling, limbo);
+        over-82 ones left out (under the old rail they never existed, so nothing waited for them)."""
+        return tuple(q for q in self.counted_ids() if self.live[q]["ticker"] == ticker and q not in desired
+                     and not self.live[q].get("over_82"))
+
+    def over_82(self, px, ticker=None, desired=None):
+        """v-ladder-rail100 (2026-11-14): for a bid the rails have just ADMITTED -> (over_82, old_limit, waits_for):
+        over_82 True when the OLD money rail, round(0.82 x the same pot, 2), would have refused it (the old world's money
+        + this bid over it); old_limit is that 0.82 x pot figure (None under a fixed --size). A MOVED bid (`ticker` has
+        bids the engine no longer wants, `desired` its wanted ids) that the old rail could not hold next to the bid it
+        replaces is judged as the old world placed it -- once that bid's cancel landed (v-ladder-replace) -- so without
+        that bid's resting remainder; waits_for then names the bid(s) it waited for (exposure_82 leaves the move out
+        while they still count). Never True at a commit fraction of 0.82 or less: such a rail is the old one or
+        tighter. It only labels the bid; nothing placed depends on it."""
+        lim = old_limit()
+        if lim is None or COMMIT_FRAC <= RAIL100_OLD_FRAC + 1e-12:
+            return False, lim, ()
+        add = float(px) * float(SIZE)
+        if self.exposure_82() + add <= lim + 1e-9:
+            return False, lim, ()                  # the old rail places it now, beside everything counted
+        gone = self.replaced_ids(ticker, desired or {}) if ticker is not None else ()
+        if not gone:
+            return True, lim, ()                   # nothing to wait for: the old rail refused it for good
+        if self.exposure_82(skip=gone) + add > lim + 1e-9:
+            return True, lim, ()                   # even once the old bid was gone the old rail refused it
+        return False, lim, gone                    # the old rail waited for `gone`, then placed it
+
     def reserve_short(self, o, ticker, live_set):
         """v-ladder-reserve (2026-10-22): C+ must never cost Option C a bid. A market's FIRST top-rung (98c) bid is
         privileged; any extra bid (the 95c rung, or a second 98c bid) is placed only if the money committed after it
@@ -452,12 +601,35 @@ class Broker:
         _n, c = self.exposure()
         return c + float(o.price) * float(SIZE) + reserve > MAX_COMMIT + 1e-9
 
+    def day_turn(self, now):
+        """v-ladder-dayreset (2026-11-13): a day stop lasts the rest of ITS OWN ET day, as the docstrings always said ("stop
+        for the ET day"). Before this nothing ever cleared `halted`: on_result's new-day branch reset only day_pnl and
+        AutoSize.consider only DAY_STOP, so after one bad day the ladder refused every market until its weekly restart --
+        up to 7 days, ~$200-245 of bids missed each time. Now the first call on a LATER ET day than the halt's clears it,
+        starts the new day at $0 realised (the day_pnl that tripped it was yesterday's) and logs a 'day_stop_reset' record.
+        On the halt's own day it does nothing: the stop still holds until midnight ET. Called under self.lock, from
+        sync() (every engine tick, ~50 a second) and from _book() (so a settle that lands before the first tick of the
+        new day is booked into the new day, not stopped by yesterday's halt). AutoSize.consider still resets DAY_STOP to
+        -20% of the new day's first pot at its first rescale, as before (it has no handle on the broker; sync() always
+        runs first)."""
+        if not self.halted or self.halt_day is None:
+            return
+        d = et_day(now)
+        if d == self.halt_day:
+            return                                  # the halt holds for the rest of its own ET day
+        self.log.write("day_stop_reset", halt_day=self.halt_day, day=d, halt_day_pnl=round(self.day_pnl, 4),
+                       day_stop=DAY_STOP)
+        self.halted, self.halt_day = False, None
+        self.day, self.day_pnl = d, 0.0
+
     # --- called after every engine tick ---
     def sync(self, eng):
         if not self.stopped and os.path.exists(STOP_FILE):
             self.stopped = True
             self.log.write("stop_file", path=STOP_FILE)
         with self.lock:
+            if self.halted:
+                self.day_turn(self.now())          # v-ladder-dayreset: a new ET day clears yesterday's day stop
             present = set()
             for m in list(eng.markets.values()):
                 present.add(m.ticker)
@@ -468,6 +640,7 @@ class Broker:
                 if m.ticker not in live_set:
                     if desired and len(live_set) < MAX_LIVE_PER_CLOSE and not (self.halted or self.stopped):
                         live_set.add(m.ticker)
+                        self.ticker_close[m.ticker] = m.close_s    # v-ladder-settlemiss: when its settle is overdue
                         self.log.write("live_market", ticker=m.ticker, close_s=m.close_s)
                     else:
                         continue
@@ -497,8 +670,11 @@ class Broker:
                                           "status": "refused", "filled": 0}
                         self.log.write("rail_refused", ticker=m.ticker, paper_id=pid, px=str(o.price), why=why)
                         continue
+                    # v-ladder-rail100: would the old 82% rail have refused it? (a move: judged once its old bid is gone)
+                    o82, lim82, waits = self.over_82(o.price, m.ticker, desired)
                     self.live[pid] = {"kid": None, "ticker": m.ticker, "side": o.side, "px": o.price,
-                                      "status": "sending", "filled": 0}
+                                      "status": "sending", "filled": 0, "over_82": o82, "old_limit": lim82,
+                                      "waits_for": waits}
                     self.q.put(("place", pid))
                 for pid, v in self.live.items():
                     if v["ticker"] == m.ticker and v["status"] == "resting" and \
@@ -511,36 +687,116 @@ class Broker:
                     self.q.put(("cancel", pid))
 
     # --- results ---
-    def on_result(self, ticker, result):
+    def on_result(self, ticker, result, via="engine"):
+        """A market's result (from the paper engine's settle read; v-ladder-settlemiss: or the poller's own look-up,
+        via="lookup") -> book what is held there, release it, and remember the result for late fills."""
         if result not in ("yes", "no"):
-            return      # not settled yet (09-29 13:15 ET NEAR: an empty result was booked as a loss; it had won)
+            return      # not settled yet (09-29 13:15 ET NEAR: an empty result was booked as a loss; it had won).
+            # v-ladder-settlemiss: the holding is no longer forgotten here when the engine gives up -- once the market is
+            # P.SETTLE_TIMEOUT_S past its close, settle_lookups_once() (the poller) looks the result up itself.
         with self.lock:
+            self.results[ticker] = result
+            if len(self.results) > 4000:           # ~2 days of every coin's closes; a late fill comes within seconds
+                for k in list(self.results)[:2000]:
+                    del self.results[k]
+            self.settle_asked.pop(ticker, None)
+            self.settle_seen.pop(ticker, None)
+            self.held82.pop(ticker, None)           # v-ladder-rail100: released with the holding it is part of
             h = self.held.pop(ticker, None)
             if not h or h["n"] <= 0:
                 return
-            pnl = (h["n"] - h["cost"]) if h["side"] == result else -h["cost"]
-            d = et_day(self.now())
-            if d != self.day:
-                self.day, self.day_pnl = d, 0.0
-            self.day_pnl += pnl
-            self.log.write("live_settle", ticker=ticker, result=result, side=h["side"], n=h["n"],
-                           cost=round(h["cost"], 4), pnl=round(pnl, 4), day_pnl=round(self.day_pnl, 4))
-            if self.day_pnl <= DAY_STOP and not self.halted:
-                self.halted = True
-                self.log.write("day_stop", day=d, day_pnl=round(self.day_pnl, 4))
+            self._book(ticker, result, h["side"], h["n"], h["cost"], via)
+
+    def _book(self, ticker, result, side, n, cost, via):
+        """Book `n` contracts bought for `cost` on `side` of a market that settled `result` into the ET day's realised
+        P&L, write 'live_settle' and fire the day stop. Called under self.lock (on_result, and on_fill for a fill that
+        lands after its market settled)."""
+        now = self.now()
+        self.day_turn(now)                      # v-ladder-dayreset: a settle on a new ET day is booked into that day
+        pnl = (n - cost) if side == result else -cost
+        d = et_day(now)
+        if d != self.day:
+            self.day, self.day_pnl = d, 0.0
+        self.day_pnl += pnl
+        self.log.write("live_settle", ticker=ticker, result=result, side=side, n=n,
+                       cost=round(cost, 4), pnl=round(pnl, 4), day_pnl=round(self.day_pnl, 4), via=via)
+        if self.day_pnl <= DAY_STOP and not self.halted:
+            self.halted, self.halt_day = True, d   # v-ladder-dayreset: remember the day, so the next one clears it
+            self.log.write("day_stop", day=d, day_pnl=round(self.day_pnl, 4))
 
     def on_fill(self, pid, new_filled):
+        """v-ladder-settlemiss (2026-11-13): a fill the poller sees AFTER its market's result was booked (the poller lags
+        when /portfolio/orders fails or is slow -- the same outages that delay settles) is booked AT ONCE against the
+        remembered result ('live_settle' via="late_fill"). Before, it re-created self.held[ticker] after the settle had
+        already popped it, and nothing would ever settle it again: flat() stayed False (no rescale, no DAY_STOP reset)
+        and its cost sat in exposure() until the weekly restart."""
         with self.lock:
             v = self.live.get(pid)
             if v is None or new_filled <= v["filled"]:
                 return
             delta = new_filled - v["filled"]
             v["filled"] = new_filled
-            h = self.held.setdefault(v["ticker"], {"side": v["side"], "n": 0, "cost": 0.0})
-            h["n"] += delta
-            h["cost"] += delta * float(v["px"])
+            res = self.results.get(v["ticker"])
+            if res is None:
+                h = self.held.setdefault(v["ticker"], {"side": v["side"], "n": 0, "cost": 0.0})
+                h["n"] += delta
+                h["cost"] += delta * float(v["px"])
+                if v.get("over_82"):                 # v-ladder-rail100: the old world never held these
+                    self.held82[v["ticker"]] = self.held82.get(v["ticker"], 0.0) + delta * float(v["px"])
             self.log.write("live_fill", ticker=v["ticker"], paper_id=pid, kid=v["kid"], side=v["side"],
-                           px=str(v["px"]), delta=delta, filled=new_filled)
+                           px=str(v["px"]), delta=delta, filled=new_filled,
+                           over_82=bool(v.get("over_82")),     # v-ladder-rail100: carried from the bid's admission
+                           **({"after_settle": res} if res is not None else {}))
+            if res is not None:
+                self._book(v["ticker"], res, v["side"], delta, delta * float(v["px"]), "late_fill")
+
+    def settle_lookups_once(self):
+        """v-ladder-settlemiss (2026-11-13): look up, ITSELF, the result of a market it still holds once the paper engine
+        has given up on it -- at most one GET a call, each market at most once every SETTLE_RETRY_S (60 s), until Kalshi
+        has a result; then on_result() books it into day_pnl and releases the holding. Returns the ticker asked, or None.
+
+        Why: the engine (locked_average_ladder_re_paper.py) marks a market settled with result None SETTLE_TIMEOUT_S
+        (1,500 s) after its close, and on_result() ignores a None result, so the holding was kept FOREVER. That happened
+        to every coin at the Thursday 03:00 ET close on 6 Thursdays running (Kalshi's maintenance): flat() was never
+        true again (auto-size frozen, DAY_STOP never reset) and the dead cost stayed in exposure() until the weekly
+        restart, holding back 1-2 coins' bids. Overdue = held and now >= its close + P.SETTLE_TIMEOUT_S, so inside the
+        engine's own 25-minute wait it asks nothing extra; a normal close never reaches this.
+
+        Read path: GET /markets/{ticker} through self.send -- the signed reader this poller thread already uses for
+        /portfolio/orders every 2 s and the pot every 60 s (ordercli.send; a signed /markets/{ticker} read is what
+        `ordercli.py market` and pinrun already do). NOT the paper engine's Rest thread: that one is unsigned, lives
+        inside run_live() with no handle from here, and the public budget per address is ~12-14 calls a minute, which
+        its 60-s market poll (10 calls) already mostly uses. One GET a call keeps the poller's 2-s fill poll moving even
+        if a read hangs to its 20-s timeout. A 'settle_lookup' record is written on the first look-up of a market and
+        whenever what Kalshi answers changes (not every minute through a long outage)."""
+        now = self.now()
+        with self.lock:
+            due = []
+            for t, h in self.held.items():
+                c = self.ticker_close.get(t)
+                if h["n"] <= 0 or c is None or now < c + P.SETTLE_TIMEOUT_S:
+                    continue
+                last = self.settle_asked.get(t)
+                if last is not None and now - last < SETTLE_RETRY_S:
+                    continue
+                due.append((-1.0 if last is None else last, c, t))   # never asked first, then the longest unasked
+            if not due:
+                return None
+            t = min(due)[2]
+            self.settle_asked[t] = now
+        st, r = self.send("GET", "/markets/%s" % t, None, None)
+        mk = r.get("market") if st == 200 and isinstance(r, dict) else None
+        res = mk.get("result") if isinstance(mk, dict) else None
+        sig = (st, res, mk.get("status") if isinstance(mk, dict) else None)
+        with self.lock:                          # on_result (the main thread) pops settle_seen when the market settles
+            changed = self.settle_seen.get(t) != sig
+            if changed:
+                self.settle_seen[t] = sig
+                self.log.write("settle_lookup", ticker=t, status=st, result=res, mstatus=sig[2],
+                               overdue_s=round(now - self.ticker_close[t], 1), resp=None if mk else str(r)[:200])
+        if res in ("yes", "no"):
+            self.on_result(t, res, via="lookup")
+        return t
 
     # --- the one writer thread ---
     def _throttle(self):
@@ -562,16 +818,18 @@ class Broker:
                 v["status"] = "refused"
                 self.log.write("body_refused", body=b)
                 return
+            # v-ladder-rail100: the old 82% rail's answer rides on the record, never in the body sent to Kalshi
+            o82 = {"over_82": bool(v.get("over_82")), "old_limit": v.get("old_limit")}
             if self.dry:
                 v["status"], v["kid"] = "resting", "dry-%d" % pid
-                self.log.write("would_place", body=b)
+                self.log.write("would_place", body=b, **o82)
                 return
             self._throttle()
             st, r = self.send("POST", "/portfolio/events/orders", b, None)
             if st in (200, 201) and isinstance(r, dict):
                 v["kid"] = (r.get("order") or r).get("order_id")
                 v["status"] = "resting"
-                self.log.write("placed", body=b, order_id=v["kid"], resp=str(r)[:200])
+                self.log.write("placed", body=b, order_id=v["kid"], resp=str(r)[:200], **o82)
                 try:
                     f = int(float((r.get("order") or r).get("fill_count") or 0))
                     if f:
@@ -627,6 +885,11 @@ class Broker:
                     self.poll_fills_once()
             except Exception as e:
                 self.log.write("poll_error", err=repr(e)[:300])
+            try:
+                if self.held:                     # v-ladder-settlemiss: a holding the engine gave up on is looked up here
+                    self.settle_lookups_once()
+            except Exception as e:
+                self.log.write("settle_lookup_error", err=repr(e)[:300])
             try:
                 if self.sizer is not None:        # --auto-size: the 60-s pot re-read (dry run included)
                     self.sizer.tick()
@@ -1216,6 +1479,347 @@ def selftest():
            "(was 15; got %s, %.2f)" % (np_, cp_))
     finally:
         SIZE, MAX_CONTRACTS, MAX_COMMIT, DAY_STOP, MAX_SUB_BALANCE, MARKET_CAP_X, CLOSE_CAP_X = _sv
+    # v-ladder-dayreset (2026-11-13): the day stop lasts its own ET day, then clears. Before, nothing cleared `halted`:
+    # one bad day stopped the ladder until its weekly restart. Halt at 17:00 EST on 11-12; 23:59 EST (04:59Z 11-13) is
+    # still 11-12 -> still halted, nothing placed; 00:00 EST 11-13 (05:00Z) -> cleared, 'day_stop_reset', bids again
+    _sv = (SIZE, MAX_CONTRACTS, MAX_COMMIT, DAY_STOP, MAX_SUB_BALANCE)
+    try:
+        apply_size(1)                                       # the penny rails: day stop -$6
+        clkd = [_u(2026, 11, 12, 22, 0)]
+        brd = Broker(log, 3, False, fake_send, lambda: clkd[0])
+        brd.held["DR0"] = {"side": "yes", "n": 10, "cost": 9.8}
+        brd.on_result("DR0", "no")                          # -$9.80 <= -$6: the day stop fires on ET day 11-12
+        ck(brd.halted and sink[-1]["ev"] == "day_stop" and sink[-1]["day"] == "2026-11-12",
+           "dayreset: a -$9.80 day halts on ET day 2026-11-12")
+        clkd[0] = _u(2026, 11, 13, 4, 59)                   # 23:59 EST: still ET day 11-12
+        brd.sync(_E([_M("DR1", clkd[0] + 30, [_O(99101, "yes", "0.98")])]))
+        ck(brd.halted and not brd.live and brd.q.empty() and not any(r["ev"] == "day_stop_reset" for r in sink),
+           "dayreset: the halt holds for the rest of its own ET day (23:59 EST: nothing placed, not reset)")
+        n0 = len(sink)
+        clkd[0] = _u(2026, 11, 13, 5, 0)                    # 00:00 EST: ET day 11-13
+        brd.sync(_E([_M("DR2", clkd[0] + 900, [_O(99102, "yes", "0.98")])]))
+        rs = [r for r in sink[n0:] if r["ev"] == "day_stop_reset"]
+        ck(not brd.halted and brd.day_pnl == 0.0 and len(rs) == 1 and rs[0]["halt_day"] == "2026-11-12"
+           and rs[0]["day"] == "2026-11-13" and rs[0]["halt_day_pnl"] == -9.8
+           and brd.live.get(99102, {}).get("status") == "sending",
+           "dayreset: the first tick of ET day 11-13 clears the halt ('day_stop_reset' logged once, day P&L back to $0) "
+           "and the next market's bid is placed (before: halted until the weekly restart)")
+        brd.sync(_E([_M("DR2", clkd[0] + 900, [_O(99102, "yes", "0.98")])]))
+        ck(len([r for r in sink[n0:] if r["ev"] == "day_stop_reset"]) == 1, "dayreset: logged once, not every tick")
+        brd.held["DR3"] = {"side": "yes", "n": 10, "cost": 9.8}
+        brd.on_result("DR3", "no")
+        ck(brd.halted and sink[-1]["ev"] == "day_stop" and sink[-1]["day"] == "2026-11-13",
+           "dayreset: a second bad day halts again, on its own day")
+        brd2 = Broker(log, 3, False, fake_send, lambda: clkd[0])   # a settle lands before any tick of the new day
+        brd2.held["DR4"] = {"side": "yes", "n": 10, "cost": 9.8}
+        clkd[0] = _u(2026, 11, 13, 22, 0)                   # 17:00 EST 11-13: halt
+        brd2.on_result("DR4", "no")
+        clkd[0] = _u(2026, 11, 14, 5, 1)                    # 00:01 EST 11-14: a win settles, no tick yet
+        brd2.held["DR5"] = {"side": "yes", "n": 10, "cost": 9.8}
+        brd2.on_result("DR5", "yes")
+        ck(not brd2.halted and abs(brd2.day_pnl - 0.2) < 1e-9 and brd2.day == "2026-11-14",
+           "dayreset: a settle on the next ET day clears yesterday's halt too and starts the day at +$0.20")
+    finally:
+        SIZE, MAX_CONTRACTS, MAX_COMMIT, DAY_STOP, MAX_SUB_BALANCE = _sv
+    # v-ladder-settlemiss (2026-11-13): the Thursday 03:00 ET shape -- Kalshi's maintenance, the engine's settle read
+    # times out after 25 min (result None), and the holding used to be kept until the weekly restart. Now: nothing extra
+    # inside the engine's wait; after it, GET /markets/{ticker} at most once a minute until a result; then booked and
+    # released. And a fill the poller sees after its market settled is booked at once, not re-held.
+    _sv = (SIZE, MAX_CONTRACTS, MAX_COMMIT, DAY_STOP, MAX_SUB_BALANCE)
+    try:
+        apply_size(5)
+        mkt = {"st": 503, "body": "service unavailable"}
+        gets = []
+
+        def send_s(method, path, body, query):
+            if method == "GET" and path.startswith("/markets/"):
+                gets.append(path)
+                return mkt["st"], mkt["body"]
+            return fake_send(method, path, body, query)
+        cls = _u(2026, 11, 12, 8, 0)                        # Thursday 03:00 EST close
+        clks = [cls - 20.0]
+        brs = Broker(log, 1, False, send_s, lambda: clks[0])
+        tks = "KXNEAR15M-26NOV120300-00"
+        brs.sync(_E([_M(tks, cls, [_O(99200, "yes", "0.98")])]))
+        while not brs.q.empty():
+            brs.work_once(brs.q.get())
+        brs.on_fill(99200, 5)                               # filled before the close
+        brs.live[99200]["status"] = "cancelled"             # the paper order expired at the close; its cancel returned
+        clks[0] = cls + 600
+        brs.on_result(tks, None)                            # the engine: no result yet
+        ck(brs.settle_lookups_once() is None and not gets and brs.held[tks]["n"] == 5,
+           "settlemiss: inside the engine's 25-min settle wait the ladder asks nothing extra")
+        n0 = len(sink)
+        clks[0] = cls + P.SETTLE_TIMEOUT_S + 1
+        brs.on_result(tks, None)                            # the engine's give-up: settled with result None
+        brs.settle_lookups_once()                           # 503: maintenance
+        clks[0] += 30
+        brs.settle_lookups_once()                           # 30 s later: not asked again
+        ck(gets == ["/markets/" + tks] and brs.held[tks]["n"] == 5 and not brs.flat()
+           and [(r["ev"], r["status"]) for r in sink[n0:]] == [("settle_lookup", 503)],
+           "settlemiss: past the engine's timeout the held market is looked up (GET /markets/{ticker}) at most once a "
+           "minute; a 503 keeps it held (got %s)" % gets)
+        clks[0] += 31
+        mkt.update(st=200, body={"market": {"ticker": tks, "result": "", "status": "closed"}})
+        brs.settle_lookups_once()
+        clks[0] += 60
+        brs.settle_lookups_once()                           # the same answer again: asked, not logged again
+        ck(len(gets) == 3 and brs.held[tks]["n"] == 5
+           and [r.get("status") for r in sink[n0:] if r["ev"] == "settle_lookup"] == [503, 200],
+           "settlemiss: no result yet -> still held, asked again a minute later, logged only when the answer changes")
+        clks[0] += 60
+        mkt.update(st=200, body={"market": {"ticker": tks, "result": "yes", "status": "finalized"}})
+        d0 = brs.day_pnl
+        brs.settle_lookups_once()
+        n_, c_ = brs.exposure()
+        ck(len(gets) == 4 and tks not in brs.held and brs.flat() and n_ == 0 and c_ == 0
+           and abs(brs.day_pnl - (d0 + 5 - 4.9)) < 1e-9
+           and any(r["ev"] == "live_settle" and r["ticker"] == tks and r["via"] == "lookup" and r["pnl"] == 0.1
+                   for r in sink[n0:]),
+           "settlemiss: the result arrives -> +$0.10 booked into day_pnl ('live_settle' via=lookup), the holding "
+           "released: flat, exposure 0 (before: held until the weekly restart)")
+        clks[0] += 600
+        ck(brs.settle_lookups_once() is None and len(gets) == 4, "settlemiss: settled -> never looked up again")
+        tk2 = "KXZEC15M-26NOV120315-15"
+        clks[0] = cls + 880
+        brs.sync(_E([_M(tk2, cls + 900, [_O(99300, "yes", "0.98")])]))
+        while not brs.q.empty():
+            brs.work_once(brs.q.get())
+        brs.on_fill(99300, 2)                               # 2 of 5 seen before the close
+        brs.live[99300]["status"] = "cancelled"
+        clks[0] = cls + 990
+        brs.on_result(tk2, "no")                            # the engine settles it: the 2 held lose $1.96
+        dl = brs.day_pnl
+        brs.on_fill(99300, 5)                               # the poller (lagging) sees 3 more filled AFTER the settle
+        ck(tk2 not in brs.held and brs.flat() and abs(brs.day_pnl - (dl - 3 * 0.98)) < 1e-9
+           and any(r["ev"] == "live_settle" and r["ticker"] == tk2 and r["via"] == "late_fill" and r["n"] == 3
+                   for r in sink[n0:]),
+           "settlemiss: a fill seen after its market settled is booked at once (-$2.94, via=late_fill), not re-held "
+           "(before: held forever, never flat)")
+        tk3 = "KXDOGE15M-26NOV120330-30"
+        clks[0] = cls + 1780
+        brs.sync(_E([_M(tk3, cls + 1800, [_O(99400, "no", "0.98")])]))
+        while not brs.q.empty():
+            brs.work_once(brs.q.get())
+        brs.live[99400]["status"] = "cancelled"
+        clks[0] = cls + 1800 + P.SETTLE_TIMEOUT_S + 5        # the engine gave up with NOTHING held here...
+        brs.on_result(tk3, None)
+        brs.on_fill(99400, 5)                               # ...then a late fill shows up: held, and looked up itself
+        mkt.update(st=200, body={"market": {"ticker": tk3, "result": "no", "status": "finalized"}})
+        brs.settle_lookups_once()
+        ck(gets[-1:] == ["/markets/" + tk3] and tk3 not in brs.held and brs.flat(),
+           "settlemiss: a fill that lands after the engine gave up on an EMPTY market is still looked up and released")
+    finally:
+        SIZE, MAX_CONTRACTS, MAX_COMMIT, DAY_STOP, MAX_SUB_BALANCE = _sv
+    # v-ladder-start429 (2026-11-13): the start balance read retries a 429 / 5xx / no answer up to 4 more times, 1.2 s
+    # apart (the bucket is 1 call a second, shared with pin and the phone); anything else is refused at once, as before.
+    # And 'pot_unreadable' now says which read failed with what status.
+    def seq_send(answers, calls):
+        def f(method, path, body, query):
+            calls.append((method, path, query))
+            a_ = answers[min(len(calls), len(answers)) - 1]
+            if isinstance(a_, Exception):
+                raise a_
+            return a_
+        return f
+    outs = []
+    for answers in ([(429, "too many requests"), (429, "too many requests"), (200, {"balance_dollars": "70.0000"})],
+                    [(-1, "timed out"), RuntimeError("reset"), (503, "busy"), (200, {"balance_dollars": "12.5"})],
+                    [(429, "too many requests")],
+                    [(401, "bad key")],
+                    [(200, {"balance": 7000})],
+                    [(200, {"balance_dollars": "nan"})]):
+        calls, slept = [], []
+        try:
+            got = read_start_balance(seq_send(answers, calls), 1, sleep=slept.append)
+        except SystemExit as e:
+            got = "refused: %s" % e
+        outs.append((got, len(calls), slept, calls[0]))
+    ck(outs[0][:3] == ((70.0, [429, 429, 200]), 3, [1.2, 1.2])
+       and outs[0][3] == ("GET", "/portfolio/balance", {"subaccount": 1, "exchange_index": POOL})
+       and outs[1][:3] == ((12.5, [-1, -1, 503, 200]), 4, [1.2, 1.2, 1.2]),
+       "start429: two 429s then a good read -> starts on $70.00 after 2 waits of 1.2 s; a timeout, a raise and a 503 "
+       "are retried too (got %s)" % [o[:3] for o in outs[:2]])
+    ck(str(outs[2][0]).startswith("refused") and "429" in outs[2][0] and outs[2][1:3] == (5, [1.2] * 4)
+       and str(outs[3][0]).startswith("refused") and "401" in outs[3][0] and outs[3][1:3] == (1, [])
+       and str(outs[4][0]).startswith("refused") and outs[4][1:3] == (1, [])
+       and str(outs[5][0]).startswith("refused") and outs[5][1:3] == (1, []),
+       "start429: 429 five times -> refused after 1 + 4 retries, naming the 429s; a 401, a 200 without "
+       "balance_dollars and a NaN balance -> refused at once, no retry (got %s)" % [o[:3] for o in outs[2:]])
+    fi = {}
+    azs = AutoSize(log, lambda: read_pot(pot_send({"balance_dollars": "70.0000"}, _e, st=429), 1, info=fi),
+                   lambda: 0.0, lambda: True, fail_info=fi)
+    azs.tick()
+    ck(sink[-1]["ev"] == "pot_unreadable" and sink[-1].get("status") == 429
+       and sink[-1].get("path") == "/portfolio/balance",
+       "start429: 'pot_unreadable' carries the HTTP status and the path (429 on /portfolio/balance; got %s)" % sink[-1])
+    fi2 = {}
+    r_pos = read_pot(pot_send({"balance_dollars": "70.0000"}, _e, st2=500), 1, info=fi2)
+    pos_fail = dict(fi2)
+    r_ok = read_pot(pot_send({"balance_dollars": "70.0000"}, _e), 1, info=fi2)
+    ck(r_pos is None and pos_fail.get("status") == 500 and pos_fail.get("path") == "/portfolio/positions"
+       and r_ok == 70.0 and fi2 == {},
+       "start429: a failed positions read names its own path and status; a good read empties the info (no stale status)")
+    # v-ladder-rail100 (2026-11-14): the old 82% rail's answer on every admitted bid. At 11-14's $1,338.6325 pot and
+    # --pot-per-contract 5.9756 the bid is 224 contracts ($219.52 at 98c) under either rail; 0.82 x pot = $1,097.68
+    # holds five ($1,097.60), 1.0 x pot = $1,338.63 holds six ($1,317.12), and a seventh ($1,536.64) is refused by both.
+    global COMMIT_FRAC, COMMIT_POT
+    _sv = (SIZE, MAX_CONTRACTS, MAX_COMMIT, DAY_STOP, MAX_SUB_BALANCE, COMMIT_FRAC, COMMIT_POT, POT_PER_CONTRACT, FIT,
+           COINS, MARKET_CAP_X, CLOSE_CAP_X, LIVE_LEVELS)
+    try:
+        FIT, COINS, MARKET_CAP_X, CLOSE_CAP_X, LIVE_LEVELS, POT_PER_CONTRACT = False, None, 2, 0, (0,), 5.9756
+        pot100, bid = 1338.6325, 0.98 * 224
+        tq = ["KXQ%d15M-26NOV141000-00" % i for i in range(7)]
+        got82 = {}
+        for frac in (1.0, 0.82):
+            COMMIT_FRAC = frac
+            apply_size(size_for_pot(pot100), pot=pot100)
+            brq = Broker(log, 1, False, fake_send, lambda: now[0])
+            mq = [_M(tq[i], 9900, [_O(99900 + i, "yes", "0.98")]) for i in range(7)]
+            k0, s0 = len(sink), len(sent)
+            brq.sync(_E(mq))                              # seven markets decided in one close, in order
+            while not brq.q.empty():
+                brq.work_once(brq.q.get())
+            got82[frac] = (brq, mq, [r for r in sink[k0:] if r["ev"] == "placed"],
+                           [r for r in sink[k0:] if r["ev"] == "rail_refused"], [s[2] for s in sent[s0:] if s[0] == "POST"])
+            if frac == 1.0:
+                brq_, mq_, pl, rf, bodies = got82[1.0]
+                ck(int(SIZE) == 224 and MAX_COMMIT == 1338.63 and old_limit() == 1097.68,
+                   "rail100: $1,338.6325 / 5.9756 -> 224 a bid, rail $1,338.63, the old 82%% rail $1,097.68 (got %s, %s, %s)"
+                   % (SIZE, MAX_COMMIT, old_limit()))
+                ck([r["over_82"] for r in pl] == [False] * 5 + [True] and all(r["old_limit"] == 1097.68 for r in pl)
+                   and pl[5]["body"]["ticker"] == tq[5] and [r["why"] for r in rf] == ["max_commit"],
+                   "rail100: commit_frac 1.0 places six bids -- the first five over_82 false, the 6th TRUE (old_limit "
+                   "1097.68 on each) -- and refuses the 7th (got %s, refused %s)"
+                   % ([r["over_82"] for r in pl], [r["why"] for r in rf]))
+                ck(len(bodies) == 6 and not any("over_82" in b_ or "old_limit" in b_ for b_ in bodies)
+                   and all(body_ok(b_, 1) for b_ in bodies),
+                   "rail100: the answer rides on the record only -- the six bodies sent to Kalshi are unchanged")
+                k1 = len(sink)
+                brq.on_fill(99901, 224)                   # the 2nd market's bid fills whole (an old-world bid)
+                brq.on_fill(99905, 100)                   # the 6th (over 82%) fills 100 of 224
+                lf = [r for r in sink[k1:] if r["ev"] == "live_fill"]
+                ck([(r["paper_id"], r["over_82"]) for r in lf] == [(99901, False), (99905, True)]
+                   and abs(brq.held82.get(tq[5], 0) - 98.0) < 1e-9
+                   and abs(brq.exposure()[1] - 6 * bid) < 1e-6 and abs(brq.exposure_82() - 5 * bid) < 1e-6,
+                   "rail100: each live_fill carries its bid's over_82; the old world's money ($1,097.60 of today's "
+                   "$1,317.12) leaves out the 6th bid's 100 held ($98.00) and 124 resting ($121.52) (got %s, %.2f, %.2f)"
+                   % ([(r["paper_id"], r["over_82"]) for r in lf], brq.exposure()[1], brq.exposure_82()))
+                # the paper engine MOVES the 1st market's bid (a new paper order) while the 6th still rests: once the old
+                # bid's cancel lands the move is placed, and it is NOT over 82% -- under the old rail the 6th bid never
+                # existed, so the moved bid is one of five ($1,097.60 with it); counting the 6th ($1,317.12) would mark it
+                # and price the same extra bid twice
+                mq[0].orders = [_O(99950, "yes", "0.98")]
+                brq.sync(_E(mq))                          # the old bid still counted: the move waits (v-ladder-replace)
+                while not brq.q.empty():
+                    brq.work_once(brq.q.get())            # ...its cancel lands
+                brq.sync(_E(mq))
+                while not brq.q.empty():
+                    brq.work_once(brq.q.get())
+                v50 = brq.live.get(99950, {})
+                ck(brq.live[99900]["status"] == "cancelled" and v50.get("status") == "resting"
+                   and v50.get("over_82") is False and brq.live[99905]["over_82"] is True
+                   and [r["over_82"] for r in sink[k1:] if r["ev"] == "placed"] == [False],
+                   "rail100: a moved bid of the first five markets is placed with over_82 false; the 6th stays true "
+                   "(got %s)" % v50)
+                brq.on_result(tq[5], "yes")
+                ck(tq[5] not in brq.held82 and tq[5] not in brq.held, "rail100: the settle releases the over-82 holding too")
+        brq, mq, pl, rf, bodies = got82[0.82]
+        ck(MAX_COMMIT == 1097.68 == old_limit() and len(pl) == 5 and not any(r["over_82"] for r in pl)
+           and [r["why"] for r in rf] == ["max_commit", "max_commit"]
+           and not any(v.get("over_82") for v in brq.live.values()),
+           "rail100 NULL: commit_frac 0.82 places five, refuses the 6th and 7th, and nothing is ever over_82 (got %s, %s)"
+           % ([r["over_82"] for r in pl], [r["why"] for r in rf]))
+        mq[0].orders = [_O(99970, "yes", "0.98")]         # a move under 0.82 is never over 82% either
+        for _k in range(2):
+            brq.sync(_E(mq))
+            while not brq.q.empty():
+                brq.work_once(brq.q.get())
+        ck(brq.live.get(99970, {}).get("status") == "resting" and not any(v.get("over_82") for v in brq.live.values()),
+           "rail100 NULL: a moved bid under 0.82 is placed, not over 82%")
+        # an ORDINARY move on the 1.0 rail (the 11-14 reviewer's probe): five bids rest (the 1st at 97.9c) and the engine
+        # moves the 1st to 98c (a new paper order). The 1.0 rail has room, so the move is placed AT ONCE while the old
+        # bid is still counted; under 0.82 the move waited for the old bid's cancel (v-ladder-replace) and was then
+        # placed, so the old limit would NOT have refused it: over_82 false. A genuinely new 6th bid is over 82%.
+        COMMIT_FRAC = 1.0
+        apply_size(size_for_pot(pot100), pot=pot100)
+
+        def five(tick):
+            tk_ = ["KX%s%d15M-26NOV141015-15" % (tick, i) for i in range(6)]
+            br_ = Broker(log, 1, False, fake_send, lambda: now[0])
+            ms_ = [_M(tk_[0], 9930, [_O(99800, "yes", "0.979")])] + \
+                [_M(tk_[i], 9930, [_O(99800 + i, "yes", "0.98")]) for i in range(1, 5)]
+            br_.sync(_E(ms_))
+            while not br_.q.empty():
+                br_.work_once(br_.q.get())
+            return br_, ms_, tk_
+        brm, mm, tm = five("M")
+        k3 = len(sink)
+        mm[0].orders = [_O(99810, "yes", "0.98")]
+        brm.sync(_E(mm))                                  # the move is admitted at once; the old bid's cancel is queued
+        vm = dict(brm.live.get(99810, {}))
+        win82, win_all = brm.exposure_82(), brm.exposure()[1]
+        while not brm.q.empty():
+            brm.work_once(brm.q.get())                    # ...the move rests, the old bid's cancel lands
+        old5 = 0.979 * 224 + 4 * bid
+        ck(vm.get("over_82") is False and vm.get("waits_for") == (99800,) and brm.live[99800]["status"] == "cancelled"
+           and abs(win82 - old5) < 1e-6 and abs(win_all - (old5 + bid)) < 1e-6
+           and abs(brm.exposure_82() - 5 * bid) < 1e-6
+           and [r["over_82"] for r in sink[k3:] if r["ev"] == "placed"] == [False],
+           "rail100: an ordinary move (97.9c -> 98c) with five bids resting is placed at once and is NOT over 82%% (the "
+           "old rail waited for the old bid's cancel, then placed it); while that cancel is in flight the old world's "
+           "money is the old bid + four ($%.2f), not the move too ($%.2f); after it, five bids (got %s, window %.2f / %.2f,"
+           " after %.2f)" % (old5, old5 + bid, {k_: vm.get(k_) for k_ in ("over_82", "waits_for", "status")}, win82,
+                            win_all, brm.exposure_82()))
+        k4 = len(sink)
+        mm.append(_M(tm[5], 9930, [_O(99815, "yes", "0.98")]))
+        brm.sync(_E(mm))                                  # a genuinely new 6th market
+        while not brm.q.empty():
+            brm.work_once(brm.q.get())
+        ck(brm.live.get(99815, {}).get("over_82") is True and brm.live[99815]["status"] == "resting"
+           and [r["over_82"] for r in sink[k4:] if r["ev"] == "placed"] == [True],
+           "rail100: after the move, a genuinely new 6th bid IS over 82%% (got %s)"
+           % {k_: brm.live.get(99815, {}).get(k_) for k_ in ("over_82", "status")})
+        # the window: market 2's bid fills whole, the 1st moves (placed at once, its old bid in its cancel), market 2
+        # settles, and a NEW market's bid is judged before the old bid's cancel lands. The old world then held the old
+        # 97.9c bid + markets 3-5 ($877.86): the new bid fits under $1,097.68, not over 82%. Counting the move as well
+        # (it was still waiting under 0.82) would read $1,097.38 + $219.52 and mark it over.
+        brw, mw, tw = five("W")
+        brw.on_fill(99801, 224)
+        mw[0].orders = [_O(99820, "yes", "0.98")]
+        brw.sync(_E(mw))
+        brw.on_result(tw[1], "yes")
+        mw.append(_M(tw[5], 9930, [_O(99825, "yes", "0.98")]))
+        brw.sync(_E(mw))                                  # the new market's bid, judged in the window
+        v25 = dict(brw.live.get(99825, {}))
+        while not brw.q.empty():
+            brw.work_once(brw.q.get())
+        ck(brw.live.get(99820, {}).get("over_82") is False and v25.get("over_82") is False
+           and v25.get("waits_for") == () and brw.live[99800]["status"] == "cancelled"
+           and abs(brw.exposure_82() - 5 * bid) < 1e-6,
+           "rail100: a new market's bid judged while a move's old bid is still in its cancel sees the old world's money "
+           "(the old bid, not the move as well): not over 82%% (got %s; after the cancel %.2f)"
+           % ({k_: v25.get(k_) for k_ in ("over_82", "waits_for")}, brw.exposure_82()))
+        COMMIT_FRAC = 0.70                                # the default: a tighter rail than 0.82 never is over it
+        apply_size(size_for_pot(pot100), pot=pot100)
+        brd7 = Broker(log, 1, False, fake_send, lambda: now[0])
+        brd7.sync(_E([_M(tq[i], 9910, [_O(99980 + i, "yes", "0.98")]) for i in range(7)]))
+        ck(not any(v.get("over_82") for v in brd7.live.values()) and old_limit() == 1097.68,
+           "rail100 NULL: commit_frac 0.70 is never over 82%")
+        COMMIT_FRAC = 1.0
+        apply_size(5)                                     # a fixed --size: no pot, so no old 82% rail at all
+        k2 = len(sink)
+        brf = Broker(log, 1, True, fake_send, lambda: now[0])
+        brf.sync(_E([_M(tq[0], 9920, [_O(99990, "yes", "0.98")])]))
+        while not brf.q.empty():
+            brf.work_once(brf.q.get())
+        wp = [r for r in sink[k2:] if r["ev"] == "would_place"]
+        ck(old_limit() is None and len(wp) == 1 and wp[0]["over_82"] is False and wp[0]["old_limit"] is None,
+           "rail100 NULL: a fixed --size has no old 82%% rail (old_limit None, over_82 false; the dry run's would_place "
+           "carries both): %s" % wp)
+    finally:
+        (SIZE, MAX_CONTRACTS, MAX_COMMIT, DAY_STOP, MAX_SUB_BALANCE, COMMIT_FRAC, COMMIT_POT, POT_PER_CONTRACT, FIT,
+         COINS, MARKET_CAP_X, CLOSE_CAP_X, LIVE_LEVELS) = _sv
     print("ladder_live self-test " + ("PASSED" if not fails else "FAILED: " + "; ".join(fails)))
     return not fails
 
@@ -1320,20 +1924,17 @@ def main():
 
     def sender(method, path, body, query):
         return ordercli.send(ordercli.PROD, pk, KEY_ID, method, path, body=body, query=query)
-    st, bal = sender("GET", "/portfolio/balance", None, {"subaccount": a.subaccount, "exchange_index": POOL})
-    try:
-        sub_bal = float(bal["balance_dollars"])
-    except Exception:
-        raise SystemExit("subaccount balance unreadable (%s %s); refusing" % (st, str(bal)[:200]))
+    sub_bal, start_reads = read_start_balance(sender, a.subaccount)   # v-ladder-start429: 429/5xx/no answer retried
     pot = None
+    pot_fail = {}                                  # v-ladder-start429: what the last failed pot read saw (status/path/why)
     for _try in range(5 if a.auto_size else 0):    # v-ladder-optc: the start read retries (429s right after maintenance)
         time.sleep(2.0)
-        pot = read_pot(sender, a.subaccount)
+        pot = read_pot(sender, a.subaccount, info=pot_fail)
         if pot is not None:
             break
     why = start_refusal(sub_bal, pot, a.live, a.auto_size)
     if why:
-        raise SystemExit(why + " -- refusing")
+        raise SystemExit(why + (" (last read: %s)" % pot_fail if a.auto_size and pot_fail else "") + " -- refusing")
     if os.path.exists(STOP_FILE):
         raise SystemExit("stop file present: %s" % STOP_FILE)
     P.NAME, P.LOG_PATH = "ladder_live", LIVE_LOG
@@ -1341,14 +1942,17 @@ def main():
     br = Broker(olog, a.subaccount, a.dry_run, sender, time.time)
     auto = None
     if a.auto_size:
-        br.sizer = AutoSize(olog, lambda: read_pot(sender, a.subaccount), time.time, br.flat, br.lock,
-                            on_apply=lambda: setattr(P, "SIZE", SIZE))
+        br.sizer = AutoSize(olog, lambda: read_pot(sender, a.subaccount, info=pot_fail), time.time, br.flat, br.lock,
+                            on_apply=lambda: setattr(P, "SIZE", SIZE), fail_info=pot_fail)
         br.sizer.start(pot)                        # sets SIZE and every rail from the pot; refuses under $10
         auto = {"pot_per_contract": POT_PER_CONTRACT, "size_max": SIZE_MAX, "reread_s": POT_REREAD_S,
                 "day_stop_frac": DAY_STOP_FRAC, "commit_frac": COMMIT_FRAC}
     P.SIZE = SIZE
+    # v-ladder-rail100 (2026-11-14): the start record carries its argv, so /fixes change O dates itself from the first
+    # start on --commit-frac 1.0 (auto.commit_frac says the same under --auto-size; argv says it for any run)
     olog.write("start", pid=os.getpid(), subaccount=a.subaccount, live=a.live, sub_balance=sub_bal,
-               auto_size=bool(a.auto_size), pot=pot, auto=auto,
+               start_reads=start_reads, auto_size=bool(a.auto_size), pot=pot, auto=auto, argv=list(sys.argv[1:]),
+               old_limit=old_limit(),
                rails={"size": int(SIZE), "max_contracts": MAX_CONTRACTS, "max_commit": MAX_COMMIT, "day_stop": DAY_STOP,
                       "start_cap": MAX_SUB_BALANCE, "max_live_per_close": MAX_LIVE_PER_CLOSE,
                       "live_levels": list(LIVE_LEVELS), "levels_offsets": list(P.LEVELS), "writes_per_s": WRITES_PER_S,

@@ -444,7 +444,11 @@ def test_start_and_halt_rules_match_running():
        {"jumpband": ("day_stop",)}, "halt lifts next day")
     if legacy:
         assert 'HALT_KINDS[name] + ("resume",)' in src
-    eq(set(b.records.halt_lifts for b in bots.all_bots()), {("resume",)}, "halt lifts")
+    # v-ladder-dayreset (2026-11-14): the ladder's own midnight reset ('day_stop_reset') lifts its day stop as 'resume'
+    # does; every other bot still has only 'resume'
+    eq({b.name: b.records.halt_lifts for b in bots.all_bots() if b.records.halt_lifts != ("resume",)},
+       {"ladder": ("resume", "day_stop_reset")}, "halt lifts (the ladder adds its midnight day_stop_reset)")
+    eq(set(b.records.halt_lifts for b in bots.all_bots()), {("resume",), ("resume", "day_stop_reset")}, "halt lifts")
 
 
 # ---- activity hooks -----------------------------------------------------------------------------------------------

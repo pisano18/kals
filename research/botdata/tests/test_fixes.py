@@ -198,7 +198,9 @@ def _report(paths=None, now=NOW):
 def test_shape_and_sinces():
     d = tempfile.mkdtemp(prefix="fixes-test-")
     rep = _report(write_logs(d))
-    ck("".join(sorted(rep)) == F.IDS == "ABCDEFGHIJKLMN", "fourteen changes A..N, one row each")
+    ck("".join(sorted(rep)) == F.IDS == "ABCDEFGHIJKLMN" and F.LADDER_IDS == "O",
+       "fourteen pin changes A..N, one row each; the ladder's O only when a ladder order log is read (none here)")
+    ck(rep["C"]["extra"] == [], "C has no step line before any 1.5x start or leg: %s" % rep["C"]["extra"])
     for c in rep.values():
         ck(set(c) >= {"id", "name", "what", "since", "engaged", "last_engaged", "open", "net_usd", "events", "extra",
                       "not_live", "third"}, "%s carries every field" % c["id"])
@@ -1004,6 +1006,362 @@ def test_n_hedge_line():
     rep2 = _report(write_logs(d2))
     ck(rep2["N"]["since"] is None and rep2["N"]["not_live"] == F.N_NOT_LIVE and rep2["N"]["engaged"] == 0,
        "N before --hedge-belief 0.60: not live, its own words")
+
+
+# ---- v-oddsmult15 (2026-11-14): C's 1.25x -> 1.5x step -------------------------------------------------------------
+NOW_C15 = 1794744000.0             # 2026-11-15T12:00:00Z = 7:00 AM ET (the 6:15 AM market is 45 min past its close)
+
+
+def _x15(t, tk, side, orig, n, price, mult=1.5, **kw):
+    """A filled extra leg as pinrun logs it (patch_oddsmult: extra_of = (mult - 1) x orig_n, n = what filled)."""
+    kw.setdefault("status", "executed")
+    return _r("hedge_extra", t, ticker=tk, side=side, price=price, n=n, asked=round((mult - 1) * orig, 2),
+              extra_of=round((mult - 1) * orig, 2), mult=mult, min_tau=11.0, base_n=orig, orig_n=orig, tau=15,
+              belief=0.3, trigger="belief", trigger_label="belief", fired_on_belief=True, order_id="x15-" + tk[2:6],
+              live=True, **kw)
+
+
+def run_c15(recs):
+    """The --hedge-odds-mult 1.5 run (11-15 5:00 AM ET on): C's step. Every $ worked by hand with Kalshi's fee ceil(7 x p
+    x (1 - p) x n) / 100: the step is filled - 0.25 x orig_n, at the leg's dearest fills (its `fills`), else at its
+    order's limit_sent (real records carry only the average price: the limit is the conservative bound)."""
+    recs += [
+        _r("start", "2026-11-15T10:00:00Z", code_sha="15151515aaaa", hedge_odds_mult=1.5, hedge_odds_min_tau=11.0,
+           max_positions=5, boost_rail="off", hedge_tick="round", jump_hedge_min_ask=0.05),
+        # ZEC FLIP: 40 Yes at 30c on 80 (1.25x bought 20), limit 33c: the step's 20 at the LIMIT, 20 x 67c - fee 0.31 =
+        # +13.09 (at the 30c average it would read 14.00 - 0.30 = +13.70); C's whole leg 28.00 - fee 0.59 = +27.41
+        _x15("2026-11-15T10:14:45Z", "KXZEC15M-26NOV150515-15", "yes", 80.0, 40.0, 0.30, limit_sent=0.33),
+        _r("settled", "2026-11-15T10:15:20Z", ticker="KXZEC15M-26NOV150515-15", want="no", result="yes", cost=0.97,
+           pnl_c=-7760.0),
+        # ETH, the OLD multiple in the same run: C counts it (10 x 70c - 0.15 = +6.85), the step does not
+        _x15("2026-11-15T10:14:46Z", "KXETH15M-26NOV150515-15", "yes", 40.0, 10.0, 0.30, mult=1.25, limit_sent=0.32),
+        _r("settled", "2026-11-15T10:15:21Z", ticker="KXETH15M-26NOV150515-15", want="no", result="yes", cost=0.97,
+           pnl_c=-3880.0),
+        # SOL, the bet WON: 50 No at 20c on 100 (1.25x bought 25), limit 22c: the step's 25 x 22c + fee 0.31 = -5.81 (at
+        # the average: -5.28); C's leg -10.56
+        _x15("2026-11-15T10:29:45Z", "KXSOL15M-26NOV150530-30", "no", 100.0, 50.0, 0.20, limit_sent=0.22),
+        _r("settled", "2026-11-15T10:30:20Z", ticker="KXSOL15M-26NOV150530-30", want="yes", result="yes", cost=0.97,
+           pnl_c=300.0),
+        # BNB FLIP with its fills listed (10 at 20c, 10 at 30c; average 25c) on 40 (1.25x bought 10): the step is the
+        # DEAREST 10 at 30c: 7.00 - fee 0.15 = +6.85 (at the 25c average it would read 7.50 - 0.14 = +7.36; the listed
+        # fills cover the step, so its 32c limit is not used); C's leg 20 x 75c - fee 0.27 = +14.73
+        _x15("2026-11-15T10:44:45Z", "KXBNB15M-26NOV150545-45", "yes", 40.0, 20.0, 0.25, fills=[[10.0, 0.20], [10.0, 0.30]],
+             limit_sent=0.32),
+        _r("settled", "2026-11-15T10:45:20Z", ticker="KXBNB15M-26NOV150545-45", want="no", result="yes", cost=0.97,
+           pnl_c=-3880.0),
+        # XRP: the book filled 12 of the 30 asked on 60 -- no more than 1.25x's 15, so no step (C's leg 7.20 - 0.21 = +6.99)
+        _x15("2026-11-15T10:59:45Z", "KXXRP15M-26NOV150600-00", "no", 60.0, 12.0, 0.40, limit_sent=0.42),
+        _r("settled", "2026-11-15T11:00:20Z", ticker="KXXRP15M-26NOV150600-00", want="yes", result="no", cost=0.97,
+           pnl_c=-5820.0),
+        # DOGE, OPEN: 20 Yes at 35c on 40, the market not settled at NOW_C15 (the step: 10 contracts, no $ yet)
+        _x15("2026-11-15T11:14:45Z", "KXDOGE15M-26NOV150615-15", "yes", 40.0, 20.0, 0.35, limit_sent=0.37),
+        # a 1.5x leg that did not fill is no fire
+        _x15("2026-11-15T11:14:46Z", "KXHYPE15M-26NOV150615-15", "yes", 40.0, 0.0, 0.35, status=None, limit_sent=0.37),
+    ]
+    return recs
+
+
+def _write(d, name, recs, compact=False):
+    p = os.path.join(d, name)
+    with open(p, "w", encoding="utf-8") as fh:
+        for r in recs:
+            fh.write((json.dumps(r, separators=(",", ":")) if compact else json.dumps(r)) + "\n")
+    return p
+
+
+def test_c_step_oddsmult15():
+    d = tempfile.mkdtemp(prefix="fixes-test-")
+    p = _write(d, "pinrun-live-20261115T100000Z.jsonl", run_c15([]))
+    rep = _report([p], now=NOW_C15)
+    C = rep["C"]
+    ck(C["engaged"] == 6 and C["open"] == 1 and C["net_usd"] == 45.42,
+       "C keeps its total over every filled extra leg (1.5x and 1.25x): 27.41 + 6.85 - 10.56 + 14.73 + 6.99 = 45.42, "
+       "DOGE open: %s" % {x: C[x] for x in ("engaged", "open", "net_usd")})
+    ck(C["extra"] == ["of which the 1.25x->1.5x step: +$14.13 on 3 fires, 2 priced at the limit, a conservative bound (55 "
+                      "contracts over the 1.25x share: 2 flips it paid on, 1 won bet it cost) \u00b7 1 filled no more than "
+                      "1.25x would have \u00b7 1 open"],
+       "C's step line: 13.09 - 5.81 + 6.85 = +14.13 on ZEC, SOL (at their limits: no per-fill prices) and BNB (its "
+       "dearest listed fills); XRP no step, DOGE open, ETH (1.25x) and the unfilled HYPE leg not in it: %s" % C["extra"])
+    ck(C["what"] == "1.50x extra contracts of the hedge side when pin's odds line fires with 11+ s left",
+       "C's what reads the new multiple off the start record: %s" % C["what"])
+    w = {e["coin"]: e["words"] for e in C["events"]}
+    ck(w["ZEC"] == ("it bought 40 EXTRA Yes at about 30.0c (1.50x the position at the odds line) with 15 s left: MADE "
+                    "$27.41; the 1.25x->1.5x step: 20 of those contracts, +$13.09 at the limit"),
+       "C's 1.5x event names its step, priced at the limit: %s" % w["ZEC"])
+    ck(w["BNB"].endswith("; the 1.25x->1.5x step: 10 of those contracts, +$6.85")
+       and w["SOL"].endswith("; the 1.25x->1.5x step: 25 of those contracts, -$5.81 at the limit")
+       and w["XRP"].endswith("; the 1.25x->1.5x step: none (it filled no more than 1.25x would have)")
+       and w["DOGE"].endswith("not settled yet; the 1.25x->1.5x step: 10 of those contracts")
+       and "step" not in w["ETH"], "the step on each 1.5x event, none on the 1.25x one: %s" % w)
+    # the step is never priced better than reality: each settled step reads no more than at the leg's average price
+    # (where the old code priced it: +13.70 - 5.28 + 6.85 = +15.27), on a flip and on a won bet alike
+    won = {"KXZEC15M-26NOV150515-15": True, "KXSOL15M-26NOV150530-30": False, "KXBNB15M-26NOV150545-45": True}
+    legs = [r for r in run_c15([]) if r.get("kind") == "hedge_extra" and r["ticker"] in won and F.c_is_step(r)]
+    ck(len(legs) == 3 and all(F._rw.value(F.c_step_fills(r, F.c_step_n(r)), won[r["ticker"]])
+                              < F._rw.value([(F.c_step_n(r), r["price"])], won[r["ticker"]]) for r in legs),
+       "each settled step reads under its average-price figure (the dearest fills, else the limit)")
+    # the helpers: the position, the step, the dearest fills, else the limit, else nothing
+    x = run_c15([])[7]
+    ck(F.c_position(x) == 40.0 and F.c_step_n(x) == 10.0 and F.c_step_fills(x, 10.0) == [(10.0, 0.30)]
+       and F.c_step_priced(x, 10.0) == ([(10.0, 0.30)], "fills")
+       and F.c_step_priced(dict(x, fills=None), 10.0) == ([(10.0, 0.32)], "limit")
+       and F.c_step_fills(dict(x, fills=None), 10.0) == [(10.0, 0.32)]
+       and F.c_step_priced(dict(x, fills=[[4.0, 0.31]]), 10.0) == ([(4.0, 0.31), (6.0, 0.32)], "limit")
+       and F.c_step_priced(dict(x, fills=None, limit_sent=None), 10.0) == ([], None)
+       and F.c_step_priced(dict(x, fills=None, limit_sent=0.20), 10.0) == ([(10.0, 0.25)], "limit")
+       and F.c_step_limit({"limit_sent": 0.2, "price": 0.25}) == 0.25 and F.c_step_limit({"limit_sent": 0.0}) is None
+       and F.c_step_fills(dict(x, fills=[{"count": 4, "price": 0.31}, {"n": 16, "p": 0.24}]), 10.0) == [(4.0, 0.31), (6.0, 0.24)]
+       and F.c_position({"mult": 1.5, "extra_of": 30.0}) == 60.0 and F.c_position({"base_n": 8.0}) == 8.0
+       and F.c_step_n({"n": 12.0, "orig_n": 60.0}) == 0.0 and F.c_is_step({"mult": 1.5}) and not F.c_is_step({"mult": 1.25}),
+       "c_position (orig_n, else extra_of / (mult - 1), else base_n), c_step_n, c_step_priced (dearest listed fills "
+       "first, the rest at the limit -- never under the average --, else not priced), c_is_step")
+    # a 1.5x leg with no fills list and no limit is NOT priced: said on the line and on its event, never read as $0
+    recs = run_c15([])
+    recs[1] = {k_: v_ for k_, v_ in recs[1].items() if k_ != "limit_sent"}                  # ZEC
+    pU = _write(d, "pinrun-live-20261115T100000Z.jsonl", recs)
+    CU = _report([pU], now=NOW_C15)["C"]
+    wU = {e["coin"]: e["words"] for e in CU["events"]}
+    ck(CU["extra"] == ["of which the 1.25x->1.5x step: +$1.04 on 2 fires, 1 priced at the limit, a conservative bound, "
+                       "1 more NOT PRICED (no fills or limit on the record) (35 contracts over the 1.25x share: 1 flip it "
+                       "paid on, 1 won bet it cost) \u00b7 1 filled no more than 1.25x would have \u00b7 1 open"]
+       and wU["ZEC"].endswith("; the 1.25x->1.5x step: 20 of those contracts, NOT PRICED (no fills or limit on the record)")
+       and CU["net_usd"] == C["net_usd"],
+       "an unpriced step leg is said, not counted as $0 (C's own total unchanged): %s | %s" % (CU["extra"], wU["ZEC"]))
+    # live with nothing filled yet: the line says so
+    p2 = _write(d, "pinrun-live-20261115T100000Z.jsonl", run_c15([])[:1])
+    C2 = _report([p2], now=NOW_C15)["C"]
+    ck(C2["extra"] == ["of which the 1.25x->1.5x step: none yet (no 1.5x extra leg has filled since Nov 15 5:00 AM ET)"],
+       "C's step before any 1.5x leg fills: %s" % C2["extra"])
+    T = F.totals(list(rep.values()))
+    ck(T["net_usd"] == round(sum(c["net_usd"] for k, c in rep.items() if k != "J"), 2),
+       "the step is inside C's total, never added again: %s" % T)
+
+
+# ---- v-ladder-rail100 (2026-11-14): O, the ladder's bids the old 82% rail would have refused ------------------------
+NOW_O = 1794744000.0               # 2026-11-15T12:00:00Z = 7:00 AM ET (the 6:45 AM ladder market: 15 min past its close)
+O_ARGV82 = ["--subaccount", "1", "--live", "--auto-size", "--market-cap-x", "2", "--levels", "0", "--coins",
+            "KXNEAR15M,KXZEC15M,KXDOGE15M,KXHYPE15M,KXXRP15M", "--fit", "--commit-frac", "0.82", "--big-coins-above",
+            "7000", "--minutes", "10080"]
+O_ARGV100 = ["--subaccount", "1", "--live", "--auto-size", "--market-cap-x", "2", "--levels", "0", "--coins",
+             "KXNEAR15M,KXZEC15M,KXDOGE15M,KXHYPE15M,KXXRP15M", "--pot-per-contract", "5.9756", "--commit-frac", "1.0",
+             "--minutes", "10080"]
+
+
+def _ev(ev, t, **kw):
+    r = {"t": t, "ev": ev}
+    r.update(kw)
+    return r
+
+
+def _lad_start(t, argv, frac, pot=1338.6325):
+    return _ev("start", t, pid=4232, subaccount=1, live=True, sub_balance=pot, auto_size=True, pot=pot,
+               auto={"pot_per_contract": 5.9756 if frac >= 1.0 else 14.0, "commit_frac": frac}, argv=argv,
+               old_limit=round(0.82 * pot, 2), rails={"size": 224, "max_commit": round(frac * pot, 2)})
+
+
+def _old_code_start(t, pot=1338.6325):
+    """A start record of the ladder code BEFORE v-ladder-rail100 tracking, run on the 100% argv: auto.commit_frac 1.0 but
+    no argv and no old_limit (that code wrote neither, and never marks a bid over_82)."""
+    return _ev("start", t, pid=5150, subaccount=1, live=True, sub_balance=pot, auto_size=True, pot=pot,
+               auto={"pot_per_contract": 5.9756, "commit_frac": 1.0}, rails={"size": 224, "max_commit": round(pot, 2)})
+
+
+def _placed(t, tk, pid, side, over):
+    return _ev("placed", t, body={"ticker": tk, "side": "bid" if side == "yes" else "ask", "count": "224.00",
+                                  "price": "0.9800" if side == "yes" else "0.0200", "post_only": True,
+                                  "client_order_id": "lad-%d" % pid, "subaccount": 1, "exchange_index": 2},
+               order_id="k-%d" % pid, resp="{}", over_82=over, old_limit=1097.68)
+
+
+def _fill(t, tk, pid, side, delta, filled, over):
+    return _ev("live_fill", t, ticker=tk, paper_id=pid, kid="k-%d" % pid, side=side, px="0.9800", delta=delta,
+               filled=filled, over_82=over)
+
+
+def _settle(t, tk, side, result, n):
+    cost = round(0.98 * n, 4)
+    return _ev("live_settle", t, ticker=tk, result=result, side=side, n=n, cost=cost,
+               pnl=round((n - cost) if side == result else -cost, 4), day_pnl=0.0)
+
+
+def run_o(recs, with_rail100=True):
+    """The ladder's order log: a day on the 82% rail, then (with_rail100) the restart on --commit-frac 1.0 at 4:50 AM
+    ET 11-15. Each market's money is its live_settle pnl (no fee: the ladder's bids are post_only makers); an over-82
+    bid's share is pnl x its contracts / the market's."""
+    NEAR, ZEC = "KXNEAR15M-26NOV150500-00", "KXZEC15M-26NOV150515-15"
+    DOGE, HYPE, XRP = "KXDOGE15M-26NOV150530-30", "KXHYPE15M-26NOV150645-45", "KXXRP15M-26NOV150515-15"
+    recs += [
+        _lad_start("2026-11-14T10:00:14.128Z", O_ARGV82, 0.82),
+        # the 82% days: a fill and its settle before the restart count for nothing
+        _placed("2026-11-14T13:59:31.000Z", "KXZEC15M-26NOV140900-00", 339, "no", False),
+        _fill("2026-11-14T13:59:49.326Z", "KXZEC15M-26NOV140900-00", 339, "no", 224, 224, False),
+        _settle("2026-11-14T14:00:23.357Z", "KXZEC15M-26NOV140900-00", "no", "no", 224),
+    ]
+    if not with_rail100:
+        return recs
+    recs += [
+        _lad_start("2026-11-15T09:50:00.000Z", O_ARGV100, 1.0),
+        # NEAR 5:00 AM: its first bid fills 224 (an old-world bid), the re-bid is the 6th of the close (over 82%) and
+        # fills 224 too; the market WON: pnl 448 - 439.04 = +8.96, the over-82 share 224 / 448 = +4.48
+        _placed("2026-11-15T09:59:31.000Z", NEAR, 1001, "yes", False),
+        _fill("2026-11-15T09:59:40.000Z", NEAR, 1001, "yes", 224, 224, False),
+        _placed("2026-11-15T09:59:42.000Z", NEAR, 1002, "yes", True),
+        _fill("2026-11-15T09:59:50.000Z", NEAR, 1002, "yes", 224, 224, True),
+        _settle("2026-11-15T10:00:30.000Z", NEAR, "yes", "yes", 448),
+        # ZEC 5:15 AM: the same shape, and the market LOST: -439.04, the over-82 share -219.52; XRP's over-82 bid in the
+        # same close never filled (placed, no money)
+        _placed("2026-11-15T10:14:31.000Z", ZEC, 1011, "no", False),
+        _fill("2026-11-15T10:14:40.000Z", ZEC, 1011, "no", 224, 224, False),
+        _placed("2026-11-15T10:14:42.000Z", ZEC, 1012, "no", True),
+        _fill("2026-11-15T10:14:50.000Z", ZEC, 1012, "no", 224, 224, True),
+        _placed("2026-11-15T10:14:52.000Z", XRP, 1013, "yes", True),
+        _settle("2026-11-15T10:15:30.000Z", ZEC, "no", "yes", 448),
+        # DOGE 5:30 AM: the old-world bid 124 of 224 filled, the over-82 re-bid 100 (two fills: 60 then 40); WON: pnl
+        # 224 - 219.52 = +4.48, the over-82 share 100 / 224 = +2.00
+        _placed("2026-11-15T10:29:31.000Z", DOGE, 1021, "yes", False),
+        _fill("2026-11-15T10:29:40.000Z", DOGE, 1021, "yes", 124, 124, False),
+        _placed("2026-11-15T10:29:42.000Z", DOGE, 1022, "yes", True),
+        _fill("2026-11-15T10:29:50.000Z", DOGE, 1022, "yes", 60, 60, True),
+        _fill("2026-11-15T10:29:52.000Z", DOGE, 1022, "yes", 40, 100, True),
+        _settle("2026-11-15T10:30:30.000Z", DOGE, "yes", "yes", 224),
+        # HYPE 6:45 AM: an over-82 bid filled 50, the market not settled at NOW_O: open
+        _placed("2026-11-15T11:44:42.000Z", HYPE, 1031, "no", True),
+        _fill("2026-11-15T11:44:50.000Z", HYPE, 1031, "no", 50, 50, True),
+    ]
+    return recs
+
+
+def test_o_ladder_rail100():
+    d = tempfile.mkdtemp(prefix="fixes-test-")
+    ps = write_logs(d)
+    pl = _write(d, "ladder-live-orders.jsonl", run_o([]), compact=True)   # ladder_live's own (compact) JSON
+    rep = _report(ps + [pl], now=NOW_O)
+    ck("".join(sorted(rep)) == F.IDS + F.LADDER_IDS, "a ladder order log adds the O row after A..N: %s" % sorted(rep))
+    O = rep["O"]
+    ck(O["name"] == "ladder cash limit 100%" and O["since"] == "Nov 15 4:50 AM ET" and O["not_live"] is None,
+       "O since the first ladder start whose argv has --commit-frac 1.0 (not the 0.82 one): %s" % O["since"])
+    ck(O["engaged"] == 4 and O["open"] == 1 and O["net_usd"] == -213.04,
+       "O: 4 over-82 bids filled (1 open): +4.48 - 219.52 + 2.00 = -213.04: %s" % {x: O[x] for x in ("engaged", "open", "net_usd")})
+    ck(O["extra"] == ["the bids the old 82% limit would have refused: -$213.04 on 3 bids (2 won, 1 lost) since Nov 15 "
+                      "4:50 AM ET \u00b7 1 open",
+                      "5 bids placed past the old limit, 4 filled (548 contracts settled); a bid that never filled cost nothing"],
+       "O's plain line and the placed / filled line: %s" % O["extra"])
+    w = {e["coin"]: e for e in O["events"]}
+    ck(w["NEAR"]["usd"] == 4.48 and w["NEAR"]["words"] == (
+        "a bid the old 82% limit would have refused: 224 Yes at 98.0c filled (224 of the 448 contracts the market filled: "
+        "that share of its +$8.96); it won, so it made $4.48") and w["NEAR"]["et"] == "Nov 15 4:59 AM ET",
+       "O won: half of the market's +8.96: %s" % w["NEAR"])
+    ck(w["ZEC"]["usd"] == -219.52 and "it LOST, so it cost $219.52" in w["ZEC"]["words"], "O lost: %s" % w["ZEC"])
+    ck(w["DOGE"]["usd"] == 2.0 and "100 Yes at 98.0c filled (100 of the 224 contracts the market filled" in w["DOGE"]["words"],
+       "O's share: two fills of one bid make one event, 100 / 224 of +4.48 = +2.00: %s" % w["DOGE"])
+    ck(w["HYPE"]["usd"] is None and w["HYPE"]["open"] and w["HYPE"]["words"].endswith("; not settled yet")
+       and "XRP" not in w, "O open until its market settles; the unfilled XRP bid is no event: %s" % w["HYPE"])
+    ck(O["what"].startswith("the ladder may rest bids up to 100% of its pot (was 82%"), "O what: %s" % O["what"])
+    T = F.totals(list(rep.values()))
+    ck(T["engaged"] == 19 and T["open"] == 3
+       and T["net_usd"] == round(sum(c["net_usd"] for k, c in rep.items() if k != "J"), 2),
+       "totals take O in (15 + 4 engagements; the ladder's real money): %s" % T)
+    for e in O["events"]:
+        ck("\u2014" not in e["words"], "no em dash in O's words")
+    # the log grows: only the new bytes are read (the scan is kept), and a new settled over-82 bid moves the line
+    F._CACHE.clear()
+    F.report(paths=[pl], now=NOW_O)
+    sc = F._CACHE[("ladder", pl)]
+    pos = sc.pos
+    with open(pl, "a", encoding="utf-8") as fh:
+        for r in (_settle("2026-11-15T11:45:30.000Z", "KXHYPE15M-26NOV150645-45", "no", "no", 50),):
+            fh.write(json.dumps(r, separators=(",", ":")) + "\n")
+        fh.write('{"t":"2026-11-15T11:46:00.000Z","ev":"live_fi')          # a line still being written: waits
+    O2 = _by_id(F.report(paths=[pl], now=NOW_O))["O"]
+    ck(F._CACHE[("ladder", pl)] is sc and sc.pos > pos and O2["open"] == 0 and O2["net_usd"] == -212.04
+       and O2["extra"][0] == "the bids the old 82% limit would have refused: -$212.04 on 4 bids (3 won, 1 lost) since "
+                             "Nov 15 4:50 AM ET",
+       "O reads only what the log grew by: HYPE settles +1.00 (50 - 49.00) -> -212.04 on 4 bids: %s" % O2["extra"])
+    # rewritten shorter (another log in its place): read afresh
+    _write(d, "ladder-live-orders.jsonl", run_o([], with_rail100=False), compact=True)
+    O3 = _by_id(F.report(paths=[pl], now=NOW_O))["O"]
+    ck(O3["since"] is None and O3["engaged"] == 0 and O3["not_live"] == F.O_NOT_LIVE and "not live yet" in O3["not_live"],
+       "O before the restart on --commit-frac 1.0 (only the 0.82 start): not live, its own words: %s" % O3["not_live"])
+
+
+def test_o_none_yet_and_helpers():
+    d = tempfile.mkdtemp(prefix="fixes-test-")
+    pl = _write(d, "ladder-live-orders.jsonl", run_o([], with_rail100=False) + [_lad_start("2026-11-15T09:50:00.000Z",
+                                                                                           O_ARGV100, 1.0)])
+    O = _report([pl], now=NOW_O)["O"]
+    ck(O["since"] == "Nov 15 4:50 AM ET" and O["engaged"] == 0 and O["net_usd"] == 0.0
+       and O["extra"] == ["the bids the old 82% limit would have refused: none yet since Nov 15 4:50 AM ET"],
+       "O live with no over-82 bid yet reads 'none yet': %s" % O["extra"])
+    ck(F.o_rail100({"argv": ["--commit-frac", "1.0"]}) and F.o_rail100({"argv": ["--commit-frac=1"]})
+       and not F.o_rail100({"argv": ["--commit-frac", "0.82"], "auto": {"commit_frac": 1.0}})
+       and F.o_rail100({"auto": {"commit_frac": 1.0}}) and not F.o_rail100({"auto": {"commit_frac": 0.82}})
+       and not F.o_rail100({"argv": ["--fit"]}) and not F.o_rail100(None),
+       "o_rail100: the argv's --commit-frac first, else the auto block's commit_frac")
+    ck(F.is_ladder_log(r"C:\x\ladder-live-orders.jsonl") and not F.is_ladder_log(r"C:\x\ladder-live.jsonl")
+       and not F.is_ladder_log(r"C:\x\pinrun-live-20261115T100000Z.jsonl"), "is_ladder_log")
+    ck(F.o_tracked(_lad_start("2026-11-15T09:50:00.000Z", O_ARGV100, 1.0))
+       and F.o_tracked({"argv": [], "old_limit": None}) and not F.o_tracked(_old_code_start("2026-11-15T09:50:00.000Z"))
+       and not F.o_tracked({"argv": O_ARGV100}) and not F.o_tracked(None),
+       "o_tracked: the marking code's start record carries argv and old_limit; the older code's carries neither")
+    with _kit.sandbox() as td:
+        write_logs(td)
+        ck("O" not in _report(), "no ladder log in RESULTS: no O row")
+        _write(td, "ladder-live-orders.jsonl", run_o([]), compact=True)
+        rep = _report(now=NOW_O)
+        ck(rep["O"]["net_usd"] == -213.04 and rep["A"]["net_usd"] == 35.61,
+           "report() reads RESULTS' ladder-live-orders.jsonl for O next to pin's logs: %s" % rep["O"]["net_usd"])
+
+
+def test_o_untracked_is_a_problem():
+    """The 100% argv started on the OLDER ladder code (auto.commit_frac 1.0, no argv / old_limit: it never marks a bid):
+    O must not read 'none yet' forever -- it says ON THE 100% RAIL BUT NOT TRACKED as its problem, counted by totals();
+    once the marking code starts, the problem goes and the untracked hours stay said under the net."""
+    d = tempfile.mkdtemp(prefix="fixes-test-")
+    base = run_o([], with_rail100=False) + [_old_code_start("2026-11-15T09:50:00.000Z"),
+                                            # the old code's records: placed / live_fill with no over_82 at all
+                                            _ev("placed", "2026-11-15T09:59:31.000Z", order_id="k-2001", resp="{}",
+                                                body={"ticker": "KXNEAR15M-26NOV150500-00", "count": "224.00"}),
+                                            _ev("live_fill", "2026-11-15T09:59:40.000Z", ticker="KXNEAR15M-26NOV150500-00",
+                                                paper_id=2001, kid="k-2001", side="yes", px="0.9800", delta=224,
+                                                filled=224)]
+    pl = _write(d, "ladder-live-orders.jsonl", base, compact=True)
+    F._CACHE.clear()
+    rep = _report([pl], now=NOW_O)
+    O = rep["O"]
+    ck(O["since"] == "Nov 15 4:50 AM ET" and O["problem"] == F.O_UNTRACKED
+       and O["problem"] == "ON THE 100% RAIL BUT NOT TRACKED (the ladder code that marks the bids is not running)"
+       and O["engaged"] == 0,
+       "O on the 100%% rail without the marking code: live since its start, and its PROBLEM says so: %s"
+       % {k: O[k] for k in ("since", "problem", "engaged")})
+    ck(O["extra"] == ["ON THE 100% RAIL BUT NOT TRACKED (the ladder code that marks the bids is not running) since Nov 15 "
+                      "4:50 AM ET: no bid past the old limit is marked, so none can be counted",
+                      "the bids the old 82% limit would have refused: none marked yet since Nov 15 4:50 AM ET"],
+       "O's lines lead with the problem; never a quiet 'none yet': %s" % O["extra"])
+    T = F.totals(list(rep.values()))
+    ck(T["problems"] == ["O"] and all(c["problem"] is None for k, c in rep.items() if k != "O"),
+       "totals() counts O's problem (and only it): %s" % T["problems"])
+    # the marking code starts (the deploy): the problem goes; the untracked half hour stays said under the net
+    pl2 = _write(d, "ladder-live-orders.jsonl", base + [_lad_start("2026-11-15T10:20:00.000Z", O_ARGV100, 1.0)],
+                 compact=True)
+    F._CACHE.clear()
+    rep2 = _report([pl2], now=NOW_O)
+    O2 = rep2["O"]
+    ck(O2["problem"] is None and F.totals(list(rep2.values()))["problems"] == []
+       and O2["extra"] == ["NOT TRACKED Nov 15 4:50 AM ET to Nov 15 5:20 AM ET (the 100% rail on ladder code that does not "
+                           "mark the bids): the bids past the old limit then are not in this row",
+                           "the bids the old 82% limit would have refused: none marked yet since Nov 15 4:50 AM ET"],
+       "the marking code running: no problem; the untracked window is still said: %s" % O2["extra"])
+    # the tracked days (run_o's own 100% start) are no problem at all, and the 0.82 start before never was one
+    ck(_report([_write(d, "ladder-live-orders.jsonl", run_o([]), compact=True)], now=NOW_O)["O"]["problem"] is None,
+       "a tracked 100% start: no problem")
+    # back on the old code later (a revert of ladder_live.py with the 100% argv kept): the problem comes back
+    pl3 = _write(d, "ladder-live-orders.jsonl", run_o([]) + [_old_code_start("2026-11-15T11:50:00.000Z")], compact=True)
+    F._CACHE.clear()
+    O3 = _report([pl3], now=NOW_O)["O"]
+    ck(O3["problem"] == F.O_UNTRACKED and O3["net_usd"] == -213.04 and O3["engaged"] == 4
+       and O3["extra"][0].startswith("ON THE 100% RAIL BUT NOT TRACKED") and "since Nov 15 6:50 AM ET" in O3["extra"][0],
+       "the latest start untracked again: the problem is back, the tracked bids before it keep their money: %s"
+       % O3["extra"][:1])
 
 
 if __name__ == "__main__":

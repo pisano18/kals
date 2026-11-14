@@ -209,6 +209,44 @@ def test_m_third_bet_block():
         paths.set_results(old)
 
 
+def test_o_untracked_problem_on_top_and_in_its_block():
+    """v-ladder-rail100 tracking (11-14): the ladder on its 100% rail under the OLDER code (start record: commit_frac 1.0,
+    no argv / old_limit; it never marks a bid) -- O says ON THE 100% RAIL BUT NOT TRACKED in its block (before 'not
+    engaged yet', so it is never hidden) and the page counts it on a top line; at every shrink step both stay. A tracked
+    ladder (the marking code's start record) has no problem line anywhere."""
+    old, td = _world()
+    try:
+        with open(os.path.join(td, "ladder-live-orders.jsonl"), "w", encoding="utf-8") as fh:
+            for r in TF.run_o([], with_rail100=False) + [TF._old_code_start("2026-11-15T09:50:00.000Z")]:
+                fh.write(json.dumps(r, separators=(",", ":")) + "\n")
+        F._CACHE.clear()
+        s = str(_run(now=TF.NOW_O))
+        assert len(s) <= MAX_LEN, len(s)
+        top = ("⚠️ <b>1 PROBLEM</b>: O ladder cash limit 100%: ON THE 100% RAIL BUT NOT TRACKED (the ladder code that marks "
+               "the bids is not running)")
+        assert s.split("\n")[2] == top, s[:600]
+        blk = s.split("<b>O ladder cash limit 100%</b>")[1].split("\n\n")[0]
+        assert ("\n⚠️ <b>ON THE 100% RAIL BUT NOT TRACKED (the ladder code that marks the bids is not running)</b>\n"
+                "since Nov 15 4:50 AM ET\nnot engaged yet") in blk, blk
+        T = F.totals(F.report(now=TF.NOW_O))
+        last = s.rstrip().split("\n")[-1]
+        assert T["problems"] == ["O"] and "<b>All changes: net" in last and ("engaged %d times" % T["engaged"]) in last, last
+        O = next(c for c in F.report(now=TF.NOW_O) if c["id"] == "O")
+        warn = FC.PROBLEM % F.O_UNTRACKED
+        for step in FC.PLAN:                                   # never cut, whatever step the page lands on
+            b = FC.block(O, BANK, *step)
+            assert warn in b and b.index(warn) < b.index("not engaged yet"), (step, b)
+        # the marking code starts: no problem line anywhere
+        with open(os.path.join(td, "ladder-live-orders.jsonl"), "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(TF._lad_start("2026-11-15T10:20:00.000Z", TF.O_ARGV100, 1.0), separators=(",", ":")) + "\n")
+        F._CACHE.clear()
+        s2 = str(_run(now=TF.NOW_O))
+        assert "⚠️" not in s2 and "PROBLEM" not in s2 and F.totals(F.report(now=TF.NOW_O))["problems"] == [], s2[:600]
+        assert FC.problems_line(F.report(now=TF.NOW_O)) is None
+    finally:
+        paths.set_results(old)
+
+
 def test_before_the_new_build_and_empty_folder():
     old, td = _world()
     try:

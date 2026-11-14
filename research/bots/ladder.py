@@ -132,6 +132,12 @@ BOT = Bot(
     script="ladder_live.py", is_live=live_flag("--live"), stop_file="ladder-live.stop",
     logs=Logs(path="ladder-live-orders.jsonl"),
     records=Records(fills=("live_fill",), fill_qty="delta", halts=("day_stop",),
+                    # v-ladder-dayreset (2026-11-13; lifted here 2026-11-14): its day stop now ends at midnight ET by
+                    # itself (ladder_live.Broker.day_turn writes 'day_stop_reset' on the first tick of the next ET day),
+                    # so that record lifts the halt as 'resume' does -- else /ladder and /bots said HALTED until the
+                    # next restart. halt_lifts and not halt_lifts_next_day: running() reads h.get("kind") for the
+                    # next-day rule and the ladder's records name themselves by "ev"; halt_lifts reads either.
+                    halt_lifts=("resume", "day_stop_reset"),
                     # v-tg-settings-now: it resizes its rails from its pot by itself (ladder_live AutoSize)
                     resize=("rescale",), resize_as_start=lambda r: {"rails": r.get("rails"), "pot": r.get("pot")}),
     settings=settings,

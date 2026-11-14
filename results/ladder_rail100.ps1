@@ -24,7 +24,10 @@
 #   (-Repo <dir> exists ONLY to rehearse on a scratch copy of the repo; the default is C:\kals-repo.)
 # STEPS (boot_all.ps1 is not written before step 4; a failure in step 4 restores it from the backup):
 #   1. refuse unless: results\VERSIONS.md has the v-ladder-rail100 entry (the commit is pulled); ladder_live.py has the
-#      --pot-per-contract and --commit-frac options; boot_all.ps1 has the old argv text exactly once, ON the ladder line;
+#      --pot-per-contract and --commit-frac options AND the rail100 tracking code (over_82 / old_limit / exposure_82 /
+#      replaced_ids / waits_for, the start record's argv and old_limit: every bid the old 82% limit would have refused is
+#      marked, so /fixes change O can price the change -- never the 100% limit untracked); boot_all.ps1 has the old argv
+#      text exactly once, ON the ladder line;
 #      that line is exactly the expected one (every other flag as the self-test in step 2 runs it), a whole CRLF line,
 #      directly under the ladder_live (LIVE, subaccount 1) keep-alive entry; boot_all.ps1 has no "--pot-per-contract" and
 #      no v-ladder-rail100 text yet (already applied = refused, nothing changed).
@@ -114,6 +117,13 @@ try {
   foreach ($opt in @('"--pot-per-contract"', '"--commit-frac"', '"--big-coins-above needs --fit"')) {
     if (-not $code.Contains($opt)) { Done 1 "REFUSED: research\cleanroom\ladder_live.py does not carry $opt (not the expected code); nothing changed" }
   }
+  # the rail100 TRACKING code (operator 11-14: each change tracked against "if it never was implemented"): the cash limit
+  # goes to 100% only under the ladder code that marks every bid the old 82% limit would have refused (over_82 on its
+  # placed / live_fill records, old_limit + argv on its start record, a moved re-bid judged as the old rail placed it);
+  # under older code /fixes change O could never count the change
+  foreach ($tok in @('def old_limit(', 'def exposure_82(', 'def over_82(', 'def replaced_ids(', '"over_82": o82', '"waits_for": waits', 'over_82=bool(v.get("over_82"))', 'old_limit=old_limit()', 'argv=list(sys.argv[1:])')) {
+    if (-not $code.Contains($tok)) { Done 1 ("REFUSED: research\cleanroom\ladder_live.py does not carry the rail100 tracking code (no {0}): it would not mark the bids the old 82% limit would have refused, so the 100% cash limit could not be tracked; nothing changed" -f $tok) }
+  }
   $orig = Sha64 $f
   $bytes = [IO.File]::ReadAllBytes($f)
   $t = $latin1.GetString($bytes)
@@ -133,7 +143,7 @@ try {
   if ($after.StartsWith("`r`n")) { $nl = "`r`n" } elseif ($after.StartsWith("`n")) { $nl = "`n" } else { Done 1 "REFUSED: the ladder line does not end at a line end; nothing changed" }
   $prevLine = ($before.TrimEnd([char[]]"`r`n") -split "`n")[-1].TrimEnd([char]13)
   if ($prevLine -ne $entryHead) { Done 1 ("REFUSED: the line above the ladder argv is not the ladder_live (LIVE, subaccount 1) keep-alive entry (it is: {0}); nothing changed" -f $prevLine.Trim()) }
-  Say ("preconditions ok: VERSIONS.md has v-ladder-rail100; ladder_live.py has --pot-per-contract / --commit-frac; boot_all.ps1 (sha256 {0}, {1} bytes, BOM {2}, line end {3}) carries the old argv once, on the expected ladder line under the ladder_live entry" -f $orig.Substring(0, 12), $bytes.Length, $bom, $(if ($nl -eq "`r`n") { 'CRLF' } else { 'LF' }))
+  Say ("preconditions ok: VERSIONS.md has v-ladder-rail100; ladder_live.py has --pot-per-contract / --commit-frac and the rail100 tracking code; boot_all.ps1 (sha256 {0}, {1} bytes, BOM {2}, line end {3}) carries the old argv once, on the expected ladder line under the ladder_live entry" -f $orig.Substring(0, 12), $bytes.Length, $bom, $(if ($nl -eq "`r`n") { 'CRLF' } else { 'LF' }))
 } catch { Done 1 ("REFUSED: error in the checks: " + $_.Exception.Message + "; nothing changed") }
 
 # ---- 2. the ladder's self-test with the old and the new sizing argv

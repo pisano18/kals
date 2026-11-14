@@ -6,6 +6,10 @@ v-fixes (2026-11-04; the operator: "track them thoroughly and have a telegram co
 times any of them have been engaged and the positive or negative overall result of it"). The numbers are
 botdata.fixes.report (pin's own logs, pinrules_watch's scorers for rules A, B, C); nothing here reads Kalshi. The bank
 for the % is the ledger's bank now (pindesk.Ledger.bank_at), else the pin bot's own pinrun-live-size.json.
+
+v-ladder-rail100 tracking (2026-11-14): a change that says a problem (botdata.fixes: change["problem"] -- O while the
+ladder runs its 100% rail on code that does not mark the bids, so O could only ever read 'none yet') gets a ⚠️ line in
+its own block (before 'not engaged yet', never cut) and is counted on a ⚠️ line at the top of the page.
 """
 from botdata import fixes as _fixes
 from botdata import paths as _paths
@@ -18,6 +22,19 @@ HEAD = "🔧 <b>Pin changes</b> (every live change: times engaged, net $ so far)
 NOTE = ("engaged = the change did something pin would not have done before · net = what that made or saved (+) or "
         "cost or gave up (-), fee in, on markets that have settled · open = engaged, the market not settled yet · "
         "the total leaves J out (a J leg is already counted in C)")
+# a change that cannot be tracked as it runs (fixes: change["problem"]; O on the ladder's 100% rail without the code that
+# marks its bids): a line in its block and, counted, a line on top of the page -- both kept at every shrink step
+PROBLEM = "⚠️ <b>%s</b>"
+
+
+def problems_line(changes):
+    """The page's top line when any change says a problem: '⚠️ 1 PROBLEM: O ladder cash limit 100%: <its words>'; None
+    when none does."""
+    bad = [c for c in changes if c.get("problem")]
+    if not bad:
+        return None
+    return "⚠️ <b>%d PROBLEM%s</b>: %s" % (len(bad), "" if len(bad) == 1 else "S", "; ".join(
+        "%s %s: %s" % (esc(c["id"]), esc(c["name"]), esc(c["problem"])) for c in bad))
 
 
 def _bank(ctx):
@@ -61,6 +78,8 @@ def block(c, bank, shown, cut=None, extra_cut=None, what_cut=None):
     out = ["<b>%s %s</b>" % (esc(c["id"]), esc(c["name"]))]
     if what_cut != 0:
         out.append(esc(_cut(c["what"], what_cut)))
+    if c.get("problem"):                                  # never cut, never behind 'not engaged yet' (fixes.O_UNTRACKED)
+        out.append(PROBLEM % esc(c["problem"]))
     if not c["since"]:
         out.append(c.get("not_live") or "not live yet (comes with the new build)")   # L: its own words (fixes.L_NOT_LIVE)
         return out
@@ -106,8 +125,9 @@ def render(d, ctx):
     total = "%s <b>All changes: net %s</b>%s · engaged %d time%s%s" % (
         _mark(T["net_usd"]), esc(usd(T["net_usd"])), esc(_pct(T["net_usd"], bank)), T["engaged"],
         "" if T["engaged"] == 1 else "s", (" · %d open" % T["open"]) if T["open"] else "")
+    top = problems_line(changes)
     for shown, cut, extra_cut, what_cut in PLAN:
-        out = [HEAD, i_(NOTE)]
+        out = [HEAD, i_(NOTE)] + ([top] if top else [])
         for c in changes:
             out += [""] + block(c, bank, shown, cut, extra_cut, what_cut)
         out += ["", total]
