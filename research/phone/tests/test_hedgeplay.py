@@ -284,6 +284,64 @@ def test_alert_words():
     assert "62.5c" not in t2                         # the 10-31 bug: the market as one 'NO at 62.5c' leg
 
 
+def test_hedge_cost_rings_like_a_loss():
+    """v-tg-hedgecost-urgent (2026-11-14, ETH 11:15 PM: a $120.52 hedge cost, 3.00% of the bank, waited to 7 AM as
+    'never urgent'): in the quiet hours a hedge cost rings by the loss line ($50+ or 3%+), a small one still waits."""
+    from phone import alerts as A
+    from phone import shared as S
+    rows = {r["tk"]: r for r in _ledger_rows()}
+    hy = [rows["KXHYPE15M-26OCT310730-30"]]
+    assert A.is_hedge_cost_close(hy)
+    got = []
+
+    class Led:
+        def __init__(self, closes):
+            self.closes = closes
+
+        def refresh(self):
+            pass
+
+        def losing_closes(self):
+            return self.closes
+
+        def bank_at(self, t):
+            return 4000.0
+
+        def contracts_for(self, tk):
+            return None
+
+    class St:
+        last_state = last_rec = seen_losses = last_daily = None
+        disk_level = 0
+
+    def fake_sender(ctx, sent, st=None, now=None):
+        def send(msg, urgent=False):
+            got.append((str(msg), bool(urgent() if callable(urgent) else urgent)))
+            return True
+        return send
+    saved = A.sender
+    A.sender = fake_sender
+    try:
+        for net, want in ((-120.52, True), (-1.20, False)):
+            led = Led([])
+            ctx = type("C", (), {})()
+            ctx.chat_id, ctx.ledger, ctx.pp = 7, led, S
+            ctx.health = lambda: {"pid": 1, "alive": True, "flag": None, "quiet_s": 5, "watchdog_s": 5, "open": {},
+                                  "halt": None, "kalshi_ok": True, "feeds_ok": True, "disk_gb": 30.0}
+            ctx.now = lambda: 1793446300.0
+            ctx.state = type("R", (), {"muted": False, "monitor_on": False})()
+            st = St()
+            st.last_daily = "2099-01-01"
+            A.tick(ctx, st)                              # learns: nothing new
+            led.closes = [(1793446200, net, hy)]
+            del got[:]
+            A.tick(ctx, st)
+            hc = [g for g in got if "HEDGE COST" in g[0]]
+            assert len(hc) == 1 and hc[0][1] is want, (net, got)
+    finally:
+        A.sender = saved
+
+
 def test_funds_day_cells():
     from phone.commands.funds import read as FR
     H.set_source(lambda: RECORDS)

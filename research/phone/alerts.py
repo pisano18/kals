@@ -136,7 +136,7 @@ def alert_loss_text(ledger, close, net, legs, pp):
     L.append("")
     if hedge_only:
         L.append("<i>Not a loss: every bet here won. A hedge fired (insurance against a late flip) and was not needed; "
-                 "it cost a little more than the bet made. /hedges for every hedge and what it did.</i>")
+                 "it cost more than the bet made. /hedges for every hedge and what it did.</i>")
     else:
         L.append("<b>WHY IT HURTS:</b> <i>a win here makes 2c to 4c a contract; a loss costs most of the 96c-98c "
                  "paid. So one losing close wipes out many winning ones.</i>")
@@ -147,7 +147,9 @@ def alert_loss_text(ledger, close, net, legs, pp):
 
 def is_hedge_cost_close(legs):
     """v-hedge-split (2026-11-01): a losing close where no market lost its bet and at least one is a bet that won whose
-    hedge cost more than it made (botdata/hedgeplay.py) -- a HEDGE COST alert, not a LOSS, and never urgent."""
+    hedge cost more than it made (botdata/hedgeplay.py) -- a HEDGE COST alert, not a LOSS. v-tg-hedgecost-urgent
+    (2026-11-14): it rings by the same line as a loss ($50+ or 3%+ of the bank) -- ETH 11:15 PM Nov 14 cost $120.52,
+    3.00% of the bank, and was held to 7 AM as 'never urgent' (operator: "A hedge lost $100 I never got alerted about")."""
     return (not any(_hedgeplay.is_loss(l_, "pnl", 0.0) for l_ in legs)
             and any(_hedgeplay.is_hedge_cost(l_, "pnl", 0.0) for l_ in legs))
 
@@ -269,8 +271,8 @@ def tick(ctx, st=None, all_bots_day=None):
                                    lambda: ("HEDGE COST (the bet won) " if hedge_only else "LOSS ")
                                    + story_loss(ctx.ledger, close, net, legs))
                 # urgent: over $50, or over 3% of the bank before it (asked only while it is quiet); a hedge cost
-                # (every bet won, v-hedge-split) is never urgent
-                send(msg, urgent=False if hedge_only else (lambda close=close, net=net: _quiet.loss_is_urgent(
+                # (every bet won, v-hedge-split) by the same line: money gone is money gone (v-tg-hedgecost-urgent)
+                send(msg, urgent=(lambda close=close, net=net: _quiet.loss_is_urgent(
                     net, ctx.ledger.bank_at(close - 1) if close else None)))
     if (now - et_day_start(today)) >= DAILY_AT_S and st.last_daily != today and not run.muted:
         st.last_daily = today
