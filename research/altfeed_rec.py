@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# VERSION: 2026-11-16-a1
+# VERSION: 2026-11-16-a2
 """
 altfeed_rec.py -- zero-money recorder of the exchange prices behind the four slow indices.
 
@@ -39,8 +39,22 @@ try:
 except ImportError:                     # the self-test runs without it
     websockets = None
 
-__VERSION__ = "2026-11-16-a1"
+__VERSION__ = "2026-11-16-a2"
 COINS = ("ZEC", "BNB", "NEAR", "HYPE")
+
+
+def _ssl_ctx():
+    """certifi's roots when it is installed (a2: the server's SYSTEM account lacks the issuers of Coinbase's, Kraken's and
+    Crypto.com's certificates in the Windows store, so every connect failed CERTIFICATE_VERIFY_FAILED), else the default."""
+    import ssl
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
+
+
+SSL_CTX = _ssl_ctx()
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # exchange -> {coin: the exchange's own symbol}. Only pairs that exist on the venue are listed; a venue that lists a
@@ -325,7 +339,7 @@ def parse_cryptocom(m, tape, sym2coin, rx):
 async def run_coinbase(tape, syms, stats):
     s2c = {v: k for k, v in syms.items()}
     books = {}
-    async with websockets.connect("wss://ws-feed.exchange.coinbase.com", ping_interval=20, max_size=16 << 20) as ws:
+    async with websockets.connect("wss://ws-feed.exchange.coinbase.com", ssl=SSL_CTX, ping_interval=20, max_size=16 << 20) as ws:
         await ws.send(json.dumps({"type": "subscribe", "product_ids": list(s2c),
                                   "channels": ["level2_batch", "matches"]}))
         stats["connects"] += 1
@@ -338,7 +352,7 @@ async def run_coinbase(tape, syms, stats):
 
 async def run_kraken(tape, syms, stats):
     s2c = {v: k for k, v in syms.items()}
-    async with websockets.connect("wss://ws.kraken.com/v2", ping_interval=20, max_size=8 << 20) as ws:
+    async with websockets.connect("wss://ws.kraken.com/v2", ssl=SSL_CTX, ping_interval=20, max_size=8 << 20) as ws:
         await ws.send(json.dumps({"method": "subscribe", "params": {"channel": "ticker", "symbol": list(s2c),
                                                                     "event_trigger": "bbo"}}))
         await ws.send(json.dumps({"method": "subscribe", "params": {"channel": "trade", "symbol": list(s2c)}}))
@@ -353,7 +367,7 @@ async def run_kraken(tape, syms, stats):
 
 async def run_bitstamp(tape, syms, stats):
     s2c = {v: k for k, v in syms.items()}
-    async with websockets.connect("wss://ws.bitstamp.net", ping_interval=20, max_size=8 << 20) as ws:
+    async with websockets.connect("wss://ws.bitstamp.net", ssl=SSL_CTX, ping_interval=20, max_size=8 << 20) as ws:
         for p in s2c:
             for ch in ("order_book_", "live_trades_"):
                 await ws.send(json.dumps({"event": "bts:subscribe", "data": {"channel": ch + p}}))
@@ -368,7 +382,7 @@ async def run_bitstamp(tape, syms, stats):
 async def run_gemini_one(tape, coin, sym, stats):
     url = "wss://api.gemini.com/v1/marketdata/%s?top_of_book=true&trades=true&heartbeat=true" % sym
     state = {}
-    async with websockets.connect(url, ping_interval=20, max_size=8 << 20) as ws:
+    async with websockets.connect(url, ssl=SSL_CTX, ping_interval=20, max_size=8 << 20) as ws:
         stats["connects"] += 1
         async for raw in ws:
             parse_gemini(json.loads(raw), tape, coin, state, time.time())
@@ -376,7 +390,7 @@ async def run_gemini_one(tape, coin, sym, stats):
 
 async def run_cryptocom(tape, syms, stats):
     s2c = {v: k for k, v in syms.items()}
-    async with websockets.connect("wss://stream.crypto.com/exchange/v1/market", ping_interval=None,
+    async with websockets.connect("wss://stream.crypto.com/exchange/v1/market", ssl=SSL_CTX, ping_interval=None,
                                   max_size=8 << 20) as ws:
         await asyncio.sleep(1.0)        # the venue asks for a pause after connecting before the first request
         chans = ["book.%s.10" % s for s in s2c] + ["trade.%s" % s for s in s2c]
