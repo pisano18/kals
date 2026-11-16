@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# VERSION: 2026-11-16-a2
+# VERSION: 2026-11-16-a3
 """
 altfeed_rec.py -- zero-money recorder of the exchange prices behind the four slow indices.
 
@@ -22,7 +22,9 @@ file per exchange, hour and start: <out>\\<exchange>\\<YYYYMMDDTHH>_<start epoch
 so a killed recorder's unfinished file is never appended to; read_rows() reads one up to where it stopped). Rows:
     {"rx": 1794792571.123, "c": "ZEC", "k": "b", "b": 889.41, "bs": 3.2, "a": 889.52, "as": 1.1, "x": 1794792571.101}
     {"rx": 1794792571.130, "c": "ZEC", "k": "t", "p": 889.50, "q": 0.4, "s": "buy", "x": 1794792571.118}
-k = "b" (best bid/ask changed) or "t" (a trade). Public unauthenticated feeds only. No Kalshi call of any kind.
+k = "b" (best bid/ask changed), "t" (a trade) or "d" (the top DEPTH_N levels a side, at most once a second:
+    {"rx": ..., "c": "ZEC", "k": "d", "b": [[889.41, 3.2], ...], "a": [[889.52, 1.1], ...]}).
+Public unauthenticated feeds only. No Kalshi call of any kind.
 
 SAFETY ON THE LIVE BOX (pin trades on the same 2-core server):
   * below-normal process priority, so pin always wins the CPU;
@@ -39,7 +41,7 @@ try:
 except ImportError:                     # the self-test runs without it
     websockets = None
 
-__VERSION__ = "2026-11-16-a2"
+__VERSION__ = "2026-11-16-a3"
 COINS = ("ZEC", "BNB", "NEAR", "HYPE")
 
 
@@ -57,15 +59,21 @@ def _ssl_ctx():
 SSL_CTX = _ssl_ctx()
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# exchange -> {coin: the exchange's own symbol}. Only pairs that exist on the venue are listed; a venue that lists a
-# coin under a quote other than USD says so in its symbol. Filled from CF's constituent list for these indices.
+# exchange -> {coin: the exchange's own symbol}: exactly CF's constituents of each index (a3, 11-16):
+#   ZECUSD_RTI  Coinbase, Kraken             (CF Constituent Exchanges v10.3, 05 Oct 2026; Gemini suspended 08 Jun 2026)
+#   BNBUSD_RTI  Coinbase, Kraken             (same document)
+#   HYPEUSD_RTI Bitstamp, Coinbase, Kraken   (same document)
+#   NEARUSD_RTI Coinbase, Kraken, Crypto.com (CME CF Constituent Exchanges v13.7, 24 Aug 2026)
+# All four are calculated once a second from the venues' ORDER BOOKS (a depth-weighted mid with size caps), hence the
+# once-a-second depth rows next to the touch. Kraken's engine is in London, Coinbase's in AWS us-east-1.
 VENUES = {
-    "coinbase": {"ZEC": "ZEC-USD", "NEAR": "NEAR-USD", "BNB": "BNB-USD", "HYPE": "HYPE-USD"},
-    "kraken": {"ZEC": "ZEC/USD", "NEAR": "NEAR/USD", "BNB": "BNB/USD", "HYPE": "HYPE/USD"},
-    "bitstamp": {"NEAR": "nearusd"},
-    "gemini": {"ZEC": "ZECUSD"},
-    "cryptocom": {"ZEC": "ZEC_USD", "NEAR": "NEAR_USD", "BNB": "BNB_USD", "HYPE": "HYPE_USD"},
+    "coinbase": {"ZEC": "ZEC-USD", "BNB": "BNB-USD", "NEAR": "NEAR-USD", "HYPE": "HYPE-USD"},
+    "kraken": {"ZEC": "ZEC/USD", "BNB": "BNB/USD", "NEAR": "NEAR/USD", "HYPE": "HYPE/USD"},
+    "bitstamp": {"HYPE": "hypeusd"},
+    "cryptocom": {"NEAR": "NEAR_USD"},
 }
+DEPTH_N = 10                            # levels a side in a depth row
+DEPTH_S = 1.0                           # at most one depth row a second per (venue, coin)
 
 
 def _f(x):
@@ -154,7 +162,7 @@ class Tape:
     SIZE_ONLY_S = 0.25
 
     def __init__(self, w):
-        self.w, self.top, self.stats, self.wrote = w, {}, {}, {}
+        self.w, self.top, self.stats, self.wrote, self.wrote_d = w, {}, {}, {}, {}
 
     def _st(self, ex, coin):
         return self.stats.setdefault(ex, {}).setdefault(coin, {"book": 0, "trade": 0, "size_skipped": 0,
@@ -183,6 +191,23 @@ class Tape:
         st = self._st(ex, coin)
         st["book"] += 1
         st["last_rx"] = round(rx, 3)
+        return True
+
+    def depth(self, ex, coin, bids, asks, rx=None):
+        """The top DEPTH_N levels a side ([[price, size], ...], best first), at most once per DEPTH_S."""
+        rx = time.time() if rx is None else rx
+        key = (ex, coin)
+        if not bids or not asks or rx - self.wrote_d.get(key, -1e9) < DEPTH_S:
+            return False
+        try:
+            b = [[float(p), float(q)] for p, q, *_ in bids[:DEPTH_N]]
+            a = [[float(p), float(q)] for p, q, *_ in asks[:DEPTH_N]]
+        except (TypeError, ValueError):
+            return False
+        self.wrote_d[key] = rx
+        self.w.write(ex, {"rx": round(rx, 4), "c": coin, "k": "d", "b": b, "a": a}, rx)
+        st = self._st(ex, coin)
+        st["depth"] = st.get("depth", 0) + 1
         return True
 
     def trade(self, ex, coin, p, q, side=None, x=None, rx=None):
@@ -242,6 +267,19 @@ class L2:
         a = min(self.asks)
         return b, self.bids[b], a, self.asks[a]
 
+    def top(self, n=None):
+        n = DEPTH_N if n is None else n
+        bids = sorted(self.bids.items(), key=lambda kv: -kv[0])[:n]
+        asks = sorted(self.asks.items())[:n]
+        return [list(x) for x in bids], [list(x) for x in asks]
+
+    def truncate(self, n):
+        """Kraken's rule: after each update keep only the subscribed depth."""
+        if len(self.bids) > n:
+            self.bids = dict(sorted(self.bids.items(), key=lambda kv: -kv[0])[:n])
+        if len(self.asks) > n:
+            self.asks = dict(sorted(self.asks.items())[:n])
+
 
 # ---- venues: each parses its own messages into tape.book / tape.trade; parse_* are pure (the self-test feeds them) --
 
@@ -265,11 +303,28 @@ def parse_coinbase(m, tape, books, sym2coin, rx):
     top = books[coin].best()
     if top:
         tape.book("coinbase", coin, *top, x=iso_x(m.get("time")), rx=rx)
+        tape.depth("coinbase", coin, *books[coin].top(), rx=rx)
 
 
-def parse_kraken(m, tape, sym2coin, rx):
+def parse_kraken(m, tape, sym2coin, rx, books=None):
     ch = m.get("channel")
-    if ch == "ticker":
+    if ch == "book" and books is not None:
+        for d in m.get("data") or []:
+            coin = sym2coin.get(d.get("symbol"))
+            if not coin:
+                continue
+            b = books.setdefault(coin, L2())
+            if m.get("type") == "snapshot":
+                b.snapshot([(x.get("price"), x.get("qty")) for x in d.get("bids") or []],
+                           [(x.get("price"), x.get("qty")) for x in d.get("asks") or []])
+            else:
+                for x in d.get("bids") or []:
+                    b.change("bid", x.get("price"), x.get("qty"))
+                for x in d.get("asks") or []:
+                    b.change("ask", x.get("price"), x.get("qty"))
+                b.truncate(DEPTH_N)
+            tape.depth("kraken", coin, *b.top(), rx=rx)
+    elif ch == "ticker":
         for d in m.get("data") or []:
             coin = sym2coin.get(d.get("symbol"))
             if coin:
@@ -293,6 +348,7 @@ def parse_bitstamp(m, tape, sym2coin, rx):
             x = _f(d.get("microtimestamp"))
             tape.book("bitstamp", coin, bids[0][0], bids[0][1], asks[0][0], asks[0][1],
                       round(x / 1e6, 6) if x else None, rx)
+            tape.depth("bitstamp", coin, bids, asks, rx)
     elif ch.startswith("live_trades_"):
         coin = sym2coin.get(ch[len("live_trades_"):])
         if coin:
@@ -329,6 +385,7 @@ def parse_cryptocom(m, tape, sym2coin, rx):
                 x = _f(d.get("t"))
                 tape.book("cryptocom", coin, bids[0][0], bids[0][1], asks[0][0], asks[0][1],
                           round(x / 1e3, 3) if x else None, rx)
+                tape.depth("cryptocom", coin, bids, asks, rx)
         elif ch.startswith("trade"):
             x = _f(d.get("t"))
             tape.trade("cryptocom", coin, d.get("p"), d.get("q"), d.get("s"), round(x / 1e3, 3) if x else None, rx)
@@ -356,13 +413,16 @@ async def run_kraken(tape, syms, stats):
         await ws.send(json.dumps({"method": "subscribe", "params": {"channel": "ticker", "symbol": list(s2c),
                                                                     "event_trigger": "bbo"}}))
         await ws.send(json.dumps({"method": "subscribe", "params": {"channel": "trade", "symbol": list(s2c)}}))
+        await ws.send(json.dumps({"method": "subscribe", "params": {"channel": "book", "symbol": list(s2c),
+                                                                    "depth": DEPTH_N}}))
         stats["connects"] += 1
+        books = {}
         async for raw in ws:
             m = json.loads(raw)
             if m.get("method") == "subscribe" and m.get("success") is False:
-                stats["notes"].append("kraken refused %s" % str(m.get("error"))[:80])
+                stats["notes"] = (stats["notes"] + ["kraken refused %s" % str(m.get("error"))[:80]])[-5:]
                 continue
-            parse_kraken(m, tape, s2c, time.time())
+            parse_kraken(m, tape, s2c, time.time(), books)
 
 
 async def run_bitstamp(tape, syms, stats):
@@ -608,6 +668,25 @@ def self_test():
         tape.book("kraken", "ZEC", 889.4, 1.9, 889.6, 2, None, rx + 0.5)
         check("size-only throttle: 2 held, the price change and the late size change written",
               (tape.stats["kraken"]["ZEC"]["book"] - k0, tape.stats["kraken"]["ZEC"]["size_skipped"]), (2, 2))
+        # depth rows: Coinbase wrote one with its first book row (throttled to one a second after that)
+        check("coinbase depth rows (one a second)", tape.stats["coinbase"]["ZEC"].get("depth"), 1)
+        kb = {}
+        parse_kraken({"channel": "book", "type": "snapshot", "data": [{"symbol": "ZEC/USD",
+                      "bids": [{"price": 889.4 - i * 0.1, "qty": 1} for i in range(10)],
+                      "asks": [{"price": 889.5 + i * 0.1, "qty": 1} for i in range(10)]}]},
+                     tape, {"ZEC/USD": "ZEC"}, rx + 2.0, kb)
+        parse_kraken({"channel": "book", "type": "update", "data": [{"symbol": "ZEC/USD",
+                      "bids": [{"price": 889.45, "qty": 2}], "asks": [{"price": 889.5, "qty": 0}]}]},
+                     tape, {"ZEC/USD": "ZEC"}, rx + 3.5, kb)
+        kbids, kasks = kb["ZEC"].top()
+        check("kraken book: the new best bid in, the pulled ask out, truncated to 10",
+              (kbids[0], kasks[0][0], len(kb["ZEC"].bids), len(kb["ZEC"].asks)), ([889.45, 2.0], 889.6, 10, 9))
+        check("kraken depth rows", tape.stats["kraken"]["ZEC"].get("depth"), 2)
+        check("depth throttle", tape.depth("kraken", "ZEC", kbids, kasks, rx + 3.9), False)
+        check("constituents only", sorted((ex, c) for ex, v in VENUES.items() for c in v),
+              [("bitstamp", "HYPE"), ("coinbase", "BNB"), ("coinbase", "HYPE"), ("coinbase", "NEAR"),
+               ("coinbase", "ZEC"), ("cryptocom", "NEAR"), ("kraken", "BNB"), ("kraken", "HYPE"),
+               ("kraken", "NEAR"), ("kraken", "ZEC")])
         # a crossed or empty book writes nothing
         check("crossed book refused", tape.book("kraken", "BNB", 10, 1, 9, 1, None, rx), False)
         w.close()
@@ -617,7 +696,7 @@ def self_test():
             for f in fs:
                 if f.endswith(".jsonl.gz"):
                     n += len(read_rows(os.path.join(d, f)))
-        want = sum(v["book"] + v["trade"] for ex in tape.stats.values() for v in ex.values())
+        want = sum(v["book"] + v["trade"] + v.get("depth", 0) for ex in tape.stats.values() for v in ex.values())
         check("rows on disk == rows counted", n, want)
         # a killed recorder: flushed rows read back, the unfinished tail is dropped, and a restart never appends to it
         w2 = Writer(tmp, tag="111")
