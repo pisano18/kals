@@ -19,7 +19,17 @@ THE CHANGES and when each counts as engaged (the push-11-04 scoring table):
                         real -$22.26): from the old "any" rule's trip in a run (its first boost_rail_kept of each kind),
                         every market of that run whose first fill came after it is re-sized ORDER BY ORDER at the old
                         rule's multiple (the staged-entry limits size 1.5x without a band_boost record), its hedges
-                        scaled with the position, the late add's refill in (d_market); real - that, at the result
+                        scaled with the position, the late add's refill in (d_market); real - that, at the result.
+                        Only while D was ON: a run whose start record says boost_rail "off" (11-04..11-16).
+                        REVERTED 11-16 11:08:53Z (v-railany, results\\pin_railany.ps1: --boost-rail any, the operator: "if
+                        d is now proven more profitable on total then switch it on"): from the first start on "any" or
+                        "side" the row scores the revert against KEEPING D (row["undo"], the undo convention below):
+                        in each such run, from its first band_boost_off / late_boost_off (pinrun switched that boost
+                        off for the rest of the run), every market whose first fill came after it is re-sized UP order
+                        by order to what the boost would have bought (d_keep: the inverse of d_market, never past the
+                        book the order's own sweep saw at its limit (else its signal's ladder), the close's budget,
+                        the drawdown headroom or a partly filled order's fill), hedges scaled with the position;
+                        real - that, at the result
   E hedge tick round    a hedge whose limit was rounded onto the grid from an off-grid legacy limit: that hedge leg's own
                         settled money (the old build's order was rejected, so the leg would not have existed)
   F cheap jump skip     hedge_cheap_skip: pinrules_watch.score_B's method on the skipped hedge (bet won: + the premium
@@ -159,7 +169,11 @@ theirs, not M's: never twice). The row's net STAYS the rule's money against neve
 trades as if the rule had never been); the undo's money, against KEEPING the rule, sits beside it (row["undo"]; the
 phone's net line: 'with the rule: net $X · since the undo (vs keeping it): $Y on N markets'), never in the net nor in
 totals()' net (its own undo_usd). WS's rule figure prices off pin's fills up to the undo, so it stops moving then. B
-says when its cap was dropped.
+says when its cap was dropped. D's revert (v-railany, 11-16) is scored the same way: rule_spans(_d_on), its rule
+figure only from trips in ON spans (boost_rail "off"), its undo (_d_undo) from the first start on "any" / "side": the
+markets after each band_boost_off / late_boost_off re-sized up to KEEPING the boost (+ = the revert made money: the
+boosted extra would have lost). pinrules_watch's undo alerts and daily line stay M, K, WS (its UNDO_IDS): keeping D
+only ever ADDS size, so no loss of pin's is one D would have stopped.
 TRAJECTORIES: M's 3rd bets, P's and WS's results and WS's hedge replay read pin's pintraj log wherever it is now
 (traj_window: plain = a binary search on time, never the whole file; archived = read through once for every market a
 report asks, only those markets' rows kept, persisted in results\\fixes_traj_cache.json keyed by the archive's name, size
@@ -662,8 +676,10 @@ class Scan:
             '"boost_rail_kept"', '"hedge_cheap_skip"', '"late_bypass_refused"', '"extra_stake_capped"',
             '"open_cap_relaxed"', '"order"', '"cheap_window', '"jump_shadow"', '"close_budget"', '"signal"',
             '"autosize"', '"sweep_depth"', '"band99_shadow"', '"wrong_side"', '"jump_capped"', '"hedge_alarm"',
-            '"taper"', '"late_refused"')
+            '"taper"', '"late_refused"', '"band_boost_off"', '"late_boost_off"')
+    # band_boost_off / late_boost_off (D's revert, v-railany): the rail switched that boost off for the rest of the run
     LISTS = {"hedge": "hedges", "hedge_extra": "extras", "boost_rail_kept": "kept", "hedge_cheap_skip": "cheap",
+             "band_boost_off": "boost_offs", "late_boost_off": "boost_offs",
              "late_bypass_refused": "late_bypass", "extra_stake_capped": "stake_capped", "open_cap_relaxed": "open_cap",
              "order": "orders", "jump_shadow": "shadow", "signal": "signals", "sweep_depth": "sweeps",
              "band99_shadow": "b99s", "jump_capped": "capped", "hedge_alarm": "alarms", "taper": "tapers",
@@ -947,6 +963,13 @@ def _k_on(r):
 
 def _ws_on(r):
     return _f(r.get("wrongside_rise_c"), 0.0) > 0.0
+
+
+def _d_on(r):
+    """D (v-boostrail, 0925t): the run's start record says boost_rail "off" (no rail ever trips; every losing leg of a
+    boosted market writes boost_rail_kept). "any" (the revert, v-railany 11-16, and every build before 0925t's field)
+    and "side" trip the rail: band_boost_off / late_boost_off."""
+    return str(r.get("boost_rail") or "").strip().lower() == "off"
 
 
 def _status(tk, result, now, close_s=None):
@@ -1242,18 +1265,27 @@ def d_market(S, path, tk, lst, band_off, late_off, res):
     return eff, legs, hedges, changed
 
 
-def _d(S, now, since):
+def _d(S, now, since, spans=None):
     """D: the boost rail off (0925t, --boost-rail off) against the 0925r rule "any", which switched the band boost
     (and, on its own trip, the late boost) off for the rest of a run at the first losing leg of a boosted market. The
     trip is where pinrun writes boost_rail_kept (the first of each kind in a run, from `since` on); every market of
     that run whose first fill came after it is re-sized order by order (d_market) -- not only the band_boost records:
     the staged-entry limits size 1.5x without one -- hedges and the late-add refill in. One event per market whose
-    contracts differ, usd = real - counterfactual, open until the market settles. Returns (events, tally)."""
+    contracts differ, usd = real - counterfactual, open until the market settles. `spans` (rule_spans(S, _d_on)): only
+    a trip, and a market first filled, inside an ON span (boost_rail "off") counts -- after the revert (v-railany,
+    --boost-rail any) pinrun writes no boost_rail_kept, and should one ever appear there it is not D's. None = every
+    trip from `since` on (no span test). Returns (events, tally)."""
     out = []
     tally = {"trips": 0, "runs": 0, "markets": 0, "changed": 0, "open": 0, "same": 0}
     trips = {}
+
+    def _on(e):
+        if spans is None:
+            return True
+        sp = span_at(spans, e)
+        return sp is not None and bool(sp[2])
     for K in S.kept:
-        if K["_epoch"] < since:
+        if K["_epoch"] < since or not _on(K["_epoch"]):
             continue
         trips.setdefault(K["_path"], {}).setdefault(K.get("which") or "band", K)
     tally["runs"] = len(trips)
@@ -1272,7 +1304,7 @@ def _d(S, now, since):
         tp = trips[path]
         band_off = "band" in tp and t0 > tp["band"]["_epoch"]
         late_off = "late" in tp and t0 > tp["late"]["_epoch"]
-        if not (band_off or late_off):
+        if not (band_off or late_off) or not _on(t0):
             continue
         tally["markets"] += 1
         res = S.result(tk)
@@ -1309,6 +1341,316 @@ def _d_extra(t):
             "boost itself (1.5x on every 95.5-98.1c buy) is not this row" % (
                 t["changed"], "" if t["changed"] == 1 else "s", t["trips"], "" if t["trips"] == 1 else "s", t["same"],
                 (" · %d open" % t["open"]) if t["open"] else "")]
+
+
+# ---------------------------------------------------------------------------
+# D's revert (v-railany, 2026-11-16 11:08:53Z, results\pin_railany.ps1: pin restarted on --boost-rail any): in a run on
+# "any" (or "side") the first losing leg on a boosted market switches that boost off for the rest of the run (pinrun
+# writes band_boost_off / late_boost_off and sets BAND_MULTS = () / LATE_MULT = 1). The undo prices, market by market
+# after such a trip, what KEEPING D -- the boost staying on -- would have bought (d_keep, the inverse of d_market).
+D_REBUY_LATE_FRAC = 0.5                   # the late add's share of the bet (pinrun REBUY_LATE_FRAC; d_market's 0.5 / 1.5)
+
+
+def d_bands(start, trip=None):
+    """[(lo, hi, mult)] of the band boost KEEPING D would have run: the band trip's `was` (pinrun writes the band mults
+    it switched off), else the run's start record's band_mults, else D_BAND."""
+    for src in ((trip or {}).get("was"), (start or {}).get("band_mults")):
+        out = []
+        for b in (src if isinstance(src, (list, tuple)) else []):
+            if isinstance(b, (list, tuple)) and len(b) >= 3:
+                lo, hi, m = _f(b[0], None), _f(b[1], None), _f(b[2], None)
+                if None not in (lo, hi, m):
+                    out.append((lo, hi, m))
+        if out:
+            return out
+    return [D_BAND]
+
+
+def d_band_mult(p, bands):
+    """pinrun.band_mult: the largest multiple of a band with lo <= p < hi, else 1.0 (never under 1)."""
+    if p is None:
+        return 1.0
+    p = _f(p, None)
+    if p is None:
+        return 1.0
+    return max([1.0] + [m for lo, hi, m in bands if lo - 1e-9 <= p < hi - 1e-9])
+
+
+def d_depth(ladder, limit):
+    """The contracts an ask ladder [[price, size], ...] holds at or under `limit`: what an order at that limit could
+    take (pinrun's book.buyable at the sweep limit, the band boost's `avail`)."""
+    return sum(_f(lv[1]) for lv in (ladder or []) if isinstance(lv, (list, tuple)) and len(lv) >= 2
+               and _f(lv[0], 9.0) <= float(limit) + 1e-9)
+
+
+def d_book(o, sg, recs, size, px):
+    """The book order `o` could have taken at its limit -- _band53's `avail`, pinrun's book.buyable at the sweep limit --
+    read off the order's OWN records between its signal and it (`recs`: the market's taper / sweep_depth records of its
+    side, any order): A35's taper record's `flat` (written when the taper cut the depth), else its sweep_depth record's
+    `ladder` (the depth it swept, untapered when no taper record was written). With neither, when the touch alone was
+    under SIZE, the sweep found nothing past it: the order's own count (nothing to add). Else (the touch was SIZE or
+    more, the sweep had nothing to raise) its signal's ladder at or under its limit_sent; no signal: its own fill. The
+    11-16 check on the real 'off' runs: the signal's ladder alone read up to twice the book the sweep saw a moment
+    later (NEAR 11-06 8:15 AM: 255 against 121), so d_keep would have bought on depth that was gone."""
+    if sg is None:
+        return _f(o.get("filled"))
+    lo, hi = sg["_i"], o["_i"]
+    mine = [r for r in recs if lo < r["_i"] < hi]
+    tap = [r for r in mine if r.get("kind") == "taper" and r.get("flat") is not None]
+    if tap:
+        return _f(tap[-1].get("flat"))
+    swp = [r for r in mine if r.get("kind") == "sweep_depth" and r.get("ladder") is not None]
+    if swp:
+        return _f(swp[-1].get("ladder"))
+    touch = _f(sg.get("take_n"), None)
+    if touch is not None and size and touch < float(size) - 0.01:
+        return max(_d_count(o), _f(o.get("filled")))
+    return d_depth(sg.get("ladder"), _f(o.get("limit_sent"), px))
+
+
+def d_cents(n_cf, n):
+    """A kept count as pinrun would send it: to 2 decimals (pintake sends counts to the cent), and the real count
+    itself when within a cent of it (0.333 x 342 x 1.5 = 170.829 is the 170.83 that went out, not a change)."""
+    return float(n) if abs(float(n_cf) - float(n)) < 0.01 - 1e-9 else round(float(n_cf), 2)
+
+
+def d_trip_side(S, trip):
+    """The side of the losing leg that tripped the rail: the trip ticker's settled leg nearest its cost and pnl_c
+    (band_boost_off / late_boost_off carry no side), else None."""
+    legs = [r for r in S.by_tk.get(trip.get("ticker"), []) if r.get("result") in ("yes", "no")]
+    if not legs:
+        return None
+    legs.sort(key=lambda r: (abs(_f(r.get("cost")) - _f(trip.get("cost"))),
+                             abs(_f(r.get("pnl_c")) - _f(trip.get("pnl_c")))))
+    return legs[0].get("want")
+
+
+def d_keep(S, path, tp, mkts, ctx):
+    """D's revert, ONE run: the markets `mkts` {ticker: its orders, hedges and extras} (each first filled after the
+    run's trip; `tp` {"band"/"late": the first band_boost_off / late_boost_off}) re-sized UP to what KEEPING D (the boost
+    never switched off) would have bought -- the inverse of d_market. The orders go in file order across the markets
+    (one close's budget is shared). Each filled order's multiple m is the boost's with both boosts on: the band
+    multiple at its ask, the late multiple inside late_tau; it sets the order's cap the staged way (pinrun _stage46 /
+    _fullcap): an early leg EARLY_FRAC x S x m, a top-up or full leg S x m less what that side holds by then, a late add
+    min(0.5 S, 1.5 S - held) (no widener raises a late add: it can only shrink). The order can GROW only where the
+    boost the rail switched off would have widened it (_band53: the band trip came first and its ask is in the band;
+    _late48: the late trip came first, inside late_tau, the signal's confidence at late_pin -- the boost's own bar):
+    then it buys up to that cap, held to the close's budget its signal had left (less what keeping D bought before it
+    in that close), to the drawdown headroom (one_coin_cap off the latest bank reading, when the log has one) and to the
+    BOOK: an order that filled LESS than it asked had the book as its limit (the IOC remainder was cancelled), so it
+    fills the same; one that filled whole adds at most the book it could have taken past what it filled (d_book: its
+    own sweep's reading, else its signal's ladder at or under its limit_sent -- the signal the latest within 3 s,
+    m_contexts; no signal: nothing added). The 11-16 check on the real 'off' runs (the boost really on, each run's
+    first boost_rail_kept read as a trip): d_keep kept 652 of 657 markets exactly as pinrun sized them (-$5.23 in
+    all). Any other order fills min(its fill, that cap, that budget) -- a top-up after a bigger kept early leg buys
+    less. A band99 leg, a ladder rung and a --coin-size-frac coin stay as they were (pinrun skips both boosts there;
+    _ssz / _csz cap after every widener). Hedges scale with the position they cover as d_market scales them (the covered leg's kept / real fill),
+    never past their own book (the hedge record's ladder at its limit_sent, less what an earlier hedge leg of the same
+    second took; a partly filled hedge fills the same). Returns {ticker: (legs, hedges)}: legs [{e, leg, want, px, fill,
+    fill_cf, held_by}] (held_by: None, "book", "partial", "budget", "headroom"), hedges [{n, n_cf, side, hp}]."""
+    st = _start_of(S, path)
+    tb, tl = tp.get("band"), tp.get("late")
+    bands = d_bands(st, tb)
+    late_m = _f((tl or {}).get("was"), None) or _f(st.get("late_mult"), None) or D_LATE_MULT
+    late_tau = _f(st.get("late_tau"), D_LATE_TAU)
+    late_pin = _f(st.get("late_pin"), M_LATE_PIN)
+    efrac = _f(st.get("early_frac"), None) or D_EARLY_FRAC
+    skip = set(_LADDER_COIN) | set(st.get("ladder_series") or []) | set((st.get("coin_size_frac") or {}).keys())
+    own = {}                                  # (ticker, want) -> the run's taper / sweep_depth records of these markets
+    for r in S.tapers + S.sweeps:
+        if r["_path"] == path and r["ticker"] in mkts:
+            own.setdefault((r["ticker"], r.get("want")), []).append(r)
+    held_cf, extra = {}, {}
+    legs = {tk: [] for tk in mkts}
+    for o in sorted((r for lst in mkts.values() for r in lst if r.get("kind") == "order"), key=lambda r: r["_i"]):
+        fill = _f(o.get("filled"))
+        if fill <= 0:
+            continue
+        tk, want, e = o["ticker"], o.get("want"), o["_epoch"]
+        sg = (ctx.get(id(o)) or {}).get("sg")
+        px = _f(o.get("exec_price") if o.get("exec_price") is not None else o.get("limit_sent"))
+        p = o.get("ask_seen") if o.get("ask_seen") is not None else (sg or {}).get("price")
+        tau = _f(o.get("tau_at_send") if o.get("tau_at_send") is not None else (sg or {}).get("tau"), 99.0)
+        leg = o.get("leg") or "full"
+        c = _d_count(o)
+        cs = close_of(tk)
+        size = S.size_at(path, e)[0]
+        h_cf = held_cf.get((tk, want), 0.0)
+        bm = d_band_mult(p, bands)
+        late_in = tau <= late_tau + 1e-9
+        m_cf = max(bm, late_m if late_in else 1.0)
+        held_by = None
+        if (o.get("band99") or leg not in ("early", "topup", "full", "late_add") or not size
+                or str(tk).split("-", 1)[0] in skip):
+            f_cf = fill
+        else:
+            S_ = float(size)
+            if leg == "early":
+                cap = efrac * S_ * m_cf
+            elif leg == "late_add":
+                cap = max(0.0, min(D_REBUY_LATE_FRAC * S_, (1.0 + D_REBUY_LATE_FRAC) * S_ - h_cf))
+            else:
+                cap = max(0.0, S_ * m_cf - h_cf)
+            bl = _f((sg or {}).get("budget_left"), None)
+            room = (bl - extra.get(cs, 0.0)) if bl is not None else None
+            conf = None
+            if sg is not None and sg.get("fair") is not None:
+                conf = _f(sg.get("fair")) if want == "yes" else 1.0 - _f(sg.get("fair"))
+            band_w = tb is not None and e > tb["_epoch"] and bm > 1.0
+            late_w = (tl is not None and e > tl["_epoch"] and late_in and conf is not None
+                      and conf >= late_pin - 1e-12)
+            limit = min(cap, room) if room is not None else cap
+            if leg != "late_add" and (band_w or late_w) and limit > fill + 1e-6:
+                bank, hwm = _m_bank(S, path, e)
+                if bank is not None and hwm:
+                    hr = m_one_coin_cap(S_, bank, hwm, max(bm if band_w else 1.0, late_m if late_w else 1.0))
+                    if hr < limit - 1e-9:
+                        limit, held_by = hr, "headroom"
+                if fill < c - 0.01:
+                    f_cf, held_by = fill, "partial"          # the book was its limit: the IOC remainder cancelled
+                else:
+                    book = d_book(o, sg, own.get((tk, want), []), S_, px)
+                    add = min(limit - fill, max(0.0, book - fill))
+                    if add < limit - fill - 1e-6:
+                        held_by = "book"
+                    elif room is not None and room <= cap and held_by is None:
+                        held_by = "budget"
+                    f_cf = fill + max(0.0, add)
+            else:
+                f_cf = max(0.0, min(fill, limit))
+        f_cf = d_cents(f_cf, fill)
+        held_cf[(tk, want)] = h_cf + f_cf
+        extra[cs] = extra.get(cs, 0.0) + f_cf - fill
+        legs[tk].append({"e": e, "leg": leg, "want": want, "px": px, "fill": fill, "fill_cf": f_cf, "held_by": held_by})
+    out = {}
+    for tk, lst in mkts.items():
+        L, hedges, used = legs[tk], [], {}
+        for h in sorted(lst, key=lambda r: r["_i"]):
+            if h.get("kind") not in ("hedge", "hedge_extra") or h.get("status") != "executed" or _f(h.get("n")) <= 0:
+                continue
+            n, side = _f(h.get("n")), h.get("side")
+            pos_side = "no" if side == "yes" else "yes"
+            asked = _f(h.get("asked"), n)
+            pos = asked if h.get("kind") == "hedge" else _f(h.get("base_n"))
+            ent = h.get("entry")
+            cand = [x for x in L if x["want"] == pos_side and x["e"] <= h["_epoch"] + 1e-6]
+            scale = 1.0
+            if cand:
+                L0 = min(cand, key=lambda x: (abs(x["fill"] - pos), abs(x["px"] - _f(ent, x["px"]))))
+                scale = (L0["fill_cf"] / L0["fill"]) if L0["fill"] > 0 else 1.0
+            if h.get("kind") == "hedge":
+                want_n = asked * scale
+            else:
+                want_n = (_f(h.get("mult"), 1.25) - 1.0) * _f(h.get("base_n")) * scale
+            key = (side, h.get("t_ms_decide") or h.get("t"))
+            if want_n <= n + 1e-9:
+                n_cf = max(0.0, want_n)
+            elif n < asked - 0.01:
+                n_cf = n                                     # a partly filled hedge: the book was its limit
+            else:
+                book = d_depth(h.get("ladder"), _f(h.get("limit_sent"), _f(h.get("price"))))
+                n_cf = n + max(0.0, min(want_n - n, book - used.get(key, 0.0) - n))
+            n_cf = d_cents(n_cf, n)
+            used[key] = used.get(key, 0.0) + n_cf
+            hedges.append({"n": n, "n_cf": n_cf, "side": side, "hp": _f(h.get("price"))})
+        out[tk] = (L, hedges)
+    return out
+
+
+def _d_undo(S, now, spans):
+    """D after the revert (a start record on boost_rail "any" or "side" after an "off" one): in each such run, from its
+    first band_boost_off / late_boost_off, every market whose first fill came after it, re-sized up to KEEPING D
+    (d_keep); one event per market whose contracts differ, usd = real - kept, at the market's result, fee in per order
+    (+ = the revert made money: the boosted extra would have lost; - = it would have won). Open until the market
+    settles. Returns (events, tally)."""
+    out = []
+    t = {"trips": 0, "runs": 0, "markets": 0, "changed": 0, "open": 0, "same": 0}
+    if undo_since(spans) is None:
+        return out, t
+    trips = {}
+    for K in S.boost_offs:
+        sp = span_at(spans, K["_epoch"])
+        if sp is None or sp[2]:
+            continue
+        trips.setdefault(K["_path"], {}).setdefault("band" if K.get("kind") == "band_boost_off" else "late", K)
+    t["runs"] = len(trips)
+    t["trips"] = sum(len(v) for v in trips.values())
+    if not trips:
+        return out, t
+    by = {}
+    for pool in (S.orders, S.hedges, S.extras):
+        for r in pool:
+            if r["_path"] in trips:
+                by.setdefault(r["_path"], {}).setdefault(r["ticker"], []).append(r)
+    ctx = {id(x["o"]): x for x in m_contexts(S)}
+    for path, tp in trips.items():
+        mkts, first = {}, {}
+        for tk, lst in by.get(path, {}).items():
+            fills = sorted((r for r in lst if r.get("kind") == "order" and _f(r.get("filled")) > 0),
+                           key=lambda r: r["_i"])
+            if not fills:
+                continue
+            t0 = fills[0]["_epoch"]
+            if not any(t0 > K["_epoch"] for K in tp.values()):
+                continue                                  # bought before the trip: the boost was on for it
+            sp = span_at(spans, t0)
+            if sp is None or sp[2]:
+                continue
+            mkts[tk], first[tk] = lst, fills[0]
+        kept = d_keep(S, path, tp, mkts, ctx)
+        for tk in sorted(mkts, key=lambda k: (first[k]["_epoch"], first[k]["_i"])):
+            L, H = kept[tk]
+            t["markets"] += 1
+            changed = any(abs(x["fill"] - x["fill_cf"]) > 1e-6 for x in L) or any(
+                abs(h["n"] - h["n_cf"]) > 1e-6 for h in H)
+            if not changed:
+                t["same"] += 1
+                continue
+            t["changed"] += 1
+            res = S.result(tk)
+            st = _status(tk, res, now)
+            o0 = first[tk]
+            trip = tp["band"] if ("band" in tp and o0["_epoch"] > tp["band"]["_epoch"]) else tp["late"]
+            real = sum(x["fill"] for x in L)
+            cf = sum(x["fill_cf"] for x in L)
+            notes = (["its hedges scaled with it"] if any(abs(h["n"] - h["n_cf"]) > 1e-6 for h in H) else []) + (
+                ["the book held it"] if any(x["held_by"] in ("book", "partial") and x["fill_cf"] > x["fill"] - 1e-6
+                                            for x in L) else [])
+            side = d_trip_side(S, trip)
+            sized = ("so %s contracts instead of keeping D's %s" % (_g2(real), _g2(cf)) if abs(real - cf) >= 0.005 else
+                     "and keeping D would have bought the same %s contracts, spread over its legs differently" % _g2(real))
+            words = "%s: bought after the %s-boost trip (%s, a losing %sleg): the rail kept the boost off, %s%s" % (
+                UNDO_WORDS, "band" if trip.get("kind") == "band_boost_off" else "late",
+                et_words(trip["_epoch"], with_day=False), (_side(side) + " ") if side else "", sized,
+                (" (%s)" % ", ".join(notes)) if notes else "")
+            eff = None
+            if st == "scored":
+                eff = 0.0
+                for x in L:
+                    w = res == x["want"]
+                    eff += _value(x["fill"], x["px"], w) - (_value(x["fill_cf"], x["px"], w) if x["fill_cf"] > 0 else 0.0)
+                for h in H:
+                    w = res == h["side"]
+                    eff += _value(h["n"], h["hp"], w) - (_value(h["n_cf"], h["hp"], w) if h["n_cf"] > 0 else 0.0)
+                won = res == o0.get("want")
+                words += "; the bet %s: the revert %s %s" % ("won" if won else "LOST",
+                                                             "cost" if eff < 0 else ("made" if won else "saved"),
+                                                             _rw.usd(abs(eff), False))
+            else:
+                t["open"] += 1
+                words += "; not settled yet" if st == "pending" else "; no result 3 h after the close (unknown)"
+            out.append(_event(o0, words, eff, st))
+    return out, t
+
+
+def _d_undo_note(t):
+    """The undo's note under D's row (the phone's last line, and the end of its undo line)."""
+    if not t["trips"]:
+        return "no rail trip yet (no band_boost_off / late_boost_off): nothing to re-size"
+    if t["same"]:
+        return "%d more market%s after the trip%s the boost would not have changed (the book, the budget or the leg's " \
+               "own cap)" % (t["same"], "" if t["same"] == 1 else "s", "" if t["trips"] == 1 else "s")
+    return None
 
 
 def _e(S, now, since):
@@ -3798,6 +4140,8 @@ def whats(start):
         "C": "%.2fx extra contracts of the hedge side when pin's odds line fires with 11+ s left" % _f(
             start.get("hedge_odds_mult"), 1.25),
         "D": ("the 1.5x boost never switches off; a boosted-side loss is only logged" if rail == "off" else
+              "the boost rail is back on: a losing leg on a boosted market switches the 1.5x boost off for the rest of "
+              "the run (reverted 11-16)" if rail == "any" else
               "the 1.5x boost switches off only on a losing boosted-side leg, not on a losing hedge leg"),
         "E": "hedge limits snap down onto Kalshi's price grid, so a sub-10c hedge is accepted instead of refused",
         "F": "no jump hedge while the hedge side asks under %s (the odds line still hedges)" % (
@@ -3880,14 +4224,22 @@ def report(paths=None, now=None):
             continue
         extra = None
         if k == "D":
-            evs, dt = _d(S, now, new)
+            # D's periods: ON while boost_rail "off" (0925t v-boostrail); reverted 11-16 (v-railany, "any")
+            d_spans = rule_spans(S, _d_on)
+            evs, dt = _d(S, now, new, d_spans)
             extra = _d_extra(dt)
         else:
             evs = _f_cheap(L, S, now, new) if k == "F" else later[k](S, now, new)
         # G is in the build but switched off unless the launcher says --late-bypass-fix on (11-04: it would have
         # trimmed 23 winning late adds to save one loss; held as a break-even safety filter)
         off = (k == "G" and (st.get("late_bypass_fix") or "off") != "on")
-        out.append(_change(k, W[k], new, evs, off, extra=extra))
+        row = _change(k, W[k], new, evs, off, extra=extra)
+        if k == "D":
+            # the revert against KEEPING D, beside the net (never in it): the markets after each rail trip re-sized up
+            d_since = undo_since(d_spans)
+            u_evs, ut = _d_undo(S, now, d_spans)
+            row = _with_undo(row, d_since, u_evs, ut, _d_undo_note(ut) if d_since is not None else None)
+        out.append(row)
     # WS's undo first: a market both WS and K would have skipped is WS's (wrong_side is the earlier gate in pinrun)
     ws_spans = rule_spans(S, _ws_on)
     ws_u, ws_ut, ws_tks = _ws_undo(S, now, ws_spans)
@@ -3986,7 +4338,7 @@ def _with_undo(row, since, evs, t, note=None):
 
 
 def undo_counted(row):
-    """What an undone row's undo money is on: 'on 2 bets · 1 open' (M: the 3rd bets), 'on 1 market' (K, WS)."""
+    """What an undone row's undo money is on: 'on 2 bets · 1 open' (M: the 3rd bets), 'on 1 market' (K, WS, D)."""
     u = row.get("undo") or {}
     n = int(u.get("engaged") or 0)
     return "on %d %s%s%s" % (n, "bet" if row.get("id") == "M" else "market", "" if n == 1 else "s",
@@ -4013,7 +4365,7 @@ def totals(changes):
     then paid more for), as K's skipped buys are. M is in by its net (the contracts the 2-bet budget held back on pin's
     own buys); its true-3rd-bet list is not. P and Q are in. problems: the ids of every change not withdrawn (J too)
     that says one (change["problem"]: O on the 100% rail without the marking code, while O is not withdrawn).
-    An undone rule (M, K, WS) is in by its net, the rule's money against never having it; the undos' money (against
+    An undone rule (M, K, WS, D) is in by its net, the rule's money against never having it; the undos' money (against
     KEEPING the rules, another question) is never in net_usd, engaged or open: undo_usd, undo_engaged (their markets
     or bets), undo_open and undos (the undone ids) carry it beside the total."""
     cs = [c for c in changes if c["id"] != "J" and not c.get("withdrawn")]

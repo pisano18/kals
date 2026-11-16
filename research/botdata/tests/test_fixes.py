@@ -75,7 +75,7 @@ def run_new(recs):
     T = "2026-11-05T05:%02d:%02dZ"
     recs += [
         _r("start", T % (0, 0), code_sha=NEW_SHA, ws_later_fall_c=10.0, hedge_jump_max=8.0, hedge_odds_mult=1.25,
-           max_positions=5, boost_rail="side", hedge_tick="round", jump_hedge_min_ask=0.05),
+           max_positions=5, boost_rail="off", hedge_tick="round", jump_hedge_min_ask=0.05),
         # (D's markets are their own run, run_d: this run's orders, I's 32 at 99c among them, are never re-sized)
         # E: a 1.5c Yes hedge: the legacy 11.5c limit is off the grid, rounded to 11c; filled 50, the bet won, so the
         # hedge leg lost 0.80
@@ -145,7 +145,7 @@ def run_new(recs):
 
 
 NEW_START = dict(code_sha=NEW_SHA, ws_later_fall_c=10.0, hedge_jump_max=8.0, hedge_odds_mult=1.25, max_positions=5,
-                 boost_rail="side", hedge_tick="round", jump_hedge_min_ask=0.05)
+                 boost_rail="off", hedge_tick="round", jump_hedge_min_ask=0.05)
 
 
 def _o(t, tk, want, n, px, tau, leg="full", ask=None, filled=None):
@@ -156,10 +156,10 @@ def _o(t, tk, want, n, px, tau, leg="full", ask=None, filled=None):
 
 
 def run_d(recs):
-    """A later run of the new build (11-05 1:00 AM ET on, SIZE 20, the 0925r-style rail 'side'): D. The old rule 'any'
-    tripped at 1:00:35 AM (a losing No leg on a boosted market: boost_rail_kept); every market whose first fill came
-    after it is re-sized order by order at the old 1x (hand-worked, Kalshi's fee ceil(7 x p x (1 - p) x n) / 100 an
-    order):
+    """A later run of the new build (11-05 1:00 AM ET on, SIZE 20, boost_rail 'off': D's live value 11-04..11-16): D.
+    The old rule 'any' tripped at 1:00:35 AM (a losing No leg on a boosted market: boost_rail_kept); every market whose
+    first fill came after it is re-sized order by order at the old 1x (hand-worked, Kalshi's fee ceil(7 x p x (1 - p) x
+    n) / 100 an order):
       ZEC  30 Yes at 98c (a band buy, 1.5 x 20), won: 30 -> 20: 0.55 - 0.37 = +0.18
       XRP  30 No at 97c, LOST, its Yes hedge 30 at 30c: 30 -> 20 and the hedge 30 -> 20: (-29.17 + 19.45) + (20.55 -
            13.70) = -2.87
@@ -174,7 +174,7 @@ def run_d(recs):
         _o(T % (0, 10), "KXBNB15M-26NOV050115-15", "yes", 30.0, 0.98, 20),
         _r("settled", T % (15, 21), ticker="KXBNB15M-26NOV050115-15", want="yes", result="yes", cost=0.98, pnl_c=55.0),
         _r("boost_rail_kept", T % (0, 35), which="band", ticker="KXHYPE15M-26NOV050100-00", close_s=1793858400,
-           leg_side="no", boosted_side=["yes"], cost=0.07, pnl_c=-158.65, rail="side", live=True),
+           leg_side="no", boosted_side=["yes"], cost=0.07, pnl_c=-158.65, rail="off", live=True),
         _r("band_boost", T % (14, 42), ticker="KXZEC15M-26NOV050115-15", want="yes", tau=18, price=0.98, mult=1.5,
            was=20.0, now=30.0),
         _o(T % (14, 42), "KXZEC15M-26NOV050115-15", "yes", 30.0, 0.98, 18),
@@ -390,7 +390,7 @@ def test_d_boost_rail():
     p = _write(d, "pinrun-live-20261105T063100Z.jsonl", [
         _r("start", "2026-11-05T06:31:00Z", size=20.0, **NEW_START),
         _r("boost_rail_kept", "2026-11-05T06:31:05Z", which="band", ticker="KXHYPE15M-26NOV050145-45", leg_side="no",
-           boosted_side=["yes"], pnl_c=-10.0, rail="side", live=True),
+           boosted_side=["yes"], pnl_c=-10.0, rail="off", live=True),
         _o("2026-11-05T06:44:40Z", "KXDOT15M-26NOV050145-45", "yes", 30.0, 0.97, 20),
         _o("2026-11-05T06:44:50Z", "KXDOT15M-26NOV050145-45", "yes", 5.0, 0.98, 10, leg="late_add"),
         _r("settled", "2026-11-05T06:45:20Z", ticker="KXDOT15M-26NOV050145-45", want="yes", result="yes", cost=0.97,
@@ -474,7 +474,7 @@ def run_k(recs):
     n_ask x 0.78 / 0.83 contracts at the ladder's average price, plus its shadow hedge (hedge_mult x those, fee in)."""
     T = "2026-11-07T%s:%s:%sZ"
     recs += [
-        _r("start", T % ("12", "00", "00"), code_sha="0e0e0e0e0e0e", cheap_window=[6.0, 10.0, 0.98]),
+        _r("start", T % ("12", "00", "00"), code_sha="0e0e0e0e0e0e", cheap_window=[6.0, 10.0, 0.98], boost_rail="off"),
         # K, FLIPPED (BNB 8:15 AM): 193.81 x 0.78 / 0.83 = 182.13 No at 97.287c lost 177.19 + fee 0.34 = -177.53; the
         # shadow hedge, 1.25 x = 227.67 Yes at 70c, made 68.30 - fee 3.35 = +64.95: the buy would have lost 112.58
         _r("refused", T % ("13", "14", "15"), gate="cheap_window", ticker="KXBNB15M-26NOV070815-15", close_s=1794057300,
@@ -774,7 +774,7 @@ M_START = dict(code_sha="d51b131b55cf", extra_coin=0.0, late_extra=0.0, late_ext
                band99_frac=0.1, edge_floor=0.003, ev_floor=0.003, measured_flip=0.009, dump_discount=0.15,
                early_min_price=0.9, early_frac=0.333, tau_max=30, tau_min=3, band_mults=[[0.955, 0.981, 1.5]],
                cheap_window=[6.0, 10.0, 0.98], coin_size_frac={"KXHYPE15M": 0.15}, hedge_jump_shadow=6.0, hedge_jump=None,
-               hedge_jump_max=8.0, jump_hedge_min_ask=0.05, max_positions=5)
+               hedge_jump_max=8.0, jump_hedge_min_ask=0.05, max_positions=5, boost_rail="off")
 # the closes of the call-B run (UTC epoch): A third bet won (cost), B flipped (saved) with a held coin refused outside
 # the late window, C the late slot (open), D unknown, E a held-back buy that won (cost), F one that lost (saved), G none
 CL = {"A": 1794175200, "B": 1794176100, "C": 1794177000, "D": 1794173400, "E": 1794174300, "F": 1794178800, "G": 1794179700}
@@ -1641,7 +1641,8 @@ PC = {"ZEC": 1794680100, "ETH": 1794680100, "BNB": 1794681000, "XRP": 1794681900
 PT = {"ZEC": "KXZEC15M-26NOV141315-15", "ETH": "KXETH15M-26NOV141315-15", "BNB": "KXBNB15M-26NOV141330-30",
       "XRP": "KXXRP15M-26NOV141345-45", "DOGE": "KXDOGE15M-26NOV141400-00", "SOL": "KXSOL15M-26NOV141415-15"}
 P_START = dict(code_sha="3a19b0019e9c", band99_max_tau=30, band99_ceiling=0.99, band99_frac=0.1, max_per_market=2,
-               tau_max=30, early_tau_max=45, hedge_odds_mult=1.5, hedge_odds_min_tau=11.0, size=447.0)
+               tau_max=30, early_tau_max=45, hedge_odds_mult=1.5, hedge_odds_min_tau=11.0, size=447.0,
+               boost_rail="off")
 
 
 def _b99(coin, tau, want, ask, n, leg="early", cs=None, tk=None, **kw):
@@ -2486,6 +2487,199 @@ def test_undo_scores_against_keeping_the_rule():
        "an undone rule's net is its rule_usd: %s" % [(c["id"], c["net_usd"], c["rule_usd"]) for c in (M, K, WS)])
     ck(F.undo_since([]) is None and F.span_at([], 1.0) is None
        and F.rule_spans(F._load([p])[1], F._m_on)[0][2] is True, "span helpers")
+
+
+# D's revert (v-railany, 2026-11-16 11:08:53Z: pin restarted on --boost-rail any)
+DR_START = dict(code_sha=NEW_SHA, size=100.0, early_frac=0.333, late_tau=10, late_mult=1.5, late_pin=0.9975,
+                band_mults=[[0.955, 0.981, 1.5]], coin_size_frac={"KXHYPE15M": 0.15}, max_positions=5,
+                hedge_tick="round", jump_hedge_min_ask=0.05)
+NOW_DR = 1794834000.0              # 2026-11-16T13:00:00Z = 8:00 AM ET (every market below has settled)
+
+
+def _dsig(t, tk, want, price, tau, ladder, bl=200.0, fair=None):
+    """An entry signal the way pinrun writes it: the ask, our side's book (ladder), the close's budget left."""
+    return _r("signal", t, live=True, ticker=tk, want=want, price=price, tau=tau, size=100.0, take_n=100.0,
+              budget_left=bl, fair=(fair if fair is not None else (0.999 if want == "yes" else 0.001)), ladder=ladder)
+
+
+def run_dr1(recs):
+    """D ON (boost_rail "off", 11-15 5:00 AM ET on, SIZE 100): the old rule 'any' would have tripped at 5:15:20 AM
+    (boost_rail_kept); ETH 5:30 AM, 150 Yes at 97c (the band boost, 1.5 x 100), won: the old 1x 100: (4.50 - 0.31) -
+    (3.00 - 0.21) = +1.40, D's own figure."""
+    recs += [
+        _r("start", "2026-11-15T10:00:00Z", boost_rail="off", **DR_START),
+        _r("boost_rail_kept", "2026-11-15T10:15:20Z", which="band", ticker="KXSOL15M-26NOV150515-15",
+           close_s=1794737700, leg_side="no", boosted_side=["yes"], cost=0.30, pnl_c=-1000.0, rail="off", live=True),
+        _r("band_boost", "2026-11-15T10:29:40Z", ticker="KXETH15M-26NOV150530-30", want="yes", tau=20, price=0.97,
+           mult=1.5, was=100.0, now=150.0),
+        _o("2026-11-15T10:29:40Z", "KXETH15M-26NOV150530-30", "yes", 150.0, 0.97, 20),
+        _r("settled", "2026-11-15T10:30:20Z", ticker="KXETH15M-26NOV150530-30", want="yes", result="yes", cost=0.97,
+           pnl_c=419.0),
+    ]
+    return recs
+
+
+def run_dr2(recs):
+    """The revert (boost_rail "any", 11-16 6:08:53 AM ET on, SIZE 100): XRP 6:15 AM, a band-boosted 150 No at 97c,
+    LOST: the rail trips (band_boost_off 6:15:20 AM) and the band boost is off for the rest of the run. A stray
+    boost_rail_kept (late) in this run is never D's (the rule is off here). After the trip, each market re-sized UP to
+    KEEPING D (hand-worked, Kalshi's fee ceil(7 x p x (1 - p) x n) / 100 an order):
+      ETH  6:30 AM  100 Yes at 97c (1x), the book 120 at 97c + 200 at 98c under its 98c limit: kept 150 (S x 1.5),
+                    won: (3.00 - 0.21) - (4.50 - 0.31) = -1.40 (the revert cost)
+      BNB  6:30 AM  100 Yes at 97c, the close's budget 100 left after ETH's 100: kept ETH took 150, so 50 left: kept 50,
+                    won: (3.00 - 0.21) - (1.50 - 0.11) = +1.40 (the revert made: the budget moved to ETH)
+      SOL  6:45 AM  asked 100 Yes at 97c, filled 60 (the IOC remainder cancelled: the book was the limit): kept 60,
+                    the same
+      DOGE 6:45 AM  150 Yes at 99c with 5 s left (the late boost, never tripped): its cap S x 1.5 either way, the same
+      NEAR 7:00 AM  an early leg 33.3 No at 96c and a top-up 66.7 at 97c, its Yes hedge 100 at 30c, LOST: kept the early
+                    0.333 x 100 x 1.5 = 49.95 (book 500), the top-up 150 - 49.95 = 100.05 (the budget 166.7 - the 16.65
+                    the kept early leg added = 150.05; the book 140 under 98c), the hedge x 100.05 / 66.7 = 150 (its book
+                    180 under 40c): early (-32.058 + 48.092) + top-up (-64.839 + 97.2585) + hedge (68.53 - 102.79) = +14.19
+                    (the revert saved)
+    D's undo: 3 markets, +14.19; 2 the same."""
+    T = "2026-11-16T%02d:%02d:%02dZ"
+    xrp, eth, bnb = "KXXRP15M-26NOV160615-15", "KXETH15M-26NOV160630-30", "KXBNB15M-26NOV160630-30"
+    sol, doge, near = "KXSOL15M-26NOV160645-45", "KXDOGE15M-26NOV160645-45", "KXNEAR15M-26NOV160700-00"
+    recs += [
+        _r("start", "2026-11-16T11:08:53Z", boost_rail="any", **DR_START),
+        _dsig(T % (11, 14, 40), xrp, "no", 0.97, 20, [[0.97, 500.0]]),
+        _r("band_boost", T % (11, 14, 40), ticker=xrp, want="no", tau=20, price=0.97, mult=1.5, was=100.0, now=150.0,
+           cap=150.0, avail=500.0, room=200.0, size=100.0, bank=4000.0, hwm=4000.0),
+        _order(T % (11, 14, 40), xrp, "no", 150.0, 0.97, 20, limit=0.98),
+        _r("settled", T % (11, 15, 20), ticker=xrp, want="no", result="yes", cost=0.97, pnl_c=-14581.0),
+        _r("band_boost_off", T % (11, 15, 20), ticker=xrp, close_s=1794827700, cost=0.97, pnl_c=-14581.0,
+           was=[[0.955, 0.981, 1.5]]),
+        _r("boost_rail_kept", T % (11, 15, 25), which="late", ticker=xrp, close_s=1794827700, leg_side="no",
+           boosted_side=["no"], cost=0.97, pnl_c=-14581.0, rail="any", live=True),
+        _dsig(T % (11, 29, 40), eth, "yes", 0.97, 20, [[0.97, 120.0], [0.98, 200.0]]),
+        _order(T % (11, 29, 40), eth, "yes", 100.0, 0.97, 20, limit=0.98),
+        _dsig(T % (11, 29, 41), bnb, "yes", 0.97, 19, [[0.97, 400.0]], bl=100.0),
+        _order(T % (11, 29, 41), bnb, "yes", 100.0, 0.97, 19, limit=0.98),
+        _r("settled", T % (11, 30, 20), ticker=eth, want="yes", result="yes", cost=0.97, pnl_c=279.0),
+        _r("settled", T % (11, 30, 21), ticker=bnb, want="yes", result="yes", cost=0.97, pnl_c=279.0),
+        _dsig(T % (11, 44, 40), sol, "yes", 0.97, 20, [[0.97, 60.0]]),
+        _order(T % (11, 44, 40), sol, "yes", 100.0, 0.97, 20, filled=60.0, limit=0.98),
+        _r("late_boost", T % (11, 44, 55), ticker=doge, want="yes", tau=5, was=100.0, now=150.0, mult=1.5),
+        _dsig(T % (11, 44, 55), doge, "yes", 0.99, 5, [[0.99, 900.0]], bl=240.0),
+        _order(T % (11, 44, 55), doge, "yes", 150.0, 0.99, 5, limit=0.99),
+        _r("settled", T % (11, 45, 20), ticker=sol, want="yes", result="yes", cost=0.97, pnl_c=167.0),
+        _r("settled", T % (11, 45, 21), ticker=doge, want="yes", result="yes", cost=0.99, pnl_c=139.0),
+        _dsig(T % (11, 59, 20), near, "no", 0.96, 40, [[0.96, 500.0]]),
+        _order(T % (11, 59, 20), near, "no", 33.3, 0.96, 40, leg="early", limit=0.98),
+        _dsig(T % (11, 59, 35), near, "no", 0.97, 25, [[0.97, 40.0], [0.98, 100.0]], bl=166.7),
+        _order(T % (11, 59, 35), near, "no", 66.7, 0.97, 25, leg="topup", limit=0.98),
+        _r("hedge", T % (11, 59, 50), ticker=near, side="yes", price=0.30, n=100.0, asked=100.0, entry=0.97,
+           status="executed", limit_sent=0.40, ladder=[[0.30, 80.0], [0.32, 100.0]], live=True),
+        _r("settled", T % (12, 0, 20), ticker=near, want="no", result="yes", cost=0.96, pnl_c=-3205.8),
+        _r("settled", T % (12, 0, 21), ticker=near, want="no", result="yes", cost=0.97, pnl_c=-6483.9),
+        _r("settled", T % (12, 0, 22), ticker=near, want="yes", result="yes", cost=0.30, pnl_c=6853.0),
+    ]
+    return recs
+
+
+def test_d_revert_scores_against_keeping_d():
+    """v-railany: D reverted 11-16 (boost_rail "any"). D's own figure stops at the revert (only trips in its ON runs);
+    from the revert on, the markets after each band_boost_off are re-sized UP to keeping D, beside the net (row
+    ["undo"], + = the revert made money), never in it (run_dr1 / run_dr2, hand-worked there)."""
+    d = tempfile.mkdtemp(prefix="fixes-test-")
+    p1 = _write(d, "pinrun-live-20261115T100000Z.jsonl", run_dr1([]))
+    p2 = _write(d, "pinrun-live-20261116T110853Z.jsonl", run_dr2([]))
+    rep = _report([p1, p2], now=NOW_DR)
+    D = rep["D"]
+    ck(D["engaged"] == 1 and D["net_usd"] == 1.40 and D["rule_usd"] == 1.40 and D["events"][0]["coin"] == "ETH"
+       and D["events"][0]["et"] == "Nov 15 5:29 AM ET",
+       "D's own figure: run 1's ETH only; the stray boost_rail_kept of the 'any' run is not D's: %s"
+       % [(e["et"], e["usd"]) for e in D["events"]])
+    _L, S = F._load([p1, p2])
+    nospan, _t = F._d(S, NOW_DR, S.new_build_since())
+    ck([(e["coin"], e["usd"]) for e in nospan] == [("ETH", 1.40), ("DOGE", 0.46)],
+       "without the span test the stray trip would re-size DOGE's late-boosted 150 down to 100 (+0.46): %s" % nospan)
+    u = D["undo"]
+    ck(u is not None and u["since"] == "Nov 16 6:08 AM ET" and u["engaged"] == 3 and u["open"] == 0
+       and u["net_usd"] == 14.19, "D's undo: ETH -1.40, BNB +1.40, NEAR +14.19 = +14.19 on 3 markets: %s" % u)
+    w = {e["coin"]: e for e in u["events"]}
+    ck(sorted(w) == ["BNB", "ETH", "NEAR"], "SOL (book-bound) and DOGE (its cap the same) are not events: %s" % sorted(w))
+    ck(w["ETH"]["usd"] == -1.40 and w["ETH"]["words"] == (
+        "since the undo (vs keeping it): bought after the band-boost trip (6:15 AM ET, a losing No leg): the rail kept "
+        "the boost off, so 100 contracts instead of keeping D's 150; the bet won: the revert cost $1.40"),
+       "ETH, filled whole, the book deep enough: the 50 more keeping D buys would have won: %s" % w["ETH"]["words"])
+    ck(w["BNB"]["usd"] == 1.40 and "so 100 contracts instead of keeping D's 50; the bet won: the revert made $1.40"
+       in w["BNB"]["words"], "BNB: the close's budget went to kept ETH: %s" % w["BNB"]["words"])
+    ck(w["NEAR"]["usd"] == 14.19 and w["NEAR"]["words"].endswith(
+        "so 100 contracts instead of keeping D's 150 (its hedges scaled with it); the bet LOST: the revert saved $14.19"),
+       "NEAR: the early leg, the top-up and the hedge kept at 1.5x, the bet flipped: %s" % w["NEAR"]["words"])
+    ck(u["line"] == ("with the rule: +$1.40 (to Nov 16 6:08 AM ET) · since the undo (vs keeping it): +$14.19 on 3 "
+                     "markets · 2 more markets after the trip the boost would not have changed (the book, the budget "
+                     "or the leg's own cap)")
+       and D["extra"][-1] == ("since the undo: 2 more markets after the trip the boost would not have changed (the book, "
+                              "the budget or the leg's own cap)"),
+       "D's undo line and its note: %s | %s" % (u["line"], D["extra"]))
+    ck(D["what"] == ("the boost rail is back on: a losing leg on a boosted market switches the 1.5x boost off for the "
+                     "rest of the run (reverted 11-16)"), "D's what, off the newest start (rail any): %s" % D["what"])
+    T = F.totals(list(rep.values()))
+    ck(T["undos"] == ["D"] and T["undo_usd"] == 14.19 and T["undo_engaged"] == 3
+       and T["net_usd"] == round(sum(c["net_usd"] for k, c in rep.items() if k != "J"), 2),
+       "totals: D's rule money in the net, its undo beside it, never in it: %s" % T)
+    # the helpers the undo reads
+    ck(F._d_on({"boost_rail": "off"}) and not F._d_on({"boost_rail": "any"}) and not F._d_on({"boost_rail": "side"})
+       and not F._d_on({}), "_d_on: only 'off' is D on")
+    ck(F.d_band_mult(0.97, [(0.955, 0.981, 1.5)]) == 1.5 and F.d_band_mult(0.981, [(0.955, 0.981, 1.5)]) == 1.0
+       and F.d_band_mult(None, [(0.955, 0.981, 1.5)]) == 1.0 and F.d_bands({}, {"was": None}) == [F.D_BAND]
+       and F.d_depth([[0.97, 120.0], [0.98, 200.0], [0.99, 5.0]], 0.98) == 320.0,
+       "d_band_mult as pinrun.band_mult (lo <= p < hi), d_bands' fallback, d_depth at the limit")
+    # the book an order could take (d_book): its OWN taper record's flat, else its sweep_depth record's ladder (both
+    # between its signal and it), else nothing past its count when the touch was under SIZE, else the signal's ladder
+    o = {"_i": 10, "filled": 30.0, "body": {"count": "30.00"}, "limit_sent": 0.98}
+    sg = {"_i": 5, "take_n": 30.0, "ladder": [[0.97, 30.0], [0.98, 300.0]]}
+    tap, swp = {"_i": 7, "kind": "taper", "flat": 120.0}, {"_i": 8, "kind": "sweep_depth", "ladder": 80.0}
+    early = {"_i": 3, "kind": "sweep_depth", "ladder": 999.0}           # another order's, before this signal
+    ck(F.d_book(o, sg, [early, tap, swp], 100.0, 0.97) == 120.0 and F.d_book(o, sg, [early, swp], 100.0, 0.97) == 80.0
+       and F.d_book(o, sg, [early], 100.0, 0.97) == 30.0
+       and F.d_book(o, dict(sg, take_n=100.0), [early], 100.0, 0.97) == 330.0
+       and F.d_book(o, None, [], 100.0, 0.97) == 30.0
+       and F.d_cents(170.829, 170.83) == 170.83 and F.d_cents(150.004, 100.0) == 150.0,
+       "d_book: the order's own sweep reading first, the signal's ladder last; d_cents: a cent of rounding is no change")
+
+
+def test_d_revert_late_trip_and_no_trip():
+    """The revert before any trip (no band_boost_off yet): $0 on 0 markets, said so; after a late_boost_off, a market
+    with 5 s left at a confidence over late_pin (the late boost's own bar) is kept at 1.5x, one under it is not."""
+    d = tempfile.mkdtemp(prefix="fixes-test-")
+    p1 = _write(d, "pinrun-live-20261115T100000Z.jsonl", run_dr1([]))
+    T = "2026-11-16T%02d:%02d:%02dZ"
+    btc, sol, eth = "KXBTC15M-26NOV160615-15", "KXSOL15M-26NOV160630-30", "KXETH15M-26NOV160630-30"
+    start = _r("start", "2026-11-16T11:08:53Z", boost_rail="any", **DR_START)
+    after = [
+        _dsig(T % (11, 29, 55), sol, "yes", 0.99, 5, [[0.99, 1000.0]], bl=300.0),
+        _order(T % (11, 29, 55), sol, "yes", 100.0, 0.99, 5, limit=0.99),
+        _dsig(T % (11, 29, 56), eth, "yes", 0.99, 4, [[0.99, 1000.0]], bl=300.0, fair=0.99),
+        _order(T % (11, 29, 56), eth, "yes", 100.0, 0.99, 4, limit=0.99),
+        _r("settled", T % (11, 30, 20), ticker=sol, want="yes", result="yes", cost=0.99, pnl_c=93.0),
+        _r("settled", T % (11, 30, 21), ticker=eth, want="yes", result="yes", cost=0.99, pnl_c=93.0)]
+    p2 = _write(d, "pinrun-live-20261116T110853Z.jsonl", [start] + after)
+    D = _report([p1, p2], now=NOW_DR)["D"]
+    ck(D["undo"] is not None and D["undo"]["engaged"] == 0 and D["undo"]["net_usd"] == 0.0
+       and D["undo"]["line"].endswith("since the undo (vs keeping it): +$0.00 on 0 markets · no rail trip yet (no "
+                                      "band_boost_off / late_boost_off): nothing to re-size"),
+       "no trip since the revert: nothing re-sized, said so: %s" % D["undo"]["line"])
+    trip = [
+        _r("late_boost", T % (11, 14, 55), ticker=btc, want="yes", tau=5, was=100.0, now=150.0, mult=1.5),
+        _dsig(T % (11, 14, 55), btc, "yes", 0.99, 5, [[0.99, 900.0]], bl=300.0),
+        _order(T % (11, 14, 55), btc, "yes", 150.0, 0.99, 5, limit=0.99),
+        _r("settled", T % (11, 15, 20), ticker=btc, want="yes", result="no", cost=0.99, pnl_c=-14861.0),
+        _r("late_boost_off", T % (11, 15, 20), ticker=btc, close_s=1794827700, cost=0.99, pnl_c=-14861.0, was=1.5)]
+    p2 = _write(d, "pinrun-live-20261116T110853Z.jsonl", [start] + trip + after)
+    D = _report([p1, p2], now=NOW_DR)["D"]
+    u = D["undo"]
+    # SOL: 100 at 99c with 5 s left, confidence 0.999: kept 150 (no bank reading in the run: no headroom cap), won:
+    # (1.00 - 0.07) - (1.50 - 0.11) = -0.46; ETH at confidence 0.99 (under 0.9975): the late boost refuses, the same
+    ck(u["engaged"] == 1 and u["net_usd"] == -0.46 and u["events"][0]["coin"] == "SOL" and u["events"][0]["words"] == (
+        "since the undo (vs keeping it): bought after the late-boost trip (6:15 AM ET, a losing Yes leg): the rail kept "
+        "the boost off, so 100 contracts instead of keeping D's 150; the bet won: the revert cost $0.46")
+       and u["line"].endswith("1 more market after the trip the boost would not have changed (the book, the budget or "
+                              "the leg's own cap)"),
+       "after the late trip: SOL kept at 1.5x, ETH (confidence under the bar) not: %s" % u)
+    ck(D["net_usd"] == 1.40, "D's own figure is still run 1's: %s" % D["net_usd"])
 
 
 def test_m_own_records():
