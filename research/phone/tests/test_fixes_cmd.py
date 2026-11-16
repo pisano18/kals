@@ -52,6 +52,13 @@ def _run(text="/fixes", **kw):
     return FC.COMMAND.run(_ctx(text, **kw))
 
 
+def _pin_line(s):
+    """The page's headline total: PIN's changes only (v-tg-fixes-pin, 11-16), the line under it the ladder's / stops'."""
+    got = [ln for ln in str(s).split("\n") if "<b>Pin's changes: net " in ln]
+    assert len(got) == 1, str(s)[-400:]
+    return got[0]
+
+
 def test_declared():
     import tgcharts
     c = FC.COMMAND
@@ -100,19 +107,23 @@ def test_page_over_the_synthetic_logs():
         assert FC.block(Fx, BANK, 0)[1].startswith("no jump hedge while the hedge side asks under 5.0c"), \
             "the bar read off the new start record"
         # LAD and STOP: measured once by the 11-14 retro, said so on their since line, their assumption line under it
+        # (their % never of pin's bank: the ladder's pot -- no ladder log here, so none -- and none for the stops)
         assert ("<b>LAD ladder's 4 changes</b>\nsince Oct 22 11:40 AM ET · measured once, to Nov 14 1:16 PM ET (not "
-                "running)\n🟢 net <b>+$123.40</b> (+4.41% of the bank)\nthe 11-14 replay's central fill model") in s, s
+                "running)\n🟢 net <b>+$123.40</b>\nthe 11-14 replay's central fill model") in s, s
         assert ("<b>STOP the 4 stops</b>\nsince Oct 27 10:02 PM ET · measured once, to Nov 14 1:16 PM ET (not running)\n"
-                "🟢 net <b>+$27.90</b> (+1.00% of the bank)\nrests on the moved money earning ~2.2%/day") in s, s
+                "🟢 net <b>+$27.90</b>\nrests on the moved money earning ~2.2%/day") in s, s
         T = F.totals(rep)
         assert T["engaged"] == 17 and T["open"] == 2, "J (2 engaged, 1 open) stays out of the total: %s" % T
-        assert "the total leaves J out" in s, s
+        assert "leaves J out" in s and "the total is pin's only" in s, s
         g = T["groups"]
-        assert s.rstrip().endswith("<b>All changes: net %s</b> (%s%.2f%% of the bank) · pin %s · ladder %s · stops %s · "
-                                   "engaged 17 times · 2 open" % (
-                                       ("+$%.2f" % T["net_usd"]) if T["net_usd"] > 0 else ("-$%.2f" % -T["net_usd"]),
-                                       "+" if T["net_usd"] >= 0 else "-", abs(T["net_usd"]) / BANK * 100,
-                                       "+$%.2f" % g["pin"], "+$123.40", "+$27.90")), s[-200:]
+        # the headline is PIN's changes only (the operator 11-16: the ladder's and the stops' rows "only affect" them):
+        # never LAD's +$123.40 or STOP's +$27.90, its % of pin's bank; they are on their own line under it
+        assert T["pin_net_usd"] == g["pin"] == round(T["net_usd"] - 123.40 - 27.90, 2) and T["pin_engaged"] == 17
+        x = T["pin_net_usd"]
+        assert _pin_line(s) == "%s <b>Pin's changes: net %s</b> (%s%.2f%% of pin's bank) · engaged 17 times · 2 open" % (
+            FC._mark(x), usd(x), "+" if x >= 0 else "-", abs(x) / BANK * 100), _pin_line(s)
+        assert s.rstrip().endswith("\nLadder's changes (not pin): +$123.40 · stops: +$27.90"), s[-300:]
+        assert "All changes" not in s and "+$%.2f" % T["net_usd"] not in s.split("\n")[-2], "no pin+ladder sum anywhere"
         # the alias is the same page
         assert str(_run("/changes")) == s and str(_run("/Fixes@kalsbot")) == s
     finally:
@@ -177,7 +188,7 @@ def test_l_jump_shadow_block():
                                  "30 Yes at 8.0c (odds 90% our way); nothing was sent"), blk_only[-300:]
         T = F.totals(F.report(now=TF.NOW_L))
         assert T["engaged"] == 24 and T["open"] == 4, "L is in the total: %s" % T
-        assert s.rstrip().endswith("· engaged 24 times · 4 open"), s[-200:]
+        assert T["pin_engaged"] == 24 and _pin_line(s).endswith("· engaged 24 times · 4 open"), _pin_line(s)
     finally:
         paths.set_results(old)
 
@@ -226,7 +237,7 @@ def test_m_third_bet_block():
             "(k, n): the first line only, its money first: %s" % first
         T = F.totals(F.report(now=TF.NOW_M))
         assert T["engaged"] == 26 and T["open"] == 4, "M's net is in the total, its third list is not: %s" % T
-        assert s.rstrip().endswith("· engaged 26 times · 4 open"), s[-200:]
+        assert T["pin_engaged"] == 26 and _pin_line(s).endswith("· engaged 26 times · 4 open"), _pin_line(s)
     finally:
         paths.set_results(old)
 
@@ -296,7 +307,11 @@ def _o_untracked_problem():
                 "since Nov 15 4:50 AM ET\nnot engaged yet") in blk, blk
         T = F.totals(F.report(now=TF.NOW_O))
         last = s.rstrip().split("\n")[-1]
-        assert T["problems"] == ["O"] and "<b>All changes: net" in last and ("engaged %d times" % T["engaged"]) in last, last
+        # pin's headline leaves the ladder's rows out; the ladder's line has its % of the ladder's pot (its start's 1,338.63)
+        assert T["problems"] == ["O"] and ("engaged %d times" % T["pin_engaged"]) in _pin_line(s), _pin_line(s)
+        lx = T["ladder_net_usd"]
+        assert T["ladder_pot"] == 1338.6325 and last == "Ladder's changes (not pin): %s (%s%.2f%% of the ladder's pot) · " \
+            "stops: +$27.90" % (usd(lx), "+" if lx >= 0 else "-", abs(lx) / 1338.6325 * 100), last
         O = next(c for c in F.report(now=TF.NOW_O) if c["id"] == "O")
         warn = FC.PROBLEM % F.O_UNTRACKED
         for step in FC.PLAN:                                   # never cut, whatever step the page lands on
@@ -338,7 +353,7 @@ def test_p_band99_late_block():
                              "(it would have been the market's early leg); it would have blocked none of pin's own bets; not "
                              "settled yet"), whole[-1]
         T = F.totals(F.report(now=TF.NOW_P))
-        assert s.rstrip().endswith("· engaged %d times · %d open" % (T["engaged"], T["open"])), s[-200:]
+        assert _pin_line(s).endswith("· engaged %d times · %d open" % (T["pin_engaged"], T["pin_open"])), _pin_line(s)
         # live with no shadow yet: 'none yet'
         with open(os.path.join(td, "pinrun-live-20261114T181141Z.jsonl"), "w", encoding="utf-8") as fh:
             fh.write(json.dumps(TF.run_p([])[0]) + "\n")
@@ -346,6 +361,46 @@ def test_p_band99_late_block():
         s = str(_run(now=TF.NOW_P))
         blk = s.split("<b>P band99 late-only</b>")[1].split("\n\n")[0]
         assert blk.endswith("since Nov 14 1:11 PM ET\nnot engaged yet"), blk
+    finally:
+        paths.set_results(old)
+
+
+def test_r_5hz_hedge_block_and_its_stop_rule():
+    """v-hedge5live (11-16): R's block carries its net against the 1 Hz line and its lines (the split, the stop rule);
+    under -$25 while pin still runs --index-5hz hedge the stop rule is a ⚠️ problem, on top of the page and in R's
+    block, at every shrink step; back to shadow, no problem anywhere."""
+    old, td = _world()
+    try:
+        eth11, traj11 = TF._r_eth11()
+        TF.write_r5(td, eth11, traj11)
+        F._CACHE.clear()
+        s = str(_run(now=TF.NOW_R))
+        assert len(s) <= MAX_LEN and "—" not in s, len(s)
+        warn = ("net -$47.23 since 11-16, under the operator's -$25 stop: back to shadow (results\\pin_hedge5live.ps1 "
+                "-Revert + restart while flat)")
+        assert s.split("\n")[2] == "⚠️ <b>1 PROBLEM</b>: R 5 Hz hedge: " + warn, s[:700]
+        blk = s.split("<b>R 5 Hz hedge</b>")[1].split("\n\n")[0]
+        assert ("\n⚠️ <b>%s</b>\nsince Nov 16 8:08 AM ET\nengaged 5 times, last Nov 16 2:44 PM ET · 1 open\n🔴 net "
+                "<b>-$47.23</b> (-1.69%% of the bank)" % warn) in blk, blk
+        R = next(c for c in F.report(now=TF.NOW_R) if c["id"] == "R")
+        whole = FC.block(R, BANK, 1, None, None)
+        assert whole[1] == ("the hedge fires on the 5 Hz index when it crosses first (live 11-16 8:08 AM ET); each such "
+                            "hedge priced against what the 1 Hz line would have done"), whole[1]
+        assert whole[-3:-1] == ["the 1 Hz line followed on 2 markets: +$14.93 (1 flip, 1 won bet) · 2 false alarms the "
+                                "1 Hz line never confirmed: -$62.16 · 1 open", F.R_STOP], whole[-3:]
+        assert whole[-1].startswith("  Nov 16 2:44 PM ET · DOGE · open · a 5 Hz hedge 0.20 s before the 1 Hz print"), whole[-1]
+        for step in FC.PLAN:                                   # the stop rule's line is never cut
+            assert (FC.PROBLEM % warn) in FC.block(R, BANK, *step), step
+        T = F.totals(F.report(now=TF.NOW_R))
+        assert T["problems"] == ["R"] and ("· engaged %d times · %d open" % (T["pin_engaged"], T["pin_open"])) in \
+            _pin_line(s), s[-300:]
+        # back to shadow: the net stops, no problem anywhere
+        with open(os.path.join(td, "pinrun-live-20261116T170000Z.jsonl"), "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(TF._r("start", "2026-11-16T17:00:00Z", index_5hz="shadow", **TF.R_START)) + "\n")
+        F._CACHE.clear()
+        s2 = str(_run(now=TF.NOW_R))
+        assert "⚠️" not in s2 and "PROBLEM" not in s2 and F.totals(F.report(now=TF.NOW_R))["problems"] == [], s2[:600]
+        assert "\n🔴 net <b>-$47.23</b>" in s2.split("<b>R 5 Hz hedge</b>")[1].split("\n\n")[0], s2
     finally:
         paths.set_results(old)
 
@@ -367,7 +422,9 @@ def test_q_midnight_reset_and_the_full_page():
             assert "<b>%s %s</b>" % (cid, F.NAMES[cid]) in s, cid
         assert s.index("<b>N ") < s.index("<b>O ") < s.index("<b>P ") < s.index("<b>Q "), "letter order"
         blk = s.split("<b>Q ladder midnight reset</b>")[1].split("\n\n")[0]
-        assert "since Nov 14 12:53 PM ET\nengaged 1 time, last Nov 15 12:00 AM ET\n🟢 net <b>+$12.04</b> (+0.43% of the bank)" in blk, blk
+        # a ladder row's % is of the ladder's pot (its start record's 1,338.63), never pin's bank
+        assert ("since Nov 14 12:53 PM ET\nengaged 1 time, last Nov 15 12:00 AM ET\n🟢 net <b>+$12.04</b> (+0.90% of the "
+                "ladder's pot)") in blk, blk
         assert "\nmoney the ladder made after a midnight reset (the old code stayed halted)" in blk, blk
         assert FC.block(next(c for c in F.report(now=TF.NOW_Q) if c["id"] == "Q"), BANK, 0, None, None)[-1].endswith(
             "(the old code stayed halted): +$12.04 over 1 reset since Nov 14 12:53 PM ET (4 markets settled)"), "Q's line whole"
@@ -381,7 +438,17 @@ def test_q_midnight_reset_and_the_full_page():
         rep = F.report(now=TF.NOW_Q)
         T = F.totals(rep)
         assert T["net_usd"] == round(sum(c["net_usd"] for c in rep if c["id"] not in "JO"), 2) and T["problems"] == []
-        assert s.rstrip().endswith("· engaged %d times · %d open" % (T["engaged"], T["open"])), s[-200:]
+        # the full page (every change, the ladder's log read): pin's headline is pin's rows only -- Q (the ladder's,
+        # engaged once) out of its engagements, LAD + Q on the ladder's line with their % of the ladder's pot
+        assert T["pin_engaged"] == T["engaged"] - 1 and T["pin_net_usd"] == round(
+            sum(c["net_usd"] - c["overlap_usd"] for c in rep if c["group"] == "pin" and c["id"] != "J"), 2)
+        assert _pin_line(s).endswith("· engaged %d times · %d open" % (T["pin_engaged"], T["pin_open"])), _pin_line(s)
+        assert s.rstrip().endswith("\nLadder's changes (not pin): +$135.44 (+10.12% of the ladder's pot) · stops: "
+                                   "+$27.90"), s[-300:]
+        lad = next(c for c in rep if c["id"] == "LAD")
+        assert FC.net_line(lad, BANK) == "🟢 net <b>+$123.40</b> (+9.22% of the ladder's pot)", FC.net_line(lad, BANK)
+        stop = next(c for c in rep if c["id"] == "STOP")
+        assert FC.net_line(stop, BANK) == "🟢 net <b>+$27.90</b>", "the stops' row: no % (never pin's bank)"
     finally:
         paths.set_results(old)
 
@@ -465,11 +532,12 @@ def test_before_the_new_build_and_empty_folder():
         s = str(_run())                                        # the smoke's real folder may hold no pin log at all
         # no pin log: every pin row waits; the two measured-once rows (LAD, STOP) are there all the same, their money
         # the only money on the page
-        assert (s.count("not engaged yet") == 3 and s.count("not live yet") == 12 and s.count("(shelved 11-09)") == 1
-                and "🟢 <b>All changes: net +$151.30</b> (+5.40% of the bank) · pin $0.00 · ladder +$123.40 · stops +$27.90 · "
-                    "engaged 0 times" in s), s
+        assert (s.count("not engaged yet") == 3 and s.count("not live yet") == 13 and s.count("(shelved 11-09)") == 1
+                and _pin_line(s) == "⚪ <b>Pin's changes: net $0.00</b> (+0.00% of pin's bank) · engaged 0 times"
+                and s.rstrip().endswith("\nLadder's changes (not pin): +$123.40 · stops: +$27.90")), s
         assert "not live yet (comes with the first pin start on --band99-max-tau 30)" in s, "P: its own waiting words"
         assert "not live yet (comes with a pin start on --wrongside-rise-c above 0)" in s, "WS: its own waiting words"
+        assert "not live yet (comes with the first pin start on --index-5hz hedge)" in s, "R: its own waiting words"
     finally:
         paths.set_results(old)
 
@@ -483,8 +551,8 @@ def test_size_limit_trims_events_first():
             c["events"] = [{"et": "Nov 5 1:00 AM ET", "coin": "ZEC", "usd": 1.0, "words": "w" * 400, "open": False}] * 9
         s = str(FC.render(d, _ctx()))
         assert len(s) <= MAX_LEN and "engaged 9 times" in s and "w" * 400 not in s, (len(s), s[:300])
-        # eighteen rows, every one engaged (N, 11-08; P, 11-14; WS, LAD, STOP 11-14): even the blocks whole with no
-        # events are over one message, so the "what" lines go (they go before any money line); one 30-char event each
+        # nineteen rows, every one engaged (N, 11-08; P, 11-14; WS, LAD, STOP 11-14; R 11-16): even the blocks whole with
+        # no events are over one message, so the "what" lines go (they go before any money line); one 30-char event each
         # no longer fits beside the rows' lines, so the page is the blocks with their lines and no event (the first PLAN
         # step that fits); with twelve one 30-char event each fits with their whats
         A_what = next(c for c in d["changes"] if c["id"] == "A")["what"]
@@ -497,8 +565,8 @@ def test_size_limit_trims_events_first():
             finally:
                 FC.PLAN = saved
         first = next(st for st, ok in fits if ok)
-        assert n == 18 and first == (0, None, None, 0) and "w" * 30 not in s and s.count("\n\n<b>") == n and A_what not in s, \
-            "the eighteen blocks without their whats and events, at the first step that fits: %s" % (first,)
+        assert n == 19 and first == (0, None, None, 0) and "w" * 30 not in s and s.count("\n\n<b>") == n and A_what not in s, \
+            "the nineteen blocks without their whats and events, at the first step that fits: %s" % (first,)
         d["changes"] = d["changes"][:12]
         for c in d["changes"]:
             c["extra"] = []                                    # (D's line under its net since 11-14: this is about events)
@@ -582,11 +650,11 @@ def test_undo_ws_and_the_split_total():
                 "%s\n" % p(0.0) in bblk and "\nthe cap was DROPPED Nov 15 6:00 AM ET" in bblk), bblk
         T = F.totals(rep)
         g = T["groups"]
-        last = s.rstrip().split("\n")[-1]
-        assert last.startswith("🟢 <b>All changes: net %s</b> (%s%.2f%% of the bank) · pin %s · ladder +$123.40 · stops "
-                               "+$27.90 · engaged %d times" % (usd(T["net_usd"]), "+", T["net_usd"] / BANK * 100,
-                                                               usd(g["pin"]), T["engaged"])), s[-300:]
+        last = _pin_line(s)
+        assert last.startswith("🟢 <b>Pin's changes: net %s</b> (+%.2f%% of pin's bank) · engaged %d times" % (
+            usd(g["pin"]), g["pin"] / BANK * 100, T["pin_engaged"])) and T["pin_net_usd"] == g["pin"], s[-300:]
         assert last.endswith(" · the undos (vs keeping the rules): -$45.02") and T["undo_usd"] == -45.02, last
+        assert s.rstrip().endswith("\nLadder's changes (not pin): +$123.40 · stops: +$27.90"), s[-200:]
         assert "an UNDONE rule's net ends at its undo; the undo's money (vs keeping the rule) is beside it, not in the " \
                "total" in s, "the legend says what an undone rule's net is"
         assert "—" not in s
@@ -605,11 +673,13 @@ def test_bank_fallback_and_wall():
     old, td = _world(logs=False)
     try:
         s = str(_run(ledger=False))                            # no ledger planted: no % at all
-        assert "of the bank" not in s and "All changes: net +$151.30</b> · pin $0.00" in s, s   # LAD + STOP only
+        assert "of the bank" not in s and "% of pin's bank" not in s and _pin_line(s) == (
+            "⚪ <b>Pin's changes: net $0.00</b> · engaged 0 times"), s   # LAD + STOP only: never in pin's figure
         with open(os.path.join(td, "pinrun-live-size.json"), "w", encoding="utf-8") as fh:
             json.dump({"bank": 1400.0, "size": 160}, fh)
         s = str(_run(ledger=False))
-        assert "(+10.81% of the bank)" in s, "the pin bot's own size file is the fallback bank: 151.30 / 1400"
+        assert "(+0.00% of pin's bank)" in _pin_line(s) and "(+8.81% of the bank)" not in s, \
+            "the pin bot's own size file is the fallback bank (pin's headline has its %), never LAD's base"
         saved = F.report
         F.report = lambda **k: (_ for _ in ()).throw(ValueError("planted"))
         try:

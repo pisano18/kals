@@ -235,10 +235,14 @@ def test_shape_and_sinces():
     d = tempfile.mkdtemp(prefix="fixes-test-")
     rep = _report(write_logs(d))
     ck(sorted(rep) == sorted(F.IDS + F.FIXED_IDS) and F.LADDER_IDS == ("O", "Q") and F.FIXED_IDS == ("LAD", "STOP")
-       and F.IDS == tuple("ABCDEFGHIJKLMNP") + ("WS",)
-       and [c["id"] for c in F.report(paths=write_logs(d), now=NOW)] == list("ABCDEFGHIJKLMNP") + ["WS", "LAD", "STOP"],
-       "sixteen pin changes A..N, P and WS, one row each, then the two measured once (LAD, STOP); the ladder's O and Q "
-       "only when a ladder order log is read (none here)")
+       and F.IDS == tuple("ABCDEFGHIJKLMNPR") + ("WS",)
+       and [c["id"] for c in F.report(paths=write_logs(d), now=NOW)] == list("ABCDEFGHIJKLMNPR") + ["WS", "LAD", "STOP"],
+       "seventeen pin changes A..N, P, R and WS, one row each, then the two measured once (LAD, STOP); the ladder's O "
+       "and Q only when a ladder order log is read (none here)")
+    ck(rep["R"]["since"] is None and rep["R"]["not_live"] == F.R_NOT_LIVE and rep["R"]["engaged"] == 0
+       and rep["R"]["extra"] == [] and rep["R"]["problem"] is None
+       and rep["R"]["what"].startswith("the hedge fires on the 5 Hz index when it crosses first (not live yet)"),
+       "R is not live before a start record has index_5hz hedge, and says what it waits for: %s" % rep["R"]["not_live"])
     ck(rep["WS"]["since"] is None and rep["WS"]["not_live"] == F.WS_NOT_LIVE and rep["WS"]["engaged"] == 0,
        "WS is not live before a start record has wrongside_rise_c above 0: %s" % rep["WS"]["not_live"])
     ck(all(c["undo"] is None for c in rep.values()) and all(c["fixed"] == (k in F.FIXED_IDS) for k, c in rep.items()),
@@ -1453,8 +1457,9 @@ def _test_o_ladder_rail100():
     pl = _write(d, "ladder-live-orders.jsonl", run_o([]), compact=True)   # ladder_live's own (compact) JSON
     rep = _report(ps + [pl], now=NOW_O)
     ck(sorted(rep) == sorted(F.IDS + F.LADDER_IDS + F.FIXED_IDS)
-       and [c["id"] for c in F.report(paths=ps + [pl], now=NOW_O)] == list("ABCDEFGHIJKLMNOP") + ["WS", "Q", "LAD", "STOP"],
-       "a ladder order log adds the O and Q rows, in letter order around P (WS after P, the measured-once rows "
+       and [c["id"] for c in F.report(paths=ps + [pl], now=NOW_O)] == list("ABCDEFGHIJKLMNOPR") + ["WS", "Q", "LAD",
+                                                                                                "STOP"],
+       "a ladder order log adds the O and Q rows, in letter order around P (R and WS after P, the measured-once rows "
        "last): %s" % sorted(rep))
     ck(rep["Q"]["since"] is None and rep["Q"]["not_live"] == F.Q_NOT_LIVE,
        "Q is not live on ladder starts before the midnight-reset code (no start_reads): %s" % rep["Q"]["not_live"])
@@ -2746,6 +2751,300 @@ def test_load_keeps_the_ladder_scan():
     mine = [k for k in F._CACHE if k and isinstance(k[0], tuple)]
     ck(F._CACHE.get(("ladder", pl)) is sc and len(mine) == F.LOAD_KEEP == 2 and mine[-1][0][1] == os.path.getsize(pp),
        "12 more states of pin's logs: _load keeps the newest 2 (%d), the ladder scan the same object" % len(mine))
+
+
+# ---- v-hedge5live (2026-11-16 13:08:56Z): R, the hedges the 5 Hz belief sent first, against the 1 Hz line ----------
+def _utc(*a):
+    import calendar as _c
+    return float(_c.timegm(a + (0,) * (6 - len(a))))
+
+
+NOW_R = _utc(2026, 11, 16, 19, 50)          # 2:50 PM ET: the 2:45 PM DOGE market 5 min past its close (pending)
+R_T0 = "2026-11-16T13:08:56Z"               # the hedge-mode start (v-hedge5live)
+R_CS = {"ETH": _utc(2026, 11, 16, 14, 30), "BTC": _utc(2026, 11, 16, 15), "XRP": _utc(2026, 11, 16, 15, 15),
+        "SOL": _utc(2026, 11, 16, 15, 30), "DOGE": _utc(2026, 11, 16, 19, 45), "ETH11": _utc(2026, 11, 16, 16),
+        "BTC1230": _utc(2026, 11, 16, 17, 30)}
+R_TK = {"ETH": "KXETH15M-26NOV160930-30", "BTC": "KXBTC15M-26NOV161000-00", "XRP": "KXXRP15M-26NOV161015-15",
+        "SOL": "KXSOL15M-26NOV161030-30", "DOGE": "KXDOGE15M-26NOV161445-45", "ETH11": "KXETH15M-26NOV161100-00",
+        "BTC1230": "KXBTC15M-26NOV161230-30"}
+R_START = dict(code_sha="3a19b0019e9c", hedge_belief=0.4, hedge_panic=0.4, hedge_odds_mult=1.5, hedge_odds_min_tau=11.0,
+               hedge_jump=None, hedge_jump_shadow=6.0, boost_rail="any", wrongside_rise_c=0.0, extra_coin=1.0,
+               late_extra=1.0, band99_max_tau=30, size=100.0)
+
+
+def _ralarm(m, tau, want, entry, n, b1, b5, by5=True, fast_off_ms=None):
+    t = R_CS[m] - tau
+    return _r("hedge_alarm", _ts(t), ticker=R_TK[m], want=want, entry=entry, n=n, belief=min(b1, b5), tau=tau,
+              threshold=0.4, trigger="belief", jump_sd=None, jump_threshold=None, belief_1hz=b1, belief5=b5,
+              fast_ms=(int(t * 1000) + fast_off_ms) if fast_off_ms is not None else None, by_5hz=by5)
+
+
+def _rhedge(m, tau, side, n, px, entry, kind="hedge", **kw):
+    rec = _r(kind, _ts(R_CS[m] - tau), ticker=R_TK[m], close_s=R_CS[m], side=side, price=px, n=n, asked=n, entry=entry,
+             tau=tau, belief=0.35, status="executed", live=True, order_id="o-%s-%s-%s" % (m, tau, n))
+    rec.update(kw)
+    return rec
+
+
+def _rset(m, want, res, pnl, cost):
+    return _r("settled", _ts(R_CS[m] + 20), ticker=R_TK[m], want=want, result=res, cost=cost, pnl_c=pnl)
+
+
+def run_r5(recs):
+    """The v-hedge5live run (11-16 8:08:56 AM ET on, --index-5hz hedge, the 1.5x extra with 11+ s left): R. Every $
+    worked by hand with Kalshi's fee ceil(7 x p x (1 - p) x n) / 100 per order:
+      ETH 9:30 AM, FLIP (2 positions, No 0.97 x 100 and 0.98 x 50): the 5 Hz belief 0.35 with 20 s left (1 Hz 0.55),
+          100 + 50 Yes at 15c and 50 + 25 extra at 16c; the 1 Hz line crossed a second later at 22c (19 s left, so its
+          extra too). Hedge: (85.00 - 0.90) + (42.50 - 0.45) = 126.15 vs 1 Hz (78.00 - 1.21) + (39.00 - 0.61) = 115.18:
+          +10.97; extra: (42.00 - 0.48) + (21.00 - 0.24) = 62.28 vs (39.00 - 0.61) + (19.50 - 0.31) = 57.58: +4.70;
+          +15.67. The 5 Hz print at :40.2, the 1 Hz one at :41: 0.80 s.
+      BTC 10:00 AM, WON (Yes 0.98 x 100): the 5 Hz belief 0.38 with 8 s left (1 Hz 0.62), 100 No at 12c; the 1 Hz line
+          never crossed: the false alarm -(12.00 + 0.74) = -12.74.
+      XRP 10:15 AM: a 1 Hz alarm (by_5hz false), hedged: not R's.
+      SOL 10:30 AM, WON (Yes 0.97 x 100): the 5 Hz belief 0.36 with 12 s left (1 Hz 0.60), 100 No at 20c + 50 extra at
+          21c; the 1 Hz line crossed 2 s later at 30c with 10 s left (under 11: no extra on that path). Hedge -(20.00 +
+          1.12) vs -(30.00 + 1.47): +10.35; the extra is the 5 Hz path's own: -(10.50 + 0.59) = -11.09; -0.74.
+      DOGE 2:45 PM, OPEN (No 0.97 x 40): the 5 Hz belief with 15 s left, 40 Yes at 25c + 20 extra at 26c; no result yet."""
+    eth, btc, xrp, sol, doge = (R_TK[k] for k in ("ETH", "BTC", "XRP", "SOL", "DOGE"))
+    recs += [
+        _r("start", R_T0, index_5hz="hedge", **R_START),
+        _ralarm("ETH", 20, "no", 0.97, 100.0, 0.55, 0.35, fast_off_ms=200),
+        _ralarm("ETH", 20, "no", 0.98, 50.0, 0.55, 0.35, fast_off_ms=200),
+        _r("hedge_panic", _ts(R_CS["ETH"] - 20), ticker=eth, belief=0.35, threshold=0.4, tau=20, ask=0.15, entry=0.97,
+           n=100.0),
+        _rhedge("ETH", 20, "yes", 100.0, 0.15, 0.97),
+        _rhedge("ETH", 20, "yes", 50.0, 0.15, 0.98),
+        _rhedge("ETH", 20, "yes", 50.0, 0.16, 0.97, kind="hedge_extra", mult=1.5, extra_of=50.0, orig_n=100.0,
+                min_tau=11.0, trigger="belief"),
+        _rhedge("ETH", 20, "yes", 25.0, 0.16, 0.98, kind="hedge_extra", mult=1.5, extra_of=25.0, orig_n=50.0,
+                min_tau=11.0, trigger="belief"),
+        _rset("ETH", "no", "yes", -14650.0, 0.973), _rset("ETH", "yes", "yes", 18843.0, 0.153),
+        _ralarm("BTC", 8, "yes", 0.98, 100.0, 0.62, 0.38, fast_off_ms=600),
+        _rhedge("BTC", 8, "no", 100.0, 0.12, 0.98),
+        _rset("BTC", "yes", "yes", 200.0, 0.98), _rset("BTC", "no", "yes", -1274.0, 0.12),
+        _ralarm("XRP", 9, "no", 0.97, 80.0, 0.35, 0.33, by5=False, fast_off_ms=100),
+        _rhedge("XRP", 9, "yes", 80.0, 0.30, 0.97),
+        _rset("XRP", "no", "yes", -7760.0, 0.97), _rset("XRP", "yes", "yes", 5450.0, 0.30),
+        _ralarm("SOL", 12, "yes", 0.97, 100.0, 0.60, 0.36, fast_off_ms=400),
+        _rhedge("SOL", 12, "no", 100.0, 0.20, 0.97),
+        _rhedge("SOL", 12, "no", 50.0, 0.21, 0.97, kind="hedge_extra", mult=1.5, extra_of=50.0, orig_n=100.0,
+                min_tau=11.0, trigger="belief"),
+        _rset("SOL", "yes", "yes", 300.0, 0.97), _rset("SOL", "no", "yes", -3221.0, 0.2033),
+        _ralarm("DOGE", 15, "no", 0.97, 40.0, 0.50, 0.33, fast_off_ms=800),
+        _rhedge("DOGE", 15, "yes", 40.0, 0.25, 0.97),
+        _rhedge("DOGE", 15, "yes", 20.0, 0.26, 0.97, kind="hedge_extra", mult=1.5, extra_of=20.0, orig_n=40.0,
+                min_tau=11.0, trigger="belief"),
+    ]
+    return recs
+
+
+def _rtj(m, tau, held, b_held, hedge_ask, our_ask, age=None):
+    """One trajectory row as pinrun writes it: fair = P(yes), want = the side the model favours, conf = P(want), ask =
+    the want side's, opp_ask the other's; index_age_s `age` (~1.0: the row was written before its second's print)."""
+    p_yes = b_held if held == "yes" else 1.0 - b_held
+    want = "yes" if p_yes >= 0.5 else "no"
+    conf = p_yes if want == "yes" else 1.0 - p_yes
+    ask, opp = (our_ask, hedge_ask) if want == held else (hedge_ask, our_ask)
+    rec = _r("traj", _ts(R_CS[m] - tau), ticker=R_TK[m], close_s=R_CS[m], tau=tau, want=want, held=held,
+             fair=round(p_yes, 5), conf=round(conf, 5), spot=1.0, strike=1.0, ask=ask, ask_size=500.0, opp_ask=opp,
+             opp_size=500.0, gate="max_per_market", near=True)
+    if age is not None:
+        rec["index_age_s"] = age
+    return rec
+
+
+def traj_r5(recs):
+    # ETH (held No), the server's BTC 11-11 shape: the 9:29:40 row (the alarm's second) is on a fresh print, 0.55; the
+    # :41 print crosses (0.30) but the :41 row was written before it arrived (index_age_s 1.04: still 0.55), so the
+    # crossing shows in the :42 row (index_age_s 1.04: the :41 print) -- the 1 Hz moment is :41, at the :41 row's 22c
+    # Yes ask (the :42 row's 27c is a second later than the 1 Hz hedge)
+    for tau in range(30, -1, -1):
+        b, h, age = ((0.90, 0.08, 0.08) if tau > 20 else (0.55, 0.15, 0.08) if tau == 20 else (0.55, 0.22, 1.04)
+                     if tau == 19 else (0.30, 0.27, 1.04) if tau == 18 else (0.20, 0.30, 0.06))
+        recs.append(_rtj("ETH", tau, "no", 0.0 if tau == 0 else b, None if tau == 0 else h, 0.80, age))
+    for tau in range(30, -1, -1):          # BTC (held Yes): 0.62 at the alarm, never under 0.40; Yes at the close
+        b = 1.0 if tau == 0 else 0.62 if tau == 8 else 0.70 if tau == 7 else 0.95 if tau > 8 else 0.92
+        recs.append(_rtj("BTC", tau, "yes", b, 0.12 if tau == 8 else 0.05, 0.94))
+    for tau in range(30, -1, -1):          # SOL (held Yes): 0.60 at the alarm, 0.45, under at 10 s (No 30c), recovers
+        b, h = ((0.95, 0.04) if tau > 12 else (0.60, 0.20) if tau == 12 else (0.45, 0.25) if tau == 11 else
+                (0.35, 0.30) if tau == 10 else (0.60, 0.20))
+        recs.append(_rtj("SOL", tau, "yes", 1.0 if tau == 0 else b, h, 0.70))
+    for tau in range(30, 0, -1):           # DOGE (held No): under the line from 14 s; no close row yet (open)
+        b = 0.90 if tau > 15 else 0.50 if tau == 15 else 0.30
+        recs.append(_rtj("DOGE", tau, "no", b, 0.33, 0.70))
+    return recs
+
+
+def run_r5_shadow(recs):
+    """The shadow run before it (11-15, --index-5hz shadow): a hedge5_shadow and even a by_5hz alarm with a hedge are
+    nothing of R's (no event before the first start on index_5hz hedge)."""
+    tk, cs = "KXSOL15M-26NOV150615-15", _utc(2026, 11, 15, 11, 15)
+    return recs + [
+        _r("start", "2026-11-15T10:00:00Z", index_5hz="shadow", **R_START),
+        _r("hedge5_shadow", _ts(cs - 10), ticker=tk, close_s=cs, want="yes", entry=0.97, side="no", n=50.0, ask=0.2,
+           ask_size=500.0, limit=0.3, rungs=[[0.2, 500.0]], belief=0.9, belief5=0.3, tau=10, extra_n=0.0,
+           would_send=True, sent=False, outcome="would_send"),
+        _r("hedge_alarm", _ts(cs - 9), ticker=tk, want="yes", entry=0.97, n=50.0, belief=0.35, tau=9, belief_1hz=0.35,
+           belief5=0.3, fast_ms=None, by_5hz=True),
+        _r("hedge", _ts(cs - 9), ticker=tk, close_s=cs, side="no", price=0.25, n=50.0, asked=50.0, entry=0.97, tau=9,
+           status="executed", live=True),
+        _r("settled", _ts(cs + 20), ticker=tk, want="yes", result="yes", cost=0.97, pnl_c=150.0),
+        _r("settled", _ts(cs + 20), ticker=tk, want="no", result="yes", cost=0.25, pnl_c=-1300.0)]
+
+
+def write_r5(d, more=(), more_traj=(), traj=True):
+    """The shadow run, the hedge run (+ `more` records) and its trajectory log (+ `more_traj` rows; the file in time
+    order, as pinrun writes it: the reader searches it by time) in folder `d`; the pin log paths."""
+    p0 = _write(d, "pinrun-live-20261115T100000Z.jsonl", run_r5_shadow([]))
+    p1 = _write(d, "pinrun-live-20261116T130856Z.jsonl", run_r5([]) + list(more))
+    if traj:
+        _write(d, "pintraj-live-20261116T130856Z.jsonl", sorted(traj_r5([]) + list(more_traj), key=lambda x: x["t"]))
+    return [p0, p1]
+
+
+def _r_eth11():
+    """ETH 11:00 AM, WON (No 0.98 x 300): a 5 Hz false alarm with 25 s left, 300 Yes at 10c + 150 extra at 11c, the 1 Hz
+    line never crossed: -(30.00 + 1.89) - (16.50 + 1.03) = -49.42 (takes R's net to -47.23, under the -$25 stop)."""
+    recs = [_ralarm("ETH11", 25, "no", 0.98, 300.0, 0.70, 0.30, fast_off_ms=500),
+            _rhedge("ETH11", 25, "yes", 300.0, 0.10, 0.98),
+            _rhedge("ETH11", 25, "yes", 150.0, 0.11, 0.98, kind="hedge_extra", mult=1.5, extra_of=150.0, orig_n=300.0,
+                    min_tau=11.0, trigger="belief"),
+            _rset("ETH11", "no", "no", 600.0, 0.98), _rset("ETH11", "yes", "no", -4942.0, 0.1033)]
+    traj = [_rtj("ETH11", tau, "no", 1.0 if tau == 0 else 0.70 if tau == 25 else 0.90, 0.10, 0.90)
+            for tau in range(30, -1, -1)]
+    return recs, traj
+
+
+def test_r_hedge5live():
+    d = tempfile.mkdtemp(prefix="fixes-test-")
+    rep = _report(write_r5(d), now=NOW_R)
+    r = rep["R"]
+    ck(r["name"] == "5 Hz hedge" and r["since"] == "Nov 16 8:08 AM ET" and r["not_live"] is None
+       and r["what"] == ("the hedge fires on the 5 Hz index when it crosses first (live 11-16 8:08 AM ET); each such "
+                         "hedge priced against what the 1 Hz line would have done"),
+       "R starts at the first start record with index_5hz hedge (not the shadow run before it): %s | %s" % (
+           r["since"], r["what"]))
+    ck(r["engaged"] == 4 and r["open"] == 1, "R: 4 markets with a 5 Hz-first alarm (DOGE open); XRP's 1 Hz alarm and the "
+       "shadow run's by_5hz alarm are not R's: engaged %s open %s" % (r["engaged"], r["open"]))
+    ev = {e["coin"]: e for e in r["events"]}
+    ck(sorted(ev) == ["BTC", "DOGE", "ETH", "SOL"] and all(e["epoch"] >= F._epoch(R_T0) for e in r["events"]),
+       "R's events: one per market, none before the hedge start: %s" % sorted(ev))
+    ck(ev["ETH"]["usd"] == 15.67 and ev["ETH"]["words"] == (
+        "a 5 Hz hedge 0.80 s before the 1 Hz print (2 positions): 150 Yes at 15.0c instead of 22.0c a second later; "
+        "+ 75 extra at 16.0c (the 1 Hz line, with 19 s left, would have bought them at 22.0c too); the bet FLIPPED: "
+        "saved $15.67"),
+       "ETH flip: the 1 Hz line at the second of the print that crossed (the :42 row's, index_age_s 1.04: :41), at the "
+       ":41 row's Yes ask, the extra priced the same way: %s %s" % (ev["ETH"]["usd"], ev["ETH"]["words"]))
+    ck(ev["BTC"]["usd"] == -12.74 and ev["BTC"]["words"] == (
+        "a 5 Hz hedge with 8 s left (belief 38% on the 5 Hz print, 62% on the 1 Hz): 100 No at 12.0c; the 1 Hz line "
+        "never crossed 0.40 before the close; the bet WON: the false alarm cost $12.74"),
+       "BTC false alarm: the real premium: %s %s" % (ev["BTC"]["usd"], ev["BTC"]["words"]))
+    ck(ev["SOL"]["usd"] == -0.74 and ev["SOL"]["words"] == (
+        "a 5 Hz hedge 1.60 s before the 1 Hz print: 100 No at 20.0c instead of 30.0c 2 s later; + 50 extra at 21.0c "
+        "only the 5 Hz path bought (the 1 Hz line came with 10 s left, under 11); the bet WON: cost $0.74 (the extra "
+        "alone lost $11.09)"),
+       "SOL: the 1 Hz moment under 11 s, so the extra is the 5 Hz path's own: %s %s" % (ev["SOL"]["usd"],
+                                                                                     ev["SOL"]["words"]))
+    ck(ev["DOGE"]["usd"] is None and ev["DOGE"]["open"] and ev["DOGE"]["words"].endswith("; not settled yet")
+       and "instead of 33.0c a second later" in ev["DOGE"]["words"], "DOGE open: %s" % ev["DOGE"]["words"])
+    ck(r["net_usd"] == 2.19, "R net = 15.67 - 12.74 - 0.74: %s" % r["net_usd"])
+    ck(r["extra"] == ["the 1 Hz line followed on 2 markets: +$14.93 (1 flip, 1 won bet) · 1 false alarm the 1 Hz line "
+                      "never confirmed: -$12.74 · 1 open", F.R_STOP]
+       and F.R_STOP == "stop rule: back to shadow if the net falls below -$25 (operator 11-16)",
+       "R's lines: the split and the stop rule: %s" % r["extra"])
+    ck(r["problem"] is None and F.totals(rep.values())["problems"] == [], "over -$25: no problem")
+    tot = F.totals(rep.values())
+    ck(abs(tot["net_usd"] - round(sum(c["net_usd"] for c in rep.values() if c["id"] != "J")
+                                  - sum(c["overlap_usd"] for c in rep.values()), 2)) < 0.005,
+       "R is in the totals (real money): %s" % tot["net_usd"])
+    # the stop rule: a $49.42 false alarm takes the net to -47.23 while pin still runs hedge -> the row's problem
+    eth11, traj11 = _r_eth11()
+    d2 = tempfile.mkdtemp(prefix="fixes-test-")
+    ps = write_r5(d2, eth11, traj11)
+    rep2 = _report(ps, now=NOW_R)
+    r2 = rep2["R"]
+    e11 = next(e for e in r2["events"] if e["t"] == _ts(R_CS["ETH11"] - 25))
+    ck(e11["usd"] == -49.42 and e11["words"] == (
+        "a 5 Hz hedge with 25 s left (belief 30% on the 5 Hz print, 70% on the 1 Hz): 300 Yes at 10.0c + 150 extra at "
+        "11.0c; the 1 Hz line never crossed 0.40 before the close; the bet WON: the false alarm cost $49.42"),
+       "ETH 11 AM false alarm, its extra in: %s %s" % (e11["usd"], e11["words"]))
+    ck(r2["net_usd"] == -47.23 and r2["problem"] == (
+        "net -$47.23 since 11-16, under the operator's -$25 stop: back to shadow (results\\pin_hedge5live.ps1 -Revert + "
+        "restart while flat)") and F.totals(rep2.values())["problems"] == ["R"],
+       "under -$25 while pin runs hedge: the stop rule is R's problem: %s | %s" % (r2["net_usd"], r2["problem"]))
+    # back to shadow (a later start on index_5hz shadow): the net stops, no problem, the revert said; an alarm after it
+    # (DOGE, 2:44 PM, and a by_5hz one in the shadow run itself) is not R's
+    _write(d2, "pinrun-live-20261116T170000Z.jsonl", [
+        _r("start", "2026-11-16T17:00:00Z", index_5hz="shadow", **R_START),
+        _ralarm("BTC1230", 9, "yes", 0.98, 10.0, 0.70, 0.30),
+        _rhedge("BTC1230", 9, "no", 10.0, 0.20, 0.98)])
+    rep3 = _report(ps + [os.path.join(d2, "pinrun-live-20261116T170000Z.jsonl")], now=NOW_R)
+    r3 = rep3["R"]
+    ck(r3["engaged"] == 4 and r3["open"] == 0 and r3["net_usd"] == -47.23 and r3["problem"] is None
+       and sorted(e["coin"] for e in r3["events"]) == ["BTC", "ETH", "ETH", "SOL"]
+       and r3["extra"][-1] == ("back to shadow since Nov 16 12:00 PM ET (a pin start without --index-5hz hedge): the net "
+                               "no longer moves"),
+       "after the revert to shadow: only the hedge span counts, no problem, the revert said: %s | %s" % (
+           [e["coin"] for e in r3["events"]], r3["extra"]))
+    # no trajectory log: the 1 Hz line cannot be read -- NOT PRICED (said, never $0, never a false alarm)
+    d4 = tempfile.mkdtemp(prefix="fixes-test-")
+    r4 = _report(write_r5(d4, traj=False), now=NOW_R)["R"]
+    e4 = {e["coin"]: e for e in r4["events"]}
+    ck(r4["engaged"] == 4 and r4["net_usd"] == 0.0 and all(e["usd"] is None for e in r4["events"])
+       and e4["ETH"]["words"] == ("a 5 Hz hedge with 20 s left (2 positions) (belief 35% on the 5 Hz print, 55% on the "
+                                  "1 Hz): 150 Yes at 15.0c + 75 extra at 16.0c; no trajectory row after it, so the 1 Hz "
+                                  "line cannot be read: NOT PRICED")
+       and r4["extra"][0] == "4 NOT PRICED (no trajectory row after the alarm)",
+       "no trajectory: every market NOT PRICED, said under the net: %s | %s" % (e4["ETH"]["words"], r4["extra"]))
+
+
+def test_r_helpers():
+    ck(F._r_on({"index_5hz": "hedge"}) and F._r_on({"index_5hz": " Hedge "}) and not F._r_on({"index_5hz": "shadow"})
+       and not F._r_on({"index_5hz": "off"}) and not F._r_on({}) and not F._r_on(None), "_r_on: only 'hedge'")
+    row = {"want": "no", "fair": 0.17019, "conf": 0.82981}            # the real ETH 11-14 row at 04:14:50Z
+    ck(abs(F.r_belief_held(row, "no") - 0.82981) < 1e-9 and abs(F.r_belief_held(row, "yes") - 0.17019) < 1e-9
+       and abs(F.r_belief_held({"want": "yes", "fair": 0.65562}, "no") - 0.34438) < 1e-9
+       and F.r_belief_held({}, "no") is None,
+       "r_belief_held: conf is the row's want's belief; fair (an archived row) is P(yes)")
+    ck(F._n_hedge_ask({"want": "no", "ask": 0.973, "opp_ask": 0.042}, "no") == 0.042
+       and F._n_hedge_ask({"want": "yes", "ask": 0.20, "opp_ask": 0.84}, "no") == 0.20,
+       "the hedge side's ask: opp_ask when the row's want is the held side, else ask (the ETH 11-14 rows)")
+    cs = 1000.0
+    rows = [{"_epoch": 990.0, "tau": 10, "want": "no", "conf": 0.9, "ask": 0.9, "opp_ask": 0.1},
+            {"_epoch": 991.0, "tau": 9, "want": "yes", "conf": 0.7, "ask": None, "opp_ask": 0.8},
+            {"_epoch": 992.0, "tau": 8, "want": "yes", "conf": 0.7, "ask": 0.31, "opp_ask": 0.7}]
+    ck(F.r_one_hz(rows, "no", 990.4, cs) == (992.0, 8, 0.31) and F.r_one_hz(rows[:2], "no", 990.4, cs) == (991.0, 9, None)
+       and F.r_one_hz(rows[:1], "no", 990.4, cs) is None and F.r_one_hz(rows, "no", 993.0, cs) is None,
+       "r_one_hz: the first crossing with an offer; crossed with none; never crossed; rows before the alarm not read")
+    # the server's BTC 11-11 rows (19:59:38..40Z, held No): the :40 row (index_age_s 1.04) carries the :39 print that
+    # crossed; the 1 Hz moment is :39 at the :39 row's 69c (the real 1 Hz hedge: ask 70c, filled 70c), not :40's 73c
+    btc = [{"_epoch": 978.0, "tau": 22, "want": "no", "conf": 0.9895, "ask": 0.85, "opp_ask": 0.15, "index_age_s": 1.06},
+           {"_epoch": 979.0, "tau": 21, "want": "no", "conf": 0.9943, "ask": 0.31, "opp_ask": 0.69, "index_age_s": 1.04},
+           {"_epoch": 980.0, "tau": 20, "want": "yes", "conf": 0.8651, "ask": 0.73, "opp_ask": 0.27, "index_age_s": 1.04}]
+    ck(F.r_one_hz(btc, "no", 978.0, cs, fast_ms=978800) == (979.0, 21, 0.69) and F.r_print_second(btc[2]) == 979.0
+       and F.r_print_second({"_epoch": 5.0}) == 5.0
+       and F.r_one_hz(btc[:1] + btc[2:], "no", 978.0, cs, fast_ms=978800) == (979.0, 21, 0.73)
+       and F.r_one_hz(btc, "no", 979.6, cs) == (979.0, 21, 0.69),
+       "r_one_hz: the crossing dated by its print (row second - index age), priced at that second's row; the crossing "
+       "row's own ask when that second has no row; never before the alarm's second")
+    # the server's ETH 11-15 11:44 AM rows (16:44:31..33Z, held No; the 5 Hz print at :31.8): the :32 print that crossed
+    # is in NO row (:32 written on the :31 print, index_age_s 1.07; :33 on its own, 0.06): the moment is the earliest
+    # second it could have crossed, :32, at the :32 row's 88c (the real 1 Hz hedge: ask 88c, filled 90.4c), not :33's 93.6c
+    eth = [{"_epoch": 991.0, "tau": 29, "want": "no", "conf": 0.8671, "ask": 0.80, "opp_ask": 0.19, "index_age_s": 1.02},
+           {"_epoch": 992.0, "tau": 28, "want": "no", "conf": 0.8379, "ask": 0.11, "opp_ask": 0.88, "index_age_s": 1.07},
+           {"_epoch": 993.0, "tau": 27, "want": "yes", "conf": 0.9994, "ask": 0.936, "opp_ask": 0.06, "index_age_s": 0.06}]
+    ck(F.r_one_hz(eth, "no", 991.0, cs, fast_ms=991800) == (992.0, 8, 0.88)
+       and F.r_one_hz(eth[:1] + eth[2:], "no", 991.0, cs, fast_ms=991800) == (992.0, 8, 0.936),
+       "r_one_hz: a crossing print in no row -- the earliest second it could have crossed (the second after the last "
+       "print seen above the line, the 5 Hz print's second's included), that second's book; without that row, the "
+       "crossing row's ask")
+    usd, ux = F.r_price([(100.0, 0.12)], [], None, False)
+    ck(round(usd, 2) == -12.74 and ux == 0.0, "r_price: the 1 Hz line never fired: the real premium, fee in: %s" % usd)
+    usd, ux = F.r_price([(100.0, 0.20)], [(50.0, 0.21)], (0.0, 10, 0.30), False)
+    ck(round(usd, 2) == -0.74 and round(ux, 2) == -11.09, "r_price: 1 Hz under 11 s: the extra is the 5 Hz path's own")
+    ck(F.r_problem(-25.0, True, NOW_R) is None and F.r_problem(-25.01, False, NOW_R) is None
+       and F.r_problem(-25.01, True, NOW_R).startswith("net -$25.01 since 11-16, under the operator's -$25 stop"),
+       "r_problem: under -$25 (not at it) and only while pin still runs hedge")
 
 
 if __name__ == "__main__":

@@ -70,6 +70,17 @@ bet's own contracts, K and WS a whole market). Two more messages from the same t
     (or cost)". A day with nothing new still sends it ($0 / no bets): the operator sees the watch is alive.
   A Telegram failure stops the tick's undo sends (each is tried again next tick): the task kills a run at 4 minutes,
   and a run killed after a send but before the state is saved would send that message twice.
+  D (the boost rail kept off, reverted 11-16 by v-railany; botdata.fixes scores the revert against KEEPING D) is in the
+  daily line beside M, K, WS (its own 'since' when its undo is later than theirs), NEVER in the loss alerts
+  (UNDO_NO_LOSS): keeping D only ever ADDS size, so no loss of pin's is one D would have stopped, and a won bet the revert
+  sized smaller is money not made, not a loss.
+
+v-hedge5live (2026-11-16 13:08:56Z; pin's belief hedge fires on the LOWER of the 1 Hz and 5 Hz beliefs; the operator's
+stop rule: back to shadow if its net vs the 1 Hz line falls below -$25): botdata.fixes row R prices each market the
+5 Hz belief hedged first against the 1 Hz line. ONE URGENT alert, once ever (state key "hedge5_stop"), the first tick
+R's settled net is under HEDGE5_STOP_USD (-$25) while pin's latest start still runs --index-5hz hedge, said only once
+the net reads the same on two ticks in a row (state key "hedge5_pending"; the undo alerts' rule): "5 Hz hedge net -$X
+since 11-16: the operator's stop rule says back to shadow (results\pin_hedge5live.ps1 -Revert + restart while flat)".
   QUIET HOURS (the phone's rule, phone/quiet.py, read from the same telegram.json "quiet_hours", default 11 PM to 7
   AM ET, "off" = none): while quiet only an URGENT message goes (a loss of $50+ or 3%+ of the bank: quiet.loss_is_urgent,
   the phone's own line for a single loss), with sound. Any other new message is HELD in the state file (state key
@@ -83,7 +94,9 @@ bet's own contracts, K and WS a whole market). Two more messages from the same t
   python research\pinrules_watch.py --self-test [--log PATH]   the scorer on 11-01's HYPE and NEAR + a synthetic flip,
                                                  a synthetic band rail trip and a synthetic $12 engagement of change I,
                                                  and v-undo-alerts on a planted undo log (a loss alerts once, a win
-                                                 never, the daily line once an ET day, quiet hours hold and release)
+                                                 never, the daily line once an ET day, quiet hours hold and release;
+                                                 D in the daily line, never in a loss alert), and the 5 Hz hedge's
+                                                 stop rule on a planted v-hedge5live log (once, never twice)
   python research\pinrules_watch.py --test-send  one message to the phone, labelled as a test
 """
 import calendar
@@ -140,13 +153,24 @@ FIX_POS = {"D": "MADE", "E": "MADE", "F": "SAVED", "G": "SAVED", "H": "SAVED", "
            "L": "KEPT", "M": "SAVED", "N": "SAVED"}
 FIX_NEG = {"D": "LOST", "E": "COST", "F": "GAVE UP", "G": "GAVE UP", "H": "GAVE UP", "I": "LOST", "J": "LOST",
            "K": "GAVE UP", "L": "GAVE UP", "M": "GAVE UP", "N": "COST"}
-# v-undo-alerts: the rules the 11-14 undo reverted (botdata.fixes rows with row["undo"]), in plain words
-UNDO_IDS = ("M", "K", "WS")
-UNDO_NAME = {"M": "3rd-bet block", "K": "6-10 AM cheap-buy skip", "WS": "wrong-side skip"}
+# v-undo-alerts: the rules the 11-14 undo reverted (botdata.fixes rows with row["undo"]), in plain words; D (the boost
+# rail kept off, reverted 11-16 by v-railany) is in the 9 PM daily line too, never in the loss alerts (UNDO_NO_LOSS)
+UNDO_IDS = ("M", "K", "WS", "D")
+UNDO_NAME = {"M": "3rd-bet block", "K": "6-10 AM cheap-buy skip", "WS": "wrong-side skip",
+             "D": "always-on 1.5x boost"}
 UNDO_STOP = {"M": "would have kept that bet out", "K": "would have skipped that market",
-             "WS": "would have skipped that market"}
-UNDO_UNIT = {"M": "bet", "K": "market", "WS": "market"}    # what one undo event is (fixes.undo_counted's words)
-UNDO_ON = {"M": "_m_on", "K": "_k_on", "WS": "_ws_on"}     # fixes' test of a start record: is the rule on there?
+             "WS": "would have skipped that market", "D": "would have kept the 1.5x boost on there"}
+UNDO_UNIT = {"M": "bet", "K": "market", "WS": "market", "D": "market"}   # one undo event (fixes.undo_counted's words)
+UNDO_ON = {"M": "_m_on", "K": "_k_on", "WS": "_ws_on", "D": "_d_on"}    # fixes' test of a start record: rule on there?
+# never a 'loss a reverted rule would have stopped': keeping D only ever ADDS size (the 1.5x boost on after a rail trip),
+# so it never prevents a loss, and a won bet the revert sized smaller is money not made, not a loss to alert
+UNDO_NO_LOSS = ("D",)
+# v-hedge5live (11-16): the operator's stop rule for the 5 Hz hedge (botdata.fixes row R): back to shadow once its
+# settled net vs the 1 Hz line is under -$25 -- one alert, once (state key "hedge5_stop"), when the net reads the same on
+# two ticks in a row (state key "hedge5_pending": the net at the last tick, as "undo_pending")
+HEDGE5_ID = "R"
+HEDGE5_STOP_USD = -25.0
+HEDGE5_REVERT = r"results\pin_hedge5live.ps1 -Revert + restart while flat"
 UNDO_DAILY_AT_S = 21 * 3600               # the daily line: the first tick from 9 PM ET on, once per ET day
 UNDO_BURST = 4                            # more new losses than this in one tick: one message listing them
 LOSS_URGENT_USD = 50.0                    # phone/quiet.py's line for a single loss (used only if it cannot be imported)
@@ -707,14 +731,17 @@ def fix_text(c, ev, tot, bank):
                                                c["id"], c.get("name"), ev.get("coin") or "?"),
         "%s: %s" % (ev.get("et") or "?", ev.get("words") or ""),
         "The change: %s." % c.get("what"),
-        "All tracked changes so far: engaged %d times · net %s%s · /fixes lists every one" % (
-            tot["engaged"], usd(tot["net_usd"]), pct(tot["net_usd"], bank))])
+        # pin's own changes only (the operator 11-16: the ladder's and the stops' rows "only affect" them, not pin;
+        # `bank` is pin's): fixes.totals' pin_net_usd / pin_engaged, the older fields when an older fixes is loaded
+        "All of pin's tracked changes so far: engaged %d time%s · net %s%s · /fixes lists every one" % (
+            tot.get("pin_engaged", tot["engaged"]), "" if tot.get("pin_engaged", tot["engaged"]) == 1 else "s",
+            usd(tot.get("pin_net_usd", tot["net_usd"])), pct(tot.get("pin_net_usd", tot["net_usd"]), bank))])
 
 
 # ---------------------------------------------------------------------------
 # v-undo-alerts (2026-11-14): the reverted rules M, K, WS against KEEPING them (botdata.fixes row["undo"])
 def undo_rows(changes):
-    """{id: row} of the undone rules (M, K, WS rows whose undo is scored), in UNDO_IDS order."""
+    """{id: row} of the undone rules (M, K, WS, D rows whose undo is scored), in UNDO_IDS order."""
     by = {c.get("id"): c for c in (changes or [])}
     return {k: by[k] for k in UNDO_IDS if by.get(k) and by[k].get("undo")}
 
@@ -756,9 +783,12 @@ def undo_settled_usd(evs):
 
 def undo_losses(changes):
     """Every (rule, market) of the undos settled with money under $0 (any size: a loss the rule would have stopped):
-    [{row, id, close, coin, usd, events}] in close order."""
+    [{row, id, close, coin, usd, events}] in close order. Never D's (UNDO_NO_LOSS): keeping D only adds size, so its
+    undo's minus is a won bet the revert sized smaller, never a loss D would have stopped."""
     out = []
     for cid, c in undo_rows(changes).items():
+        if cid in UNDO_NO_LOSS:
+            continue
         for cl, coin, evs in undo_markets(c):
             x = undo_settled_usd(evs)
             if x is not None and x <= -0.005:
@@ -913,7 +943,9 @@ def undo_daily_text(changes, day, bank, now, start=None):
             body += (" · that day %s on %d" % (usd(round(sum(e["usd"] for e in today), 2)), len(today))) if today \
                 else " · nothing new that day"
         back = " (BACK ON at pin's latest start: its total no longer moves)" if undo_rule_on(cid, start) else ""
-        lines.append(" • %s (%s)%s: %s" % (UNDO_NAME[cid][:1].upper() + UNDO_NAME[cid][1:], cid, back, body))
+        own = float(u.get("since_t") or since_t)               # a rule undone later than the first (D, 11-16) says when
+        when = (", since %s" % clock.et_clock(own)) if own - since_t > 60 else ""
+        lines.append(" • %s (%s%s)%s: %s" % (UNDO_NAME[cid][:1].upper() + UNDO_NAME[cid][1:], cid, when, back, body))
     tot = undo_total(rows)
     on = ("on %d bet%s and market%s%s" % (n_all, "" if n_all == 1 else "s", "" if n_all == 1 else "s",
                                            (" · %d open" % open_all) if open_all else "")) if n_all \
@@ -1035,6 +1067,67 @@ def undo_watch(changes, st, phone, bank, now, start=None, say=None, failed=None)
         if undo_send(phone, st, "daily|" + d, undo_daily_text(changes, d, bank, now, start), False, now, say):
             st["undo_daily"][d] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now))
             say("undo daily said: %s" % d)
+
+
+# ---------------------------------------------------------------------------
+# v-hedge5live (2026-11-16): the 5 Hz hedge's stop rule (botdata.fixes row R against the 1 Hz line)
+def hedge5_live(start):
+    """True when pin's latest start record still runs --index-5hz hedge (fixes' own test of a start record)."""
+    try:
+        from botdata import fixes as _fixes
+        return bool(start) and bool(_fixes._r_on(start))
+    except Exception:
+        return False
+
+
+def hedge5_text(row, x, bank):
+    """The stop rule's alert: the net, what the rule says, how to revert, the row's split, /fixes."""
+    try:
+        from botdata import fixes as _fixes
+        day = _fixes._md(row["since_t"]) if row.get("since_t") is not None else "11-16"
+    except Exception:
+        day = "11-16"
+    lines = ["🛑 5 Hz hedge net %s%s since %s: the operator's stop rule says back to shadow (%s)" % (
+        usd(x), pct(x, bank), day, HEDGE5_REVERT),
+        "R %s: %d market%s since %s%s." % (row.get("name") or "5 Hz hedge", int(row.get("engaged") or 0),
+                                          "" if int(row.get("engaged") or 0) == 1 else "s", row.get("since") or "?",
+                                          (", %d open" % row["open"]) if row.get("open") else "")]
+    first = (row.get("extra") or [None])[0]
+    if first and not str(first).startswith("stop rule"):
+        lines.append("Against the 1 Hz line: %s." % first)
+    lines.append("/fixes lists every one")
+    return "\n".join(lines)
+
+
+def hedge5_watch(changes, st, phone, bank, now, start=None, say=None):
+    """The tick's stop-rule part: ONE urgent alert, once ever (state key "hedge5_stop"), the first time row R's settled
+    net is under HEDGE5_STOP_USD while pin's latest start still runs --index-5hz hedge, and only once that net reads the
+    same on two ticks in a row (state key "hedge5_pending": the net at the last tick under the line): pinrun books a
+    market's legs up to ~45 s apart, so a tick between them could read a part of the money. A net back over the line
+    clears the pending reading. Returns the text sent, or None. A Telegram failure leaves it for the next tick."""
+    say = say or log
+    if st.get("hedge5_stop"):
+        return None
+    row = next((c for c in (changes or []) if c.get("id") == HEDGE5_ID), None)
+    if not row or not row.get("since") or not hedge5_live(start):
+        st.pop("hedge5_pending", None)
+        return None
+    x = round(float(row.get("net_usd") or 0.0), 2)
+    if x >= HEDGE5_STOP_USD - 1e-9:
+        st.pop("hedge5_pending", None)
+        return None
+    last = st.get("hedge5_pending")
+    st["hedge5_pending"] = x
+    if last is None or abs(float(last) - x) >= 0.005:
+        say("5 Hz hedge net %s under the -$25 stop: waits a tick (the same $ twice)" % usd(x))
+        return None
+    text = hedge5_text(row, x, bank)
+    if not phone.send(text, True, now):
+        return None
+    st["hedge5_stop"] = {"t": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)), "net_usd": x}
+    st.pop("hedge5_pending", None)
+    say("5 Hz hedge stop rule said: %s" % usd(x))
+    return text
 
 
 # ---------------------------------------------------------------------------
@@ -1170,6 +1263,14 @@ def tick(dry=False, now=None):
         undo_watch(changes, st, phone, bank, now, latest, failed=failed)
     except Exception:
         log("reverted rules not watched this tick: " + traceback.format_exc().replace("\n", " | ")[-600:])
+    # v-hedge5live: the 5 Hz hedge's stop rule (row R under -$25 while pin still runs --index-5hz hedge): one urgent
+    # alert, once (its own try: never stops the rest)
+    try:
+        if changes is not None:
+            latest = max(L.starts, key=lambda x: x[0] or "")[1] if L.starts else {}
+            hedge5_watch(changes, st, phone, bank, now, latest)
+    except Exception:
+        log("5 Hz hedge stop rule not watched this tick: " + traceback.format_exc().replace("\n", " | ")[-600:])
     # reports
     for n, due_day, title, d0, d1 in REPORTS:
         if st["reports"].get(str(n)):
@@ -1325,10 +1426,10 @@ def self_test(log_path):
     ft = fix_text(due[0][0], due[0][1], FX.totals(ch), 2628.63) if due else ""
     print()
     print(ft)
-    # the total is /fixes's: I's +$17.00 and the rows measured once by the 11-14 retro (the ladder's 4 changes, the stops)
+    # the total is /fixes's headline: PIN's changes only (I's +$17.00), never the ladder's or the stops' measured rows
     want_ft = ("PIN CHANGE MADE $12.00 (+0.46% of the bank)", "I max positions 5", "TESTI", "Nov 5 9:59 AM ET",
                "40 contracts filled at 70.0c", "the leg made $12.00", "up to 5 positions open at once (was 3)",
-               "engaged 2 times", "net %s" % usd(17.0 + sum(p[-1] for p in FX.LAD_PARTS + FX.STOP_PARTS)), "/fixes")
+               "All of pin's tracked changes so far: engaged 2 times · net +$17.00 (+0.65% of the bank)", "/fixes")
     check("change text: verb and $, the change, the coin, the time, what happened, the total (%d phrases)" % len(want_ft),
           sum(1 for w in want_ft if w in ft), len(want_ft), len(want_ft))
     if due:
@@ -1405,6 +1506,8 @@ def self_test(log_path):
     rt = rt + ftK + ftM                              # the em-dash check below reads these alerts too
     check("no em dash in any alert text", (chr(0x2014) in rt) or (chr(0x2014) in ft), False, False)
     self_test_undo(FX, d, check)                     # v-undo-alerts (its checks count in this self-test's verdict)
+    dh = tempfile.mkdtemp()                          # v-hedge5live's stop rule, in a folder of its own
+    self_test_hedge5(FX, dh, check)
     print()
     print(alert_text(hy_e, run, 2628.63))
     print()
@@ -1670,10 +1773,156 @@ def self_test_undo(FX, d, check):
           1 if (undo_daily_at("2027-03-14") == calendar.timegm((2027, 3, 15, 1, 0, 0))
                 and undo_daily_at("2027-11-07") == calendar.timegm((2027, 11, 8, 2, 0, 0))
                 and undo_daily_at("2026-11-15") == calendar.timegm((2026, 11, 16, 2, 0, 0))) else 0, 1, 1)
-    alltxt = "\n".join(m[0] for m in ph.sent + php.sent + phf.sent + phd.sent + phx.sent)
+    # D (v-railany, 11-16 11:08:53Z): its undo vs KEEPING D (fixes' row["undo"]; planted here in fixes' shape) is in the
+    # 9 PM daily line beside M, K, WS with its own since, and NEVER a loss alert: ETH, a won bet the revert sized
+    # smaller (-$22.80 vs keeping D), NEAR +$1.40
+    write(rows)
+    d_since = float(calendar.timegm((2026, 11, 16, 11, 8, 53)))
+
+    def dev(mi, coin, x):
+        e = float(calendar.timegm((2026, 11, 16, 11, mi, 40)))
+        return {"t": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(e)), "epoch": e, "et": FX.et_words(e), "coin": coin,
+                "words": "since the undo (vs keeping it): bought after the band-boost trip (6:15 AM ET, a losing No leg): "
+                         "the rail kept the boost off, so 100 contracts instead of keeping D's 150; the bet %s" % (
+                             "won: the revert cost $22.80" if x < 0 else "LOST: the revert saved $1.40"),
+                "usd": x, "open": False}
+
+    def with_d(now_):
+        ch = FX.report(paths=[pU], now=now_)
+        for c in ch:
+            if c["id"] == "D":
+                c["undo"] = {"since": FX.et_words(d_since), "since_t": d_since, "net_usd": -21.4, "engaged": 2, "open": 0,
+                             "events": [dev(29, "ETH", -22.8), dev(44, "NEAR", 1.4)], "note": None}
+        return ch
+    chD = with_d(float(calendar.timegm((2026, 11, 16, 12, 0, 0))))
+    check("D: its undo is a reverted rule's row (the daily line), and none of its markets is a loss to alert (1 = right)",
+          1 if ("D" in undo_rows(chD) and not [x for x in undo_losses(chD) if x["id"].startswith("undo|D|")]
+                and [x for x in undo_losses(chD) if x["id"].startswith("undo|WS|")]) else 0, 1, 1)
+    phD, stD = TPhone(), {"undo_daily": {"2026-11-15": "x"}}
+    sentD = []
+    for hh, mi, dd in ((12, 0, 16), (12, 5, 16), (12, 10, 16), (2, 5, 17)):   # 7:00, 7:05, 7:10 AM, 9:05 PM ET Nov 16
+        nD = float(calendar.timegm((2026, 11, dd, hh, mi, 0)))
+        n0 = len(phD.sent)
+        undo_watch(with_d(nD), stD, phD, 6000.0, nD, off, say=said.append)
+        stD = json.loads(json.dumps(stD))
+        sentD.append(phD.sent[n0:])
+    lossD = [m for s_ in sentD[:3] for m in s_ if m[0].startswith("⚠️")]
+    check("D: the ticks say the M and WS losses (2) and never one of D's (no '(D)', no ETH 6:30 AM)",
+          len(lossD) if not any("(D)" in m[0].split("\n")[0] or "ETH 6:30 AM" in m[0] for m in lossD) else -1, 2, 2)
+    dlD = sentD[3][0][0] if len(sentD[3]) == 1 else ""
+    print("[normal] " + (dlD or "(no daily)"))
+    print()
+    want_dD = ("REVERTED PIN RULES · end of Nov 16",
+               " • Always-on 1.5x boost (D, since Nov 16 6:08 AM ET): 2 markets · 1 won, 1 lost · -$21.40 (-0.36% of "
+               "the bank) · that day -$21.40 on 2",
+               "All 4: reverting has", "Losses a reverted rule would have stopped since the undo: 2,")
+    check("D: in the 9:05 PM daily line, its own since, in the 'All 4' sum; the losses line counts only M's and WS's (%d)"
+          % len(want_dD), sum(1 for w in want_dD if w in dlD), len(want_dD), len(want_dD))
+    alltxt = "\n".join(m[0] for m in ph.sent + php.sent + phf.sent + phd.sent + phx.sent + phD.sent)
     check("undo: no em dash in any of these messages", chr(0x2014) in alltxt, False, False)
     print(php.sent[0][0] if php.sent else "")
     print()
+
+
+def self_test_hedge5(FX, d, check):
+    """v-hedge5live's stop rule on a planted log: pin on --index-5hz hedge from 11-16 8:08:56 AM ET; ETH 11:00 AM, a 5 Hz
+    false alarm with 25 s left (No held 0.98 x 300; 300 Yes at 10c + 150 extra at 11c; the 1 Hz belief never under
+    0.40; the bet won): row R's net -(30.00 + 1.89) - (16.50 + 1.03) = -$49.42, under the -$25 stop. A $6,000 bank."""
+    def R(kind, t, **kw):
+        kw.update(kind=kind, t=t)
+        return kw
+    cs = calendar.timegm((2026, 11, 16, 16, 0, 0))
+    tk = "KXETH15M-26NOV161100-00"
+
+    def ts(e):
+        return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(e))
+    st_on = dict(code_sha="3a19b0019e9c", index_5hz="hedge", hedge_belief=0.4, hedge_odds_mult=1.5,
+                 hedge_odds_min_tau=11.0, boost_rail="any")
+    rows = [R("start", "2026-11-16T13:08:56Z", **st_on),
+            R("hedge_alarm", ts(cs - 25), ticker=tk, want="no", entry=0.98, n=300.0, belief=0.30, tau=25, threshold=0.4,
+              trigger="belief", belief_1hz=0.70, belief5=0.30, fast_ms=int((cs - 25) * 1000) + 500, by_5hz=True),
+            R("hedge", ts(cs - 25), ticker=tk, close_s=cs, side="yes", price=0.10, n=300.0, asked=300.0, entry=0.98,
+              tau=25, status="executed", live=True, order_id="h5-1"),
+            R("hedge_extra", ts(cs - 25), ticker=tk, close_s=cs, side="yes", price=0.11, n=150.0, asked=150.0, mult=1.5,
+              extra_of=150.0, orig_n=300.0, tau=25, trigger="belief", status="executed", live=True, order_id="h5-2"),
+            R("settled", ts(cs + 20), ticker=tk, want="no", result="no", cost=0.98, pnl_c=600.0),
+            R("settled", ts(cs + 20), ticker=tk, want="yes", result="no", cost=0.1033, pnl_c=-4942.0)]
+    traj = []
+    for tau in range(30, -1, -1):                            # the 1 Hz belief in No: 0.70 at the alarm, else 0.90
+        b = 1.0 if tau == 0 else (0.70 if tau == 25 else 0.90)
+        traj.append(R("traj", ts(cs - tau), ticker=tk, close_s=cs, tau=tau, want="no", held="no", fair=round(1 - b, 5),
+                      conf=b, ask=0.90, ask_size=500.0, opp_ask=0.10, opp_size=500.0))
+    pH = os.path.join(d, "pinrun-live-20261116T130856Z.jsonl")
+    for path, rs in ((pH, rows), (os.path.join(d, "pintraj-live-20261116T130856Z.jsonl"), traj)):
+        with open(path, "w", encoding="utf-8") as fh:
+            for r in rs:
+                fh.write(json.dumps(r) + "\n")
+
+    class HPhone:
+        def __init__(self):
+            self.sent, self.up = [], True
+
+        def send(self, text, urgent, now):
+            if not self.up:
+                return False
+            self.sent.append((text, bool(urgent), now))
+            return True
+    said = []
+    ph, box = HPhone(), {"st": {}}
+
+    def htick(mi, start=None, phone=None):
+        now = float(calendar.timegm((2026, 11, 16, 16, mi, 0)))
+        ch = FX.report(paths=[pH], now=now)
+        txt = hedge5_watch(ch, box["st"], phone or ph, 6000.0, now, start or st_on, say=said.append)
+        box["st"] = json.loads(json.dumps(box["st"]))       # the state file's round trip: a fresh process each tick
+        return txt, ch
+    t1, ch1 = htick(5)
+    rR = next(c for c in ch1 if c["id"] == "R")
+    check("hedge5: row R scores the false alarm -$49.42 and says the stop rule as its problem (1 = right)",
+          1 if (rR["net_usd"] == -49.42 and rR["engaged"] == 1 and rR["problem"]
+                and "under the operator's -$25 stop" in rR["problem"]) else 0, 1, 1)
+    check("hedge5: first seen under -$25: waits a tick (the same $ twice), nothing sent, -49.42 pending",
+          len(ph.sent) + (0 if box["st"].get("hedge5_pending") == -49.42 else 10), 0, 0)
+    ph.up = False
+    t2, _ch = htick(10)
+    check("hedge5: Telegram down at the second reading: not marked as said", 1 if (t2 is None and not
+                                                                                  box["st"].get("hedge5_stop")) else 0,
+          1, 1)
+    ph.up = True
+    t3, _ch = htick(15)
+    print()
+    print("[URGENT] " + (t3 or "(nothing sent)"))
+    print()
+    want = ("🛑 5 Hz hedge net -$49.42 (-0.82% of the bank) since 11-16: the operator's stop rule says back to shadow "
+            "(results\\pin_hedge5live.ps1 -Revert + restart while flat)",
+            "R 5 Hz hedge: 1 market since Nov 16 8:08 AM ET.",
+            "Against the 1 Hz line: 1 false alarm the 1 Hz line never confirmed: -$49.42.", "/fixes lists every one")
+    check("hedge5: the same -$49.42 twice: ONE urgent alert in plain words (%d phrases)" % len(want),
+          sum(1 for w in want if t3 and w in t3) if (len(ph.sent) == 1 and ph.sent[0][1]) else -1, len(want), len(want))
+    t4, _ch = htick(20)
+    t5, _ch = htick(25)
+    check("hedge5: said once, never twice (the next ticks, a fresh process each)",
+          len(ph.sent) + (0 if (t4 is None and t5 is None and box["st"].get("hedge5_stop", {}).get("net_usd") == -49.42)
+                          else 10), 1, 1)
+    # pin already back on shadow: the stop rule has nothing to say (a fresh state, the same net)
+    box["st"], ph2 = {}, HPhone()
+    for mi in (5, 10, 15):
+        htick(mi, start=dict(st_on, index_5hz="shadow"), phone=ph2)
+    check("hedge5: pin's latest start back on shadow: no alert, nothing pending", len(ph2.sent) +
+          (10 if box["st"].get("hedge5_pending") is not None else 0), 0, 0)
+    # a net that moves between ticks waits for the next one; a net over the line clears the pending reading
+    ph3, st3 = HPhone(), {}
+    rowR = dict(rR)
+    for x in (-30.0, -49.42):
+        hedge5_watch([dict(rowR, net_usd=x)], st3, ph3, 6000.0, 1.0, st_on, say=said.append)
+    w1 = len(ph3.sent)
+    hedge5_watch([dict(rowR, net_usd=-10.0)], st3, ph3, 6000.0, 1.0, st_on, say=said.append)
+    hedge5_watch([dict(rowR, net_usd=-49.42)], st3, ph3, 6000.0, 1.0, st_on, say=said.append)
+    check("hedge5: -$30 then -$49.42 waits; back over -$25 clears it; -$49.42 once more waits again (1 = right)",
+          1 if (w1 == 0 and not ph3.sent and st3.get("hedge5_pending") == -49.42) else 0, 1, 1)
+    hedge5_watch([dict(rowR, net_usd=-25.0)], {"hedge5_pending": -25.0}, ph3, 6000.0, 1.0, st_on, say=said.append)
+    check("hedge5: exactly -$25.00 is not under the line", len(ph3.sent), 0, 0)
+    check("hedge5: no em dash in the alert", chr(0x2014) in (t3 or ""), False, False)
 
 
 def main(argv):

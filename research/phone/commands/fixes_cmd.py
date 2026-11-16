@@ -33,6 +33,13 @@ pin trades as if the rule had never been), the undo's money against keeping the 
 ever on a line a shrink step can drop (the 11-14 review: at the last step every 'since the undo' line was gone). B's net
 line says the share of it C counts too. The total line splits pin's, the ladder's and the stops' money, says B's
 cap-made extra legs (also C's) are counted once, and puts the undos' money beside the total, never in it.
+
+v-tg-fixes-pin (2026-11-16; the operator: "All changes on /fixes uses ladder to calculate the total affect of changes
+which isn't right, they only affect pin"): the headline total is PIN'S changes only (fixes.totals' pin_net_usd, B's
+overlap netted) with its % of pin's bank, its engagements pin's rows'; the ladder's rows (LAD, O, Q) and the stops
+(STOP) are said on their own line under it, never summed in -- the ladder's % against the ladder's pot (fixes: the
+newest pot its order log names, change["pot"]), the stops' with none. Each row's net line takes the same base: pin's
+bank for a pin row, the ladder's pot for a ladder row (no % while it is unread), none for the stops.
 """
 import re
 
@@ -46,8 +53,8 @@ SHOWN = 3                                         # the last engagements of each
 HEAD = "🔧 <b>Pin changes</b> (every live change: times engaged, net $ so far)"
 NOTE = ("net = what the change made or saved (+) or cost or gave up (-) against never making it, fee and losses in, "
         "on settled markets · open = not settled yet · an UNDONE rule's net ends at its undo; the undo's money (vs "
-        "keeping the rule) is beside it, not in the total · the total leaves J out and takes B's cap-made extra legs "
-        "once (C counts them too)")
+        "keeping the rule) is beside it, not in the total · the total is pin's only, leaves J out and takes B's "
+        "cap-made extra legs once (C counts them too)")
 # a change that cannot be tracked as it runs (fixes: change["problem"]; O on the ladder's 100% rail without the code that
 # marks its bids): a line in its block and, counted, a line on top of the page -- both kept at every shrink step
 PROBLEM = "⚠️ <b>%s</b>"
@@ -86,10 +93,21 @@ def _mark(x):
     return "🟢" if x > 0.004 else ("🔴" if x < -0.004 else "⚪")
 
 
-def _pct(x, bank):
+def _pct(x, bank, of="the bank"):
     if not bank:
         return ""
-    return " (%s%.2f%% of the bank)" % ("+" if x >= 0 else "-", abs(x) / bank * 100)
+    return " (%s%.2f%% of %s)" % ("+" if x >= 0 else "-", abs(x) / bank * 100, of)
+
+
+def base_of(c, bank):
+    """(the $ a row's % is of, its words): pin's bank for a pin row; the ladder's pot for a ladder row (LAD, O, Q:
+    fixes' change["pot"], (None, ...) while no ladder log names it -- never pin's bank); none for the stops (STOP)."""
+    g = c.get("group") or "pin"
+    if g == "pin":
+        return bank, "the bank"
+    if g == "ladder":
+        return c.get("pot"), "the ladder's pot"
+    return None, ""
 
 
 _MONEY = re.compile(r"[-+]?\$\d[\d,]*(?:\.\d+)?")     # a money figure: -$1,234.56, +$0.32, $12
@@ -134,12 +152,13 @@ def net_line(c, bank):
     bets' -- the bold net the rule's money against never making it (fixes' net_usd), the undo's beside it."""
     x = c["net_usd"]
     u = c.get("undo") or {}
+    bank, of = base_of(c, bank)
     if u.get("since"):
         y = _fixes._f(u.get("net_usd"))
         return "%s with the rule: net <b>%s</b>%s · %s %s: <b>%s</b>%s %s" % (
-            _mark(x), esc(usd(x)), esc(_pct(x, bank)), _mark(y), esc(_fixes.UNDO_WORDS), esc(usd(y)), esc(_pct(y, bank)),
-            esc(_fixes.undo_counted(c)))
-    line = "%s net <b>%s</b>%s" % (_mark(x), esc(usd(x)), esc(_pct(x, bank)))
+            _mark(x), esc(usd(x)), esc(_pct(x, bank, of)), _mark(y), esc(_fixes.UNDO_WORDS), esc(usd(y)),
+            esc(_pct(y, bank, of)), esc(_fixes.undo_counted(c)))
+    line = "%s net <b>%s</b>%s" % (_mark(x), esc(usd(x)), esc(_pct(x, bank, of)))
     ov = _fixes._f(c.get("overlap_usd"))
     if abs(ov) > 0.004:
         line += " · of it %s is C's extra legs too" % esc(usd(ov))
@@ -221,18 +240,34 @@ PLAN = ((SHOWN, None, None, None), (2, None, None, None), (1, None, None, None),
         (1, 30, 0, None), (0, None, 0, None), (0, None, 0, 0))
 
 
-def render(d, ctx):
-    changes, bank = d["changes"], d.get("bank")
+def total_lines(changes, bank):
+    """The page's last line(s): PIN'S changes only -- '🔴 <b>Pin's changes: net -$81.76</b> (-2.07% of pin's bank) ·
+    engaged N times · K open · the undos (vs keeping the rules): +$30.23' -- then, never summed into it, 'Ladder's
+    changes (not pin): +$123.40 (+8.63% of the ladder's pot) · stops: +$27.90' (the ladder's % only while its pot is
+    read; the stops' figure has none)."""
     T = _fixes.totals(changes)
     g = T.get("groups") or {}
-    split = "".join(" · %s %s" % (name, esc(usd(g[k]))) for k, name in (("pin", "pin"), ("ladder", "ladder"),
-                                                                         ("stops", "stops")) if k in g)
-    total = "%s <b>All changes: net %s</b>%s%s · engaged %d time%s%s" % (
-        _mark(T["net_usd"]), esc(usd(T["net_usd"])), esc(_pct(T["net_usd"], bank)), split, T["engaged"],
-        "" if T["engaged"] == 1 else "s", (" · %d open" % T["open"]) if T["open"] else "")
+    x = T.get("pin_net_usd", g.get("pin", 0.0))
+    n, k = T.get("pin_engaged", T["engaged"]), T.get("pin_open", T["open"])
+    line = "%s <b>Pin's changes: net %s</b>%s · engaged %d time%s%s" % (
+        _mark(x), esc(usd(x)), esc(_pct(x, bank, "pin's bank")), n, "" if n == 1 else "s",
+        (" · %d open" % k) if k else "")
     if T.get("undos"):                                    # beside the total, never in it (vs keeping the rules)
-        total += " · the undos (vs keeping the rules): %s%s" % (esc(usd(T["undo_usd"])), (" · %d open" % T["undo_open"])
-                                                               if T.get("undo_open") else "")
+        line += " · the undos (vs keeping the rules): %s%s" % (esc(usd(T["undo_usd"])), (" · %d open" % T["undo_open"])
+                                                              if T.get("undo_open") else "")
+    other = []
+    if "ladder" in g:
+        lx = T.get("ladder_net_usd", g["ladder"])
+        other.append("Ladder's changes (not pin): %s%s" % (esc(usd(lx)), esc(_pct(lx, T.get("ladder_pot"),
+                                                                                  "the ladder's pot"))))
+    if "stops" in g:
+        other.append("stops: %s" % esc(usd(T.get("stops_net_usd", g["stops"]))))
+    return line + (("\n" + " · ".join(other)) if other else "")
+
+
+def render(d, ctx):
+    changes, bank = d["changes"], d.get("bank")
+    total = total_lines(changes, bank)
     top = problems_line(changes)
     gone = retired_line(changes)
     for shown, cut, extra_cut, what_cut in PLAN:

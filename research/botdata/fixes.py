@@ -139,6 +139,34 @@ THE CHANGES and when each counts as engaged (the push-11-04 scoring table):
                         The net is GAINED - GIVEN UP. Not counted: the full leg the old code would have cut to a top-up
                         by the band leg's contracts, the band leg's share of the close's budget, a won band leg's hedge
                         premiums.
+  R 5 Hz hedge          v-hedge5live (2026-11-16 13:08:56Z, results\\pin_hedge5live.ps1: --index-5hz shadow -> hedge; the
+                        operator's yes 11-16): pin's belief hedge fires on the LOWER of the 1 Hz and 5 Hz beliefs (BTC ETH
+                        SOL XRP DOGE, + BTCD). From the first start record with index_5hz "hedge", while it is (rule_spans:
+                        a start back on "shadow" stops it), every market with a hedge_alarm whose by_5hz is true (the 5 Hz
+                        belief under the line while the 1 Hz one was not) is ONE event, priced against the 1 Hz line
+                        (hedge5live-read's HOW): the 1 Hz line fires at the first pintraj row of that market at or after
+                        the alarm's second, before the close, whose 1 Hz belief in the held side (the alarm's want: conf
+                        when the row's want is the held side, else 1 - conf) is under the start record's hedge_belief. Its
+                        moment is the EARLIEST second whose print could have crossed: the second after the last print
+                        seen not crossing (r_print_second: a row is written as its second begins, often before that
+                        second's print arrives, index_age_s ~1.0, so the print that crossed is a row late or in no row),
+                        priced at the hedge-side ask (opp_ask when the row's want is the held side, else ask:
+                        _n_hedge_ask) of the row AT that second (r_one_hz: on the shadow week's 4 markets this is when
+                        pin's real 1 Hz alarms fired and what their books asked; the crossing rows were a second later
+                        in 3 of them and 4-9c dearer). The 5 Hz path is pin's REAL executed hedge and hedge_extra legs
+                        of the hedge side in that market from the alarm on. At the market's result, fee in
+                        (pinrules_watch.value):
+                        1 Hz also fired: the real legs - the same contracts at the 1 Hz price ((1 Hz price - real fill) x
+                        n: + = the 5 Hz hedge bought cheaper); the extra leg the same way while the 1 Hz moment has 11+ s
+                        left (hedge_odds_min_tau), else the 1 Hz line would not have bought it: its real money is the 5 Hz
+                        path's own (+ or -).
+                        1 Hz never fired before the close: the real legs' whole money (a false alarm: - when our side won;
+                        + when it flipped anyway, a save the 1 Hz line would have missed).
+                        Open until the market settles; a market whose trajectory has no row after the alarm is NOT PRICED
+                        (said under the net, never $0). The operator's STOP RULE (11-16): back to shadow if the net falls
+                        below -$25: while the latest start still runs "hedge", a net under R_STOP_USD is the row's problem
+                        (the phone's warning line) and pinrules_watch sends one alert once the net reads the same on two
+                        ticks.
   Q ladder midnight     v-ladder-dayreset (the ladder's 2026-11-14 17:53:01Z start): a day stop ends at the next ET
     reset               midnight (a 'day_stop_reset' record); before, it held until the ladder's process ended (up to 7
                         days). Priced from the ladder's order log: per reset, every live_settle pnl of the markets the
@@ -172,8 +200,9 @@ totals()' net (its own undo_usd). WS's rule figure prices off pin's fills up to 
 says when its cap was dropped. D's revert (v-railany, 11-16) is scored the same way: rule_spans(_d_on), its rule
 figure only from trips in ON spans (boost_rail "off"), its undo (_d_undo) from the first start on "any" / "side": the
 markets after each band_boost_off / late_boost_off re-sized up to KEEPING the boost (+ = the revert made money: the
-boosted extra would have lost). pinrules_watch's undo alerts and daily line stay M, K, WS (its UNDO_IDS): keeping D
-only ever ADDS size, so no loss of pin's is one D would have stopped.
+boosted extra would have lost). pinrules_watch's 9 PM daily line carries D beside M, K, WS (its UNDO_IDS); its loss
+alerts never do (UNDO_NO_LOSS): keeping D only ever ADDS size, so no loss of pin's is one D would have stopped, and a won
+bet the revert sized smaller is not a loss.
 TRAJECTORIES: M's 3rd bets, P's and WS's results and WS's hedge replay read pin's pintraj log wherever it is now
 (traj_window: plain = a binary search on time, never the whole file; archived = read through once for every market a
 report asks, only those markets' rows kept, persisted in results\\fixes_traj_cache.json keyed by the archive's name, size
@@ -185,7 +214,8 @@ first start record with hedge_jump_shadow set (pinrun refuses it next to --hedge
 M from the first start record with extra_coin 0 and late_extra 0 (the start record carries both and bank_brake), C's
 step from the first start record with hedge_odds_mult 1.5 (else its first 1.5x leg), O from the first ladder start
 record whose argv has --commit-frac 1.0 (or whose auto block says commit_frac 1.0) -- while not withdrawn --, P from
-the first start record with band99_max_tau set, Q from the first ladder start record with start_reads (the code that
+the first start record with band99_max_tau set, R from the first start record with index_5hz "hedge" (only its ON
+spans count), Q from the first ladder start record with start_reads (the code that
 resets at midnight: v-ladder-dayreset shipped in one commit with v-ladder-start429, which added the field).
 An engagement whose market has not settled is "open" (not in net $).
 
@@ -194,8 +224,8 @@ or -cost) - billed_fee(cost, filled)). A leg is matched by ticker, our side (wan
 the nearest cost, then the nearest time; a leg is claimed once per change. Records of older builds may lack fields:
 every read is a .get with a default.
 
-    report(paths=None, now=None) -> [change dict per A..N, then O when a ladder order log is read, then P, WS, then Q when
-        a ladder order log is read, then LAD and STOP (measured once, in every report)]; each dict also carries undo
+    report(paths=None, now=None) -> [change dict per A..N, then O when a ladder order log is read, then P, R, WS, then Q
+        when a ladder order log is read, then LAD and STOP (measured once, in every report)]; each dict also carries undo
         (None, or {since, since_t, net_usd, engaged, open, events, note, line}: the undo vs keeping the rule, never in
         the row's net_usd), rule_usd (the rule's own net vs never having it: net_usd's figure), fixed (LAD, STOP),
         overlap_usd (B: its extra legs C also counts), group (pin / ladder / stops):
@@ -209,7 +239,7 @@ every read is a .get with a default.
          third (M only: the true-3rd-bet events, the same shape as events, not in net_usd; [] elsewhere),
          problem (None, or words the phone puts on a warning line and counts on top of /fixes: O_UNTRACKED while the
          latest ladder start runs the 100% rail on code that does not mark the bids -- O can then count nothing;
-         never while O is withdrawn),
+         never while O is withdrawn; R's stop rule while pin still runs --index-5hz hedge and R's net is under -$25),
          withdrawn (True only for O while O_WITHDRAWN: never live, never in totals, never a problem),
          retired (None, or the short words of a change that is off for good while it is not live: O while withdrawn,
          N while shelved; the phone folds such a change into one short line, its not_live words stay whole here)}
@@ -222,7 +252,7 @@ every read is a .get with a default.
         (the held-back contracts of pin's own buys); its `third` list is not. O is in when its row is live (the
         ladder's real money on the bids only the new rail placed), never while withdrawn. P is in (pin's own blocked
         legs' real money less what the skipped band legs would have made), Q is in (the ladder's real money after its
-        resets).
+        resets), R is in (pin's real 5 Hz hedge legs against the 1 Hz line's price).
 """
 import calendar
 import json
@@ -245,15 +275,16 @@ from botdata import paths as _paths       # M: missed.py's result cache (results
 
 BASE_SHA = "ca156bf45704"                 # pin 0925r: D to J start at the first later start record with another sha
 UNKNOWN_AFTER_S = _rw.UNKNOWN_AFTER_S     # a market with no result 3 h after its close: "unknown", still open
-IDS = ("A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "P", "WS")   # pin's: a row each, always
+IDS = ("A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "P", "R", "WS")   # pin's: a row each,
+#                                           always
 LADDER_IDS = ("O", "Q")                   # the ladder's (v-ladder-rail100, v-ladder-dayreset): a row each whenever a
-#                                           ladder order log is read (report: A..N, O, P, WS, Q, LAD, STOP)
+#                                           ladder order log is read (report: A..N, O, P, R, WS, Q, LAD, STOP)
 FIXED_IDS = ("LAD", "STOP")               # measured once by the 11-14 retro (no log the phone can re-read): every report
 NAMES = {"A": "later-buy check", "B": "jump cap", "C": "bigger hedge", "D": "boost rail", "E": "hedge tick",
          "F": "cheap jump skip", "G": "late-boost bypass fix", "H": "extra stake cap", "I": "max positions 5",
          "J": "extra on odds", "K": "cheap morning skip", "L": "jump hedge shadow", "M": "3rd bet blocked",
          "N": "hedge line 0.60", "O": "ladder cash limit 100%", "P": "band99 late-only", "Q": "ladder midnight reset",
-         "WS": "wrong-side skip", "LAD": "ladder's 4 changes", "STOP": "the 4 stops"}
+         "R": "5 Hz hedge", "WS": "wrong-side skip", "LAD": "ladder's 4 changes", "STOP": "the 4 stops"}
 GROUP = {"LAD": "ladder", "O": "ladder", "Q": "ladder", "STOP": "stops"}   # every other row is pin's
 LOAD_KEEP = 2                             # _load keeps at most this many states of pin's logs (the newest)
 # WS (v-wrongside / LS20, --wrongside-rise-c 1.0, live 2026-10-28 01:07:25Z = 10-27 9:07 PM ET): a FIRST buy with the
@@ -300,6 +331,13 @@ _P_CLOSES = {}
 Q_HEAD = "money the ladder made after a midnight reset (the old code stayed halted)"
 Q_NOT_LIVE = "not live yet (comes with the ladder's first start on the midnight-reset code)"
 M_NOT_LIVE = "not live yet (comes with the first pin start on call B)"
+# R (v-hedge5live, 2026-11-16 13:08:56Z): the belief hedge fires on the LOWER of the 1 Hz and 5 Hz beliefs
+R_LINE = 0.40                             # the belief line when the start record does not say (pinrun HEDGE_BELIEF)
+R_MIN_TAU = 11.0                          # the extra leg's floor when the start record does not say (hedge_odds_min_tau)
+R_STOP_USD = -25.0                        # the operator's stop rule (11-16): back to shadow once the net is under this
+R_STOP = "stop rule: back to shadow if the net falls below -$25 (operator 11-16)"
+R_REVERT = "results\\pin_hedge5live.ps1 -Revert + restart while flat"
+R_NOT_LIVE = "not live yet (comes with the first pin start on --index-5hz hedge)"
 N_NOT_LIVE = ("SHELVED 11-09, never deployed: the deep dive found no out-of-sample edge (-$1.79 to +$1.53 a day at "
               "today's size); counted only if pin ever starts on --hedge-belief 0.60")
 N_RETIRED = "shelved 11-09"                     # the phone's one short line while not live (change["retired"])
@@ -676,10 +714,11 @@ class Scan:
             '"boost_rail_kept"', '"hedge_cheap_skip"', '"late_bypass_refused"', '"extra_stake_capped"',
             '"open_cap_relaxed"', '"order"', '"cheap_window', '"jump_shadow"', '"close_budget"', '"signal"',
             '"autosize"', '"sweep_depth"', '"band99_shadow"', '"wrong_side"', '"jump_capped"', '"hedge_alarm"',
-            '"taper"', '"late_refused"', '"band_boost_off"', '"late_boost_off"')
-    # band_boost_off / late_boost_off (D's revert, v-railany): the rail switched that boost off for the rest of the run
+            '"taper"', '"late_refused"', '"band_boost_off"', '"late_boost_off"', '"hedge5_shadow"')
+    # band_boost_off / late_boost_off (D's revert, v-railany): the rail switched that boost off for the rest of the run;
+    # hedge5_shadow (v-hedge5 shadow, 11-10..11-16): the hedge the 5 Hz belief would have sent (R's shadow-period check)
     LISTS = {"hedge": "hedges", "hedge_extra": "extras", "boost_rail_kept": "kept", "hedge_cheap_skip": "cheap",
-             "band_boost_off": "boost_offs", "late_boost_off": "boost_offs",
+             "band_boost_off": "boost_offs", "late_boost_off": "boost_offs", "hedge5_shadow": "h5s",
              "late_bypass_refused": "late_bypass", "extra_stake_capped": "stake_capped", "open_cap_relaxed": "open_cap",
              "order": "orders", "jump_shadow": "shadow", "signal": "signals", "sweep_depth": "sweeps",
              "band99_shadow": "b99s", "jump_capped": "capped", "hedge_alarm": "alarms", "taper": "tapers",
@@ -970,6 +1009,12 @@ def _d_on(r):
     boosted market writes boost_rail_kept). "any" (the revert, v-railany 11-16, and every build before 0925t's field)
     and "side" trip the rail: band_boost_off / late_boost_off."""
     return str(r.get("boost_rail") or "").strip().lower() == "off"
+
+
+def _r_on(r):
+    """R (v-hedge5live, 11-16): the run's start record says index_5hz "hedge" (the 5 Hz belief SENDS the hedge).
+    "shadow" (v-hedge5, 11-10..11-16: recorded, nothing sent), "off" and a record without the field do not."""
+    return str((r or {}).get("index_5hz") or "").strip().lower() == "hedge"
 
 
 def _status(tk, result, now, close_s=None):
@@ -1409,7 +1454,7 @@ def d_book(o, sg, recs, size, px):
 
 
 def d_cents(n_cf, n):
-    """A kept count as pinrun would send it: to 2 decimals (pintake sends counts to the cent), and the real count
+    """A kept count as pinrun would send it: to 2 decimals (pin's order path sends counts to the cent), and the real count
     itself when within a cent of it (0.333 x 342 x 1.5 = 170.829 is the 170.83 that went out, not a change)."""
     return float(n) if abs(float(n_cf) - float(n)) < 0.01 - 1e-9 else round(float(n_cf), 2)
 
@@ -2908,6 +2953,276 @@ def _n_what(st):
 
 
 # ---------------------------------------------------------------------------
+# R (v-hedge5live, 2026-11-16): each market whose belief hedge the 5 Hz index sent first, against the 1 Hz line
+def r_belief_held(row, held):
+    """The 1 Hz belief in the HELD side on a trajectory row. conf is the belief in the row's want (the side the model
+    favours that second: 'want no, fair 0.17, conf 0.83'), so conf when the row's want is the held side, else 1 - conf.
+    A row without conf (an archived row keeps TRAJ_KEEP's fields) reads fair, the probability of YES. None when
+    neither is there."""
+    row = row or {}
+    c = _f(row.get("conf"), None)
+    if c is not None and row.get("want") in ("yes", "no"):
+        return c if row.get("want") == held else 1.0 - c
+    f = _f(row.get("fair"), None)
+    if f is None:
+        return None
+    return f if held == "yes" else 1.0 - f
+
+
+def r_print_second(row):
+    """The second of the 1 Hz print a trajectory row's belief was computed on: the row's own second less its index age,
+    rounded. pinrun writes a market's row as its second begins, often BEFORE that second's print arrives (~0.1 s in):
+    index_age_s ~1.0 then, and the row still carries the previous second's print. A row without index_age_s is its own
+    second."""
+    age = _f(row.get("index_age_s"), 0.0)
+    return float(row["_epoch"]) - float(max(0, int(round(age))))
+
+
+def r_one_hz(rows, held, t0, close_s, line=R_LINE, fast_ms=None):
+    """R: what the 1 Hz line would have done after a 5 Hz alarm at epoch `t0` -> (epoch, tau, ask) of the 1 Hz moment.
+    The line fires at the first trajectory row, from the alarm's second to the close, whose 1 Hz belief in the held side
+    is under `line` (pinrun hedge_should_fire: belief < line). Its MOMENT is the earliest second whose print could have
+    crossed: the second after the last print seen NOT crossing (each row's print second: r_print_second; the alarm's
+    own -- the 1 Hz print of the 5 Hz print's second (`fast_ms`) was in and above the line, by_5hz's meaning), never past
+    the crossing row's print. A row is written as its second begins, so the print that crossed is often in no row at
+    all (row S on print S-1, row S+1 already on print S+1) or a row late (row S+1 on print S). The shadow week
+    (11-10..11-16, 4 markets, pin's REAL 1 Hz alarms): every one fired at that earliest second, the second after the
+    5 Hz print, while the crossing row came a second later in 3 of the 4. Priced at the hedge-side ask (_n_hedge_ask:
+    opp_ask when the row's want is the held side, else ask) of the row AT the moment's second -- the book as it began,
+    the last before that print: 69c / 88c / 54c / 20c against the real 1 Hz hedges' 70c / 88c / 57c / 21-25c asks,
+    where the crossing rows said 73c / 93.6c / 63c -- else of the crossing row; with neither, the first later row still
+    under the line that shows one (pin retries each second while it is), as (that row's epoch, tau, ask). (epoch, tau,
+    None) when it crossed but no row to the close showed a hedge-side offer (the 1 Hz hedge would have had nothing to
+    buy); None when no row before the close crossed (the 1 Hz line never fired)."""
+    s0 = math.floor(float(t0) + 1e-9)
+    ok = float(s0 - 1)                                    # the last 1 Hz print known NOT under the line
+    fm = _f(fast_ms, None)
+    if fm is not None:
+        ok = max(ok, float(math.floor(fm / 1000.0 + 1e-9)))
+    by_s = {}
+    for row in rows or []:
+        if row.get("_epoch") is not None:
+            by_s.setdefault(int(round(float(row["_epoch"]))), row)
+    first = None
+    for row in rows or []:
+        e = row.get("_epoch")
+        if e is None or e < s0 - 1e-9 or e >= float(close_s) - 1e-9:
+            continue
+        b = r_belief_held(row, held)
+        if b is None:
+            continue
+        if first is None:
+            if b >= float(line):
+                ok = max(ok, r_print_second(row))
+                continue
+            m = min(max(ok + 1.0, float(s0)), max(float(s0), r_print_second(row)))
+            at = by_s.get(int(round(m)))
+            a = _n_hedge_ask(at, held) if at is not None else None
+            if a is None:
+                a = _n_hedge_ask(row, held)
+            first = (m, int(round(float(close_s) - m)), a)
+            if a is not None:
+                return first
+            continue
+        if b < float(line):                               # crossed with no offer: pin tries again each second
+            a = _n_hedge_ask(row, held)
+            if a is not None:
+                tau = row.get("tau")
+                return e, (int(round(float(close_s) - e)) if tau is None else int(_f(tau))), a
+    return first
+
+
+def r_price(legs, extras, one, hedge_wins, min_tau=R_MIN_TAU):
+    """R's money of one market, fee in (pinrules_watch.value): `legs` / `extras` [(n, price)] the 5 Hz path's real
+    hedge and extra fills, `one` r_one_hz's (epoch, tau, ask) or None, `hedge_wins` the hedge side won (a flip).
+    1 Hz fired (an ask): the real legs - the same contracts at the 1 Hz ask (leg by leg: each real order's contracts
+    as one order at the 1 Hz ask, so the fee's rounding is the same on both sides), so + = the 5 Hz hedge bought
+    cheaper; the extra the same way while the 1 Hz moment had min_tau+ s left, else its own real money (the 1 Hz line
+    would not have bought it). 1 Hz never fired (or found no offer): the real legs' whole money. Returns (usd,
+    extra_usd), the extra's part inside usd."""
+    rh, rx = _rw.value(legs, hedge_wins), _rw.value(extras, hedge_wins)
+    if one is None or one[2] is None:
+        return rh + rx, rx
+    a1 = float(one[2])
+    uh = rh - _rw.value([(n, a1) for n, _p in legs], hedge_wins)
+    ux = rx - (_rw.value([(n, a1) for n, _p in extras], hedge_wins) if int(one[1]) >= float(min_tau) else 0.0)
+    return uh + ux, ux
+
+
+def _r_fills(pool, path, tk, side, t0):
+    """The executed legs [(n, price)] of `side` on `tk` in run `path` from epoch `t0` on (pin's hedge / hedge_extra
+    records: status executed, a price, contracts filled)."""
+    return [(_f(h.get("n")), _f(h.get("price"))) for h in pool
+            if h["_path"] == path and h["ticker"] == tk and h.get("side") == side and h["_epoch"] >= t0 - 1e-9
+            and h.get("status") == "executed" and h.get("price") is not None and _f(h.get("n")) > 0]
+
+
+def _r_later(dt):
+    dt = int(round(dt))
+    return "the same second" if dt <= 0 else ("a second later" if dt == 1 else "%d s later" % dt)
+
+
+def r_market(S, now, path, tk, held, t0, legs, extras, a0=None, n_pos=1):
+    """R: one market whose hedge the 5 Hz belief fired first at epoch `t0` (held = our side; `legs` / `extras` the 5 Hz
+    path's fills; `a0` the alarm record for its words: belief5, belief_1hz, fast_ms, tau) -> (usd or None, words,
+    status, kind, result): kind 'both' (the 1 Hz line fired too), 'never' (it never did, or found no offer), 'nothing'
+    (no leg filled), 'unpriced' (no trajectory row after the alarm: the 1 Hz line cannot be read). The same pricing
+    reads the shadow period (hedge5_shadow swept for n) in the sanity check."""
+    a0 = a0 or {}
+    hs = _other(held)
+    cs = close_of(tk)
+    st0 = S.start_at(t0)
+    line = _f(st0.get("hedge_belief"), R_LINE) or R_LINE
+    min_tau = _f(st0.get("hedge_odds_min_tau"), R_MIN_TAU)
+    rows = S.traj(path, cs, {tk: float(t0) - 2.0}).get(tk, []) if cs is not None else []
+    res, _how = m_result(S, tk, rows)
+    st = _status(tk, res, now, cs)
+    nh, ph, nx, px = _rw.got(legs), _rw.avg_px(legs), _rw.got(extras), _rw.avg_px(extras)
+    tau5 = a0.get("tau")
+    if tau5 is None and cs is not None:
+        tau5 = int(round(float(cs) - float(t0)))
+    pos = (" (%d positions)" % n_pos) if n_pos > 1 else ""
+    b5, b1 = _f(a0.get("belief5"), None), _f(a0.get("belief_1hz"), None)
+    seen = ("belief %s on the 5 Hz print, %s on the 1 Hz" % (
+        ("%.0f%%" % (100 * b5)) if b5 is not None else "?", ("%.0f%%" % (100 * b1)) if b1 is not None else "?"))
+    live = [r for r in rows if r.get("_epoch") is not None and float(t0) - 1.0 <= r["_epoch"] < float(cs or 0) - 1e-9]
+    later = "; not settled yet" if st == "pending" else "; no result 3 h after the close (unknown)"
+    if nh <= 1e-9 and nx <= 1e-9:
+        words = "a 5 Hz alarm with %s s left%s (%s): no hedge leg filled" % (tau5, pos, seen)
+        return (0.0 if st == "scored" else None), words + ("" if st == "scored" else later), st, "nothing", res
+    if not live:
+        words = ("a 5 Hz hedge with %s s left%s (%s): %s %s at %s%s; no trajectory row after it, so the 1 Hz line cannot "
+                 "be read: NOT PRICED" % (tau5, pos, seen, _g2(nh), _side(hs), _cents(ph),
+                                          (" + %s extra at %s" % (_g2(nx), _cents(px))) if nx > 1e-9 else ""))
+        return None, words, st, "unpriced", res
+    one = r_one_hz(rows, held, t0, cs, line, a0.get("fast_ms"))
+    if one is not None and one[2] is not None:
+        e1, tau1, a1 = one
+        fm = _f(a0.get("fast_ms"), None)
+        lead = max(0.0, e1 - (fm / 1000.0 if fm is not None else float(t0)))
+        words = "a 5 Hz hedge %.2f s before the 1 Hz print%s: %s %s at %s instead of %s %s" % (
+            lead, pos, _g2(nh), _side(hs), _cents(ph), _cents(a1), _r_later(e1 - float(t0)))
+        if nx > 1e-9:
+            if tau1 >= min_tau:
+                words += "; + %s extra at %s (the 1 Hz line, with %d s left, would have bought them at %s too)" % (
+                    _g2(nx), _cents(px), tau1, _cents(a1))
+            else:
+                words += "; + %s extra at %s only the 5 Hz path bought (the 1 Hz line came with %d s left, under %d)" % (
+                    _g2(nx), _cents(px), tau1, int(min_tau))
+        kind = "both"
+    else:
+        words = "a 5 Hz hedge with %s s left%s (%s): %s %s at %s%s; the 1 Hz line %s" % (
+            tau5, pos, seen, _g2(nh), _side(hs), _cents(ph), (" + %s extra at %s" % (_g2(nx), _cents(px))) if nx > 1e-9
+            else "", ("never crossed %.2f before the close" % line) if one is None else
+            ("crossed with %d s left but found no %s offer before the close" % (one[1], _side(hs))))
+        kind = "never"
+    if st != "scored":
+        return None, words + later, st, kind, res
+    flipped = res == hs
+    usd, ux = r_price(legs, extras, one, flipped, min_tau)
+    if kind == "both":
+        words += "; the bet %s: %s %s" % ("FLIPPED" if flipped else "WON", "saved" if usd >= 0 else "cost",
+                                          _rw.usd(abs(usd), False))
+        if nx > 1e-9 and one[1] < min_tau:
+            words += " (the extra alone %s %s)" % ("made" if ux >= 0 else "lost", _rw.usd(abs(ux), False))
+    elif flipped:
+        words += "; the bet FLIPPED: the 5 Hz hedge got back %s the 1 Hz line would have missed" % _rw.usd(usd, False)
+    else:
+        words += "; the bet WON: the false alarm cost %s" % _rw.usd(abs(usd), False)
+    return usd, words, st, kind, res
+
+
+def _r(S, now, spans):
+    """R: every market with a hedge_alarm whose by_5hz is true in an ON span (a start record on index_5hz "hedge"):
+    ONE event, at its first such alarm, priced by r_market on pin's real hedge / hedge_extra legs of the hedge side in
+    that market from the alarm on. Returns (events, tally)."""
+    out = []
+    t = {"markets": 0, "both": 0, "never": 0, "flips": 0, "won": 0, "both_usd": 0.0, "never_usd": 0.0, "open": 0,
+         "unpriced": 0, "nothing": 0, "net": 0.0}
+    groups = {}
+    for a in S.alarms:
+        if a.get("by_5hz") is not True:
+            continue
+        sp = span_at(spans, a["_epoch"])
+        if sp is None or not sp[2]:
+            continue
+        groups.setdefault((a["_path"], a["ticker"]), []).append(a)
+    for (path, tk), als in sorted(groups.items(), key=lambda kv: (kv[1][0]["_epoch"], kv[1][0]["_i"])):
+        a0 = als[0]
+        held = a0.get("want")
+        if held not in ("yes", "no"):
+            continue
+        hs = _other(held)
+        legs = _r_fills(S.hedges, path, tk, hs, a0["_epoch"])
+        extras = _r_fills(S.extras, path, tk, hs, a0["_epoch"])
+        n_pos = len({(a.get("entry"), a.get("n")) for a in als})
+        usd, words, st, kind, res = r_market(S, now, path, tk, held, a0["_epoch"], legs, extras, a0, n_pos)
+        t["markets"] += 1
+        if kind == "unpriced":
+            t["unpriced"] += 1
+        elif st != "scored":
+            t["open"] += 1
+        elif kind == "nothing":
+            t["nothing"] += 1
+        else:
+            t[kind] += 1
+            t["%s_usd" % kind] += round(usd, 2)
+            if kind == "both":
+                t["flips" if res == hs else "won"] += 1
+        if usd is not None and st == "scored":
+            t["net"] += round(usd, 2)
+        out.append(_event(a0, words, usd, st))
+    return out, t
+
+
+def _r_extra(t, back=None):
+    """R's lines under the net: what the 5 Hz-first hedges did against the 1 Hz line (where it followed, and the false
+    alarms it never confirmed), the stop rule, and the revert to shadow when pin runs it again."""
+    nb, nn = t["both"], t["never"]
+    parts = []
+    if nb:
+        parts.append("the 1 Hz line followed on %d market%s: %s (%d flip%s, %d won bet%s)" % (
+            nb, "" if nb == 1 else "s", _rw.usd(round(t["both_usd"], 2)), t["flips"], "" if t["flips"] == 1 else "s",
+            t["won"], "" if t["won"] == 1 else "s"))
+    if nn:
+        parts.append("%d false alarm%s the 1 Hz line never confirmed: %s" % (nn, "" if nn == 1 else "s",
+                                                                         _rw.usd(round(t["never_usd"], 2))))
+    if t["open"]:
+        parts.append("%d open" % t["open"])
+    if t["unpriced"]:
+        parts.append("%d NOT PRICED (no trajectory row after the alarm)" % t["unpriced"])
+    if t["nothing"]:
+        parts.append("%d with no hedge leg filled" % t["nothing"])
+    out = [" · ".join(parts)] if parts else []
+    out.append(R_STOP)
+    if back is not None:
+        out.append("back to shadow since %s (a pin start without --index-5hz hedge): the net no longer moves" % (
+            et_words(back)))
+    return out
+
+
+def _md(epoch):
+    """'11-16': an epoch's Eastern month and day."""
+    g = time.gmtime(float(epoch) + _et_offset(float(epoch)))
+    return "%d-%d" % (g.tm_mon, g.tm_mday)
+
+
+def _r_what(since):
+    return ("the hedge fires on the 5 Hz index when it crosses first (%s); each such hedge priced against what the 1 Hz "
+            "line would have done" % (("live %s %s" % (_md(since), et_words(since, with_day=False))) if since is not None
+                                      else "not live yet"))
+
+
+def r_problem(net, live, since):
+    """R's stop rule as the row's problem (the phone's warning line, counted on top of /fixes): while pin still runs
+    --index-5hz hedge (`live`) and the settled net is under R_STOP_USD; None otherwise."""
+    if not live or net is None or float(net) >= R_STOP_USD - 1e-9:
+        return None
+    return "net %s since %s, under the operator's -$25 stop: back to shadow (%s)" % (
+        _rw.usd(float(net)), _md(since) if since is not None else "?", R_REVERT)
+
+
+# ---------------------------------------------------------------------------
 # C's step (v-oddsmult15, 2026-11-14): the part of each 1.5x extra leg over what 1.25x would have bought
 def _g2(x):
     """A contract count in words: 20 -> '20', 7.5 -> '7.5', 1.333 -> '1.33'."""
@@ -3304,7 +3619,8 @@ def traj_plain_window(tp, close_s, t_start, t_end, max_tau=None):
 # (TRAJ_CACHE) keyed by the archive's name + size + mtime, so a fresh process (the 5-minute watcher) does not read the
 # archive again. An archive never changes; an entry whose archive is gone or changed is dropped at the next write.
 TRAJ_CACHE = "fixes_traj_cache.json"
-TRAJ_KEEP = ("t", "tau", "want", "held", "fair", "ask", "ask_size", "opp_ask", "spot", "sigma")
+TRAJ_KEEP = ("t", "tau", "want", "held", "fair", "ask", "ask_size", "opp_ask", "spot", "sigma", "conf", "index_age_s")
+#            (conf, index_age_s: R reads the held side's belief and dates the print a row was computed on)
 _TRAJ_WIN = {}                            # (archive path, size, mtime_ns) -> {(ticker, close_s): {"from", "rows"}}
 _TRAJ_DISK = {"path": None, "key": None, "data": None}
 
@@ -3744,7 +4060,8 @@ class LadderScan:
 
     MARK = 256
     CHUNK = 4 << 20                           # read 4 MB at a time (the first read of the server's log is all of it)
-    TOKENS = (b'"live_fill"', b'"live_settle"', b'"start"', b'"day_stop_reset"')    # the last: Q's midnight resets
+    TOKENS = (b'"live_fill"', b'"live_settle"', b'"start"', b'"day_stop_reset"',    # the last: Q's midnight resets
+              b'"rescale"')                     # rescale (and start): the ladder's pot, the base of its rows' % (pot)
 
     def __init__(self, path):
         self.path = path
@@ -3753,6 +4070,7 @@ class LadderScan:
     def reset(self):
         self.pos, self.head, self.mark = 0, b"", b""
         self.starts, self.fills, self.settles, self.placed82, self.resets = [], [], [], [], []
+        self.pot = None                       # (epoch, $) of the newest start / rescale record that names the pot
 
     def _kept(self, fh, size):
         if size < self.pos:
@@ -3805,6 +4123,12 @@ class LadderScan:
             return
         r["_epoch"] = t
         ev = r.get("ev") or r.get("kind")
+        if ev in ("start", "rescale"):
+            pot = _f(r.get("pot"), None)
+            if pot is not None and pot >= 1.0 and (self.pot is None or t >= self.pot[0]):
+                self.pot = (t, pot)
+            if ev == "rescale":
+                return
         if ev == "start":
             self.starts.append(r)
         elif ev == "live_fill":
@@ -3815,6 +4139,13 @@ class LadderScan:
             self.placed82.append(r)
         elif ev == "day_stop_reset":
             self.resets.append(r)
+
+
+def ladder_pot(scans):
+    """The ladder's pot now: the newest 'pot' of its start / rescale records (ladder_live writes it at every start and
+    every auto-size reread, rescale), $; None when no ladder log names one (then a ladder row's net has no %)."""
+    got = [sc.pot for sc in scans or [] if getattr(sc, "pot", None)]
+    return max(got)[1] if got else None
 
 
 def _ladder_scans(paths):
@@ -4183,12 +4514,12 @@ def _change(cid, what, since, events, off=False, extra=None, not_live=None, thir
             "events": events, "off": bool(off), "extra": list(extra or []), "not_live": not_live,
             "third": sorted(third or [], key=lambda e: e["epoch"] or 0), "problem": None if withdrawn else problem,
             "withdrawn": bool(withdrawn), "retired": (retired if since is None else None), "undo": None,
-            "fixed": False, "overlap_usd": 0.0, "group": GROUP.get(cid, "pin"), "dropped": None}
+            "fixed": False, "overlap_usd": 0.0, "group": GROUP.get(cid, "pin"), "dropped": None, "pot": None}
 
 
 def report(paths=None, now=None):
-    """Every change A..N scored, then O when a ladder order log is read, then P, then Q when a ladder order log is read
-    (see the module note). `paths`: explicit logs (tests; a ladder-live-orders*.jsonl among them is O's and Q's, the
+    """Every change A..N scored, then O when a ladder order log is read, then P, R, WS, then Q when a ladder order log is
+    read (see the module note). `paths`: explicit logs (tests; a ladder-live-orders*.jsonl among them is O's and Q's, the
     rest pin's); default pin's live logs from 11-01 on and the ladder's order log in RESULTS when it is there. `now`:
     the clock (pending vs unknown)."""
     now = time.time() if now is None else float(now)
@@ -4295,6 +4626,17 @@ def report(paths=None, now=None):
     else:
         evs, tally = _p(S, now, p_since, p_start)
         out.append(_change("P", _p_what(p_start), p_since, evs, extra=_p_extra(tally, p_since)))
+    # R: from the first start record with index_5hz "hedge" (v-hedge5live), only its ON spans; the stop rule is its
+    # problem while pin still runs it
+    r_spans = rule_spans(S, _r_on)
+    if not r_spans:
+        out.append(_change("R", _r_what(None), None, [], not_live=R_NOT_LIVE))
+    else:
+        r_since, r_live = r_spans[0][0], r_spans[-1][2]
+        evs, rt = _r(S, now, r_spans)
+        row = _change("R", _r_what(r_since), r_since, evs, extra=_r_extra(rt, None if r_live else r_spans[-1][0]))
+        row["problem"] = r_problem(row["net_usd"], r_live, r_since)
+        out.append(row)
     # WS: from the first start record with wrongside_rise_c above 0 (v-wrongside), its words off that record
     if not ws_spans:
         out.append(_change("WS", _ws_what(None), None, [], not_live=WS_NOT_LIVE))
@@ -4310,6 +4652,12 @@ def report(paths=None, now=None):
     # LAD and STOP: measured once by the 11-14 retro, in every report
     out.append(_fixed_row("LAD", LAD_WHAT, LAD_PARTS, LAD_LINES, coin="ladder"))
     out.append(_fixed_row("STOP", STOP_WHAT, STOP_PARTS, STOP_LINES))
+    # the base of each row's % (operator 11-16: "they only affect pin"): a pin row's is pin's bank (the phone's), a
+    # ladder row's the ladder's pot (None when no ladder log names it: no %), the stops' none (pot stays None)
+    lpot = ladder_pot(scans) if lad else None
+    for c in out:
+        if c["group"] == "ladder":
+            c["pot"] = lpot
     return out
 
 
@@ -4363,11 +4711,17 @@ def totals(changes):
     counted): a J leg is also a C engagement (C scores every executed extra), so J stays out of the sum and that leg is
     counted once. L is in: what it keeps or misses is pin's real money (the premium not spent, the save the odds line
     then paid more for), as K's skipped buys are. M is in by its net (the contracts the 2-bet budget held back on pin's
-    own buys); its true-3rd-bet list is not. P and Q are in. problems: the ids of every change not withdrawn (J too)
-    that says one (change["problem"]: O on the 100% rail without the marking code, while O is not withdrawn).
+    own buys); its true-3rd-bet list is not. P, Q and R are in. problems: the ids of every change not withdrawn (J too)
+    that says one (change["problem"]: O on the 100% rail without the marking code, while O is not withdrawn; R's stop
+    rule while pin still runs --index-5hz hedge with R's net under -$25).
     An undone rule (M, K, WS, D) is in by its net, the rule's money against never having it; the undos' money (against
     KEEPING the rules, another question) is never in net_usd, engaged or open: undo_usd, undo_engaged (their markets
-    or bets), undo_open and undos (the undone ids) carry it beside the total."""
+    or bets), undo_open and undos (the undone ids) carry it beside the total.
+    PIN'S OWN (the operator 11-16: "All changes on /fixes uses ladder to calculate the total affect of changes which
+    isn't right, they only affect pin"): pin_net_usd (groups' pin, B's overlap taken off), pin_engaged and pin_open
+    (pin's live rows only) are the /fixes headline; ladder_net_usd and stops_net_usd (LAD, O, Q / STOP) are said on
+    their own line, never summed into pin's; ladder_pot (the ladder rows' pot, None when unread) is the base of the
+    ladder's %. net_usd / engaged / open stay every row's (the older callers' fields)."""
     cs = [c for c in changes if c["id"] != "J" and not c.get("withdrawn")]
     live = [c for c in cs if not c.get("fixed")]
     overlap = round(sum(_f(c.get("overlap_usd")) for c in cs), 2)
@@ -4376,7 +4730,12 @@ def totals(changes):
         g = GROUP.get(c["id"], "pin")
         groups[g] = groups.get(g, 0.0) + c["net_usd"] - _f(c.get("overlap_usd"))
     und = [c for c in cs if c.get("undo")]
-    return {"engaged": sum(c["engaged"] for c in live), "open": sum(c["open"] for c in live),
+    pin = [c for c in live if c.get("group", GROUP.get(c["id"], "pin")) == "pin"]
+    lpots = [c.get("pot") for c in changes if c.get("group") == "ladder" and c.get("pot")]
+    return {"pin_net_usd": round(groups.get("pin", 0.0), 2), "pin_engaged": sum(c["engaged"] for c in pin),
+            "pin_open": sum(c["open"] for c in pin), "ladder_net_usd": round(groups.get("ladder", 0.0), 2),
+            "stops_net_usd": round(groups.get("stops", 0.0), 2), "ladder_pot": lpots[0] if lpots else None,
+            "engaged": sum(c["engaged"] for c in live), "open": sum(c["open"] for c in live),
             "net_usd": round(sum(c["net_usd"] for c in cs) - overlap, 2), "overlap_usd": overlap,
             "groups": {g: round(v, 2) for g, v in groups.items()},
             "undo_usd": round(sum(_f(c["undo"].get("net_usd")) for c in und), 2),
