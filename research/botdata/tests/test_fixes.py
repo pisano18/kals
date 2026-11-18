@@ -1690,9 +1690,10 @@ def run_p(recs):
         # ETH 1:15 PM, untraded: the trajectory's last second says No (fair 0.0), the band's 44 No at 98.9c would have
         # made 0.484 - fee 0.04 = 0.44; nothing blocked: the rule cost 0.44
         _b99("ETH", 40, "no", 0.989, 44.0),
-        # BNB 1:30 PM, LOST: the band's 30 No at 98.8c would have lost 29.64 + fee 0.03 = 29.67, x 0.59 = 17.51 after
-        # pin's hedges; it would have blocked pin's own early No leg (60 at 96c: -57.77) whose hedge (60 Yes at 40c:
-        # +34.99) is all that leg's: -22.78. The rule cost -22.78 - (-17.51) = 5.27
+        # BNB 1:30 PM, LOST: the band's 30 No at 98.8c would have lost 29.64 + fee 0.03 = 29.67, + its share of the
+        # market's hedge (pin held No: 34.99 x 30 / 60 = 17.50; the old code's leg draws the same hedges, 11-18 fix) =
+        # -12.18; it would have blocked pin's own early No leg (60 at 96c: -57.77) whose hedge (60 Yes at 40c: +34.99) is
+        # all that leg's: -22.78. The rule cost -22.78 - (-12.18) = 10.60
         _b99("BNB", 42, "no", 0.988, 30.0),
         _p_order("BNB", 36, "no", 60.0, 0.96, leg="early"),
         _r("hedge", _ts(PC["BNB"] - 10), ticker=PT["BNB"], close_s=PC["BNB"], side="yes", price=0.40, n=60.0, asked=60.0,
@@ -1768,9 +1769,9 @@ def test_p_band99_late():
     P = rep["P"]
     ck(P["name"] == "band99 late-only" and P["since"] == "Nov 14 1:11 PM ET" and P["not_live"] is None,
        "P since the first start record with band99_max_tau: %s" % P["since"])
-    ck(P["engaged"] == 6 and P["open"] == 1 and P["net_usd"] == -2.72,
-       "P: 6 shadow markets (the 2nd ZEC shadow and the paper one not), SOL open: +2.24 - 0.44 - 5.27 - 0.46 + 1.21 = "
-       "-2.72: %s" % {x: P[x] for x in ("engaged", "open", "net_usd")})
+    ck(P["engaged"] == 6 and P["open"] == 1 and P["net_usd"] == -8.05,
+       "P: 6 shadow markets (the 2nd ZEC shadow and the paper one not), SOL open: +2.24 - 0.44 - 10.60 - 0.46 + 1.21 = "
+       "-8.05: %s" % {x: P[x] for x in ("engaged", "open", "net_usd")})
     w = {e["coin"]: e for e in P["events"]}
     ck(sorted(w) == ["BNB", "DOGE", "ETH", "SOL", "XRP", "ZEC"], "P events by coin: %s" % sorted(w))
     ck(w["ZEC"]["usd"] == 2.24 and w["ZEC"]["words"] == (
@@ -1781,10 +1782,11 @@ def test_p_band99_late():
         "their hedges; so the rule made $2.24") and w["ZEC"]["et"] == "Nov 14 1:14 PM ET",
        "P won, a blocked early leg that won: 2.79 - 0.55 = +2.24 (the topup, the 2nd fill, not blocked; not at the full "
        "bet, so not priced): %s" % w["ZEC"])
-    ck(w["BNB"]["usd"] == -5.27 and "it LOST (pin's own settled record): it would have lost $29.67, $17.51 after pin's "
-       "hedges win back 41%; pin's blocked bets lost $22.78 with their hedges; so the rule cost $5.27" in w["BNB"]["words"]
+    ck(w["BNB"]["usd"] == -10.6 and "it LOST (pin's own settled record): it would have lost $29.67, -$12.18 with its "
+       "share of the market's hedges; pin's blocked bets lost $22.78 with their hedges; so the rule cost $10.60"
+       in w["BNB"]["words"]
        and "pin's own early No leg at 36 s (60 at 96.0c" in w["BNB"]["words"],
-       "P lost: the band's -29.67 x 0.59 = -17.51 against pin's early leg -57.77 + its hedge +34.99: %s" % w["BNB"])
+       "P lost: the band's -29.67 + its hedge share 17.50 = -12.18 against pin's early leg -57.77 + its hedge +34.99: %s" % w["BNB"])
     ck(w["ETH"]["usd"] == -0.44 and w["ETH"]["words"].endswith(
         "it would have blocked none of pin's own bets; it WON (the index at the close): it would have made $0.44; so the "
         "rule cost $0.44"), "P untraded, the result off the trajectory's last second: %s" % w["ETH"])
@@ -1797,12 +1799,13 @@ def test_p_band99_late():
     ck(w["SOL"]["usd"] is None and w["SOL"]["open"] and w["SOL"]["words"].endswith("; not settled yet"),
        "P open: no result yet: %s" % w["SOL"])
     ck(P["extra"] == [
-        "net -$2.72: the early band bets skipped would have lost $15.56 (4 won, 1 lost); pin's own bets they would have "
+        "net -$8.05: the early band bets skipped would have lost $10.23 (4 won, 1 lost); pin's own bets they would have "
         "blocked lost $18.28 · 1 open",
-        "gross, before pin's hedges win back 41% of a band loss: they would have lost $27.72; blocked: 2 early legs "
+        "gross, before hedges (the market's own, pro rata, where pin held the side; else 41% of a band loss): they would "
+        "have lost $27.72; blocked: 2 early legs "
         "(top-ups: 1 not at the full bet: not counted), 1 3rd fill, 1 later band leg"],
-       "P's lines, the NET FIRST: X = 0.55 + 0.44 - 17.51 + 0.78 + 0.18 = -15.56, Y = 2.79 - 22.78 + 0.32 + 1.39 = "
-       "-18.28, Y - X = -2.72; the gross -27.72: %s" % P["extra"])
+       "P's lines, the NET FIRST: X = 0.55 + 0.44 - 12.18 + 0.78 + 0.18 = -10.23, Y = 2.79 - 22.78 + 0.32 + 1.39 = "
+       "-18.28, Y - X = -8.05; the gross -27.72: %s" % P["extra"])
     ck(P["what"] == ("the band99 leg (a tenth of the bet at up to 99c) only with 30 s or less left; each earlier one "
                      "skipped is priced by what it would have made and the bets of pin's it would have blocked"),
        "P what, off the start record: %s" % P["what"])
@@ -1814,7 +1817,7 @@ def test_p_band99_late():
     # 4 h on, still no result for SOL: unknown, still open
     P4 = _report([pp], now=NOW_P + 4 * 3600)["P"]
     s4 = next(e for e in P4["events"] if e["coin"] == "SOL")
-    ck(s4["open"] and s4["words"].endswith("; no result 3 h after the close (unknown)") and P4["net_usd"] == -2.72,
+    ck(s4["open"] and s4["words"].endswith("; no result 3 h after the close (unknown)") and P4["net_usd"] == -8.05,
        "P unknown 3 h after the close: %s" % s4["words"])
     # the trajectory by binary search equals a whole read, at every close of the log and between them
     tp = os.path.join(d, "pintraj-live-20261114T181141Z.jsonl")
@@ -1834,14 +1837,14 @@ def test_p_band99_late():
     gz = archive_traj(d)
     ck(not os.path.exists(tp) and F.p_traj_path(pp) == gz, "p_traj_path resolves the archive: %s" % F.p_traj_path(pp))
     Pg = _report([pp], now=NOW_P)["P"]
-    ck(Pg["net_usd"] == -2.72 and next(e for e in Pg["events"] if e["coin"] == "ETH")["usd"] == -0.44,
+    ck(Pg["net_usd"] == -8.05 and next(e for e in Pg["events"] if e["coin"] == "ETH")["usd"] == -0.44,
        "P reads results\\archive\\pintraj-*.jsonl.gz once the plain one is archived: %s" % Pg["net_usd"])
     # no trajectory log at all (the archive kept in _P_CLOSES is not asked: there is no file to resolve): ETH has no
     # result (open), the rest unchanged
     os.remove(gz)
     Pn = _report([pp], now=NOW_P)["P"]
-    ck(Pn["open"] == 2 and Pn["net_usd"] == -2.28 and next(e for e in Pn["events"] if e["coin"] == "ETH")["usd"] is None,
-       "P without a trajectory log: ETH open until a result is known (-2.72 + 0.44): %s" % Pn["net_usd"])
+    ck(Pn["open"] == 2 and Pn["net_usd"] == -7.61 and next(e for e in Pn["events"] if e["coin"] == "ETH")["usd"] is None,
+       "P without a trajectory log: ETH open until a result is known (-8.05 + 0.44): %s" % Pn["net_usd"])
     # helpers
     r0 = _b99("ZEC", 40, "yes", 0.985, 40.0)
     ck([round(x, 4) for x in F.p_given_up(r0, True)] == [0.55, 0.55] and F.p_given_up(dict(r0, n=0), True) == (0.0, 0.0)
@@ -1849,6 +1852,18 @@ def test_p_band99_late():
        and [round(x, 4) for x in F.p_given_up(_b99("BNB", 42, "no", 0.988, 30.0), False)] == [-17.5053, -29.67]
        and F.p_early(r0) and not F.p_early(dict(r0, leg="full")) and F.p_early({"tau": 31}) and not F.p_early({"tau": 30}),
        "p_given_up (won, nothing, no ask, lost x 0.59) and p_early")
+    # the server's 11-18 2:45 AM BNB shape: pin's early 42.4 No (+1.00) and the hedges (42.4 + 21.2 Yes, -58.60) after a
+    # one-second pump; the skipped band leg 46 No at 98.6c WON, and it would have drawn the same hedges pro rata (pin
+    # sizes them to the position): -58.60 x 46 / 42.4 = -63.58. Before the fix it drew none and the rule was charged
+    # -58.19; with it the rule made -57.60 - (0.59 - 63.58) = +5.38
+    rb = _b99("BNB", 40, "no", 0.986, 46.0)
+    share = F._p_share({"no": 42.4}, {"yes": -58.60}, "no", 46.0)
+    xb, gb = F.p_given_up(rb, True, share)
+    ck(round(share, 2) == -63.58 and round(gb, 2) == 0.59 and round(xb, 2) == -62.98
+       and round(round(1.00 - 58.60, 2) - round(xb, 2), 2) == 5.38
+       and [round(x, 4) for x in F.p_given_up(_b99("BNB", 42, "no", 0.988, 30.0), False, 17.495)] == [-12.175, -29.67],
+       "p_given_up with the market's hedge share (won or lost): the 11-18 BNB pump close +5.38, not -58.19: %s %s" % (
+           round(xb, 2), round(share, 2)))
     ck(F.p_blocked([], dict(r0, n=0)) == [], "a shadow that would have bought nothing blocks nothing")
 
 
@@ -1895,7 +1910,7 @@ def test_p_archived_trajectory():
     finally:
         F._lf.open = real_open
     eth = [e["usd"] for P_ in (P1, P2) for e in P_["events"] if e["coin"] == "ETH"]
-    ck(P1["net_usd"] == P2["net_usd"] == -2.72 and eth == [-0.44, -0.44],
+    ck(P1["net_usd"] == P2["net_usd"] == -8.05 and eth == [-0.44, -0.44],
        "P priced off the archived trajectory, ETH's No off its last second: %s %s" % (P1["net_usd"], eth))
     ck(n1 == [gz] and opened == [gz], "the archive read through once for the run's six shadow markets, never again (12 "
                                       "more reports, _load's eviction and _CACHE cleared): %s" % opened)
@@ -1911,7 +1926,7 @@ def test_p_archived_trajectory():
     finally:
         F._lf.open = real_open
     saved = json.load(open(os.path.join(d, F.TRAJ_CACHE), encoding="utf-8"))
-    ck(P_fresh["net_usd"] == -2.72 and opened == [] and len(saved["closes"]) == 1
+    ck(P_fresh["net_usd"] == -8.05 and opened == [] and len(saved["closes"]) == 1
        and saved["closes"][F._fk_str((gz, os.stat(gz).st_size, os.stat(gz).st_mtime_ns))]["%s|%d" % (PT["ETH"], PC["ETH"])]
        == [{"tau": 1, "fair": 0.0}],
        "a fresh process prices P off the persisted close rows (a few bytes a market), the archive never opened: %s"
@@ -1931,7 +1946,7 @@ def test_p_archived_trajectory():
         b.write(a.read())
     os.remove(pp)
     P3 = _report([ppg], now=NOW_P)["P"]
-    ck(F.p_traj_path(ppg) == gz and P3["net_usd"] == -2.72, "an archived pin log's trajectory: %s" % F.p_traj_path(ppg))
+    ck(F.p_traj_path(ppg) == gz and P3["net_usd"] == -8.05, "an archived pin log's trajectory: %s" % F.p_traj_path(ppg))
     # moved to the archive between the look and the read: asked again, from the archive
     plain = os.path.join(d, "pintraj-live-20261114T181141Z.jsonl")
     with open(plain, "w", encoding="utf-8") as fh:
@@ -1988,9 +2003,10 @@ def run_pt(recs):
         o("NEAR", 20, "yes", 347.0, 0.983, "topup", 100.0),
         st("NEAR", "yes", "yes", 0.982, 167.0), st("NEAR", "yes", "yes", 0.983, 548.9),
         # BNB 2:45 PM, LOST, at the full bet x 1.5 (97c is in the 95.5-98.1c band): 60 held + 610.5 = 670.5, hedged by
-        # 600 Yes at 40c (+349.92). The band's 30 No at 98.8c: -29.67, x 0.59 = -17.51; pin's early 60 at 96c: -57.77 +
-        # 349.92 x 60 / 670.5 = -26.46; the old top-up's 30 more at 97c: -29.17 + 349.92 x 30 / 670.5 = -13.51. Given up
-        # -17.51 - 13.51 = -31.02: the rule made -26.46 + 31.02 = +4.56
+        # 600 Yes at 40c (+349.92). The band's 30 No at 98.8c: -29.67 + 349.92 x 30 / 670.5 = -14.01 (its share of the
+        # market's hedge, 11-18 fix); pin's early 60 at 96c: -57.77 + 349.92 x 60 / 670.5 = -26.46; the old top-up's 30
+        # more at 97c: -29.17 + 349.92 x 30 / 670.5 = -13.51. Given up -14.01 - 13.51 = -27.52: the rule made -26.46 +
+        # 27.52 = +1.06 (the same 670.5 contracts and hedges either way: only the prices differ)
         b("BNB", 42, "no", 0.988, 30.0),
         o("BNB", 36, "no", 60.0, 0.96, "early"),
         o("BNB", 20, "no", 610.5, 0.97, "topup", 60.0),
@@ -2018,8 +2034,8 @@ def test_p_early_topup():
     p = _write(d, "pinrun-live-20261114T192000Z.jsonl", run_pt([]))
     P = _report([p], now=NOW_PT)["P"]
     w = {e["coin"]: e for e in P["events"]}
-    ck({c: w[c]["usd"] for c in w} == {"NEAR": 0.18, "BNB": 4.56, "DOGE": 1.12, "SOL": 0.09} and P["net_usd"] == 5.95
-       and P["open"] == 0, "P with the old code's top-up: +0.18 + 4.56 + 1.12 + 0.09 = +5.95: %s"
+    ck({c: w[c]["usd"] for c in w} == {"NEAR": 0.18, "BNB": 1.06, "DOGE": 1.12, "SOL": 0.09} and P["net_usd"] == 2.45
+       and P["open"] == 0, "P with the old code's top-up: +0.18 + 1.06 + 1.12 + 0.09 = +2.45: %s"
        % {c: w[c]["usd"] for c in w})
     ck(w["NEAR"]["words"] == (
         "an early band bet skipped: 40 Yes at 98.5c with 40 s left (it would have been the market's early leg); it would "
@@ -2029,8 +2045,9 @@ def test_p_early_topup():
         "+$0.94 to that, hedges in; pin's blocked bets made $1.67 with their hedges; so the rule made $0.18"),
        "P at the full bet, won: %s" % w["NEAR"]["words"])
     ck("filled the full bet, so the old code's would have bought 30 more (60 early less 30 band); it LOST (pin's own "
-       "settled record): it would have lost $29.67, $17.51 after pin's hedges win back 41%; the old code's top-up (30 "
-       "more) adds -$13.51 to that, hedges in; pin's blocked bets lost $26.46 with their hedges; so the rule made $4.56"
+       "settled record): it would have lost $29.67, -$14.01 with its share of the market's hedges; the old code's "
+       "top-up (30 more) adds -$13.51 to that, hedges in; pin's blocked bets lost $26.46 with their hedges; so the rule "
+       "made $1.06"
        in w["BNB"]["words"], "P at the full bet x the band's 1.5, lost, the hedge shared by contracts: %s" % w["BNB"]["words"])
     ck("pin's top-up at 20 s (150 at 98.3c) was not at the full bet: how much more the old code's would have bought is "
        "not counted; it WON" in w["DOGE"]["words"] and "old code's top-up (" not in w["DOGE"]["words"],
@@ -2039,11 +2056,12 @@ def test_p_early_topup():
        and "the old code's top-up (20 fewer) adds -$0.31 to that" in w["SOL"]["words"],
        "P with E under B: the old top-up smaller: %s" % w["SOL"]["words"])
     ck(P["extra"] == [
-        "net +$5.95: the early band bets skipped would have lost $28.74 (3 won, 1 lost); pin's own bets they would have "
+        "net +$2.45: the early band bets skipped would have lost $25.24 (3 won, 1 lost); pin's own bets they would have "
         "blocked lost $22.79",
-        "gross, before pin's hedges win back 41% of a band loss: they would have lost $40.90; blocked: 4 early legs "
+        "gross, before hedges (the market's own, pro rata, where pin held the side; else 41% of a band loss): they would "
+        "have lost $40.90; blocked: 4 early legs "
         "(top-ups: 3 priced -$12.88, 1 not at the full bet: not counted), 0 3rd fills, 0 later band legs"],
-       "P's lines: X = 1.49 - 31.02 + 0.55 + 0.24 = -28.74, Y = 1.67 - 26.46 + 1.67 + 0.33 = -22.79, the top-ups "
+       "P's lines: X = 1.49 - 27.52 + 0.55 + 0.24 = -25.24, Y = 1.67 - 26.46 + 1.67 + 0.33 = -22.79, the top-ups "
        "0.94 - 13.51 - 0.31 = -12.88: %s" % P["extra"])
     # the helpers: the multiple (band, late, none), the full-bet test, nothing to price
     S = F._load([p])[1]

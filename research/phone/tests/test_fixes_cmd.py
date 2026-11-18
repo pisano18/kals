@@ -338,16 +338,16 @@ def test_p_band99_late_block():
         s = str(_run(now=TF.NOW_P))
         assert len(s) <= MAX_LEN, len(s)
         blk = s.split("<b>P band99 late-only</b>")[1].split("\n\n")[0]
-        assert "since Nov 14 1:11 PM ET\nengaged 6 times, last Nov 14 2:14 PM ET · 1 open\n🔴 net <b>-$2.72</b> (-0.10% of the bank)" in blk, blk
-        assert "\nnet -$2.72: the early band bets skipped would have lost $15.56 (4 won, 1 lost); pin's own bets they wou" in blk, blk
+        assert "since Nov 14 1:11 PM ET\nengaged 6 times, last Nov 14 2:14 PM ET · 1 open\n🔴 net <b>-$8.05</b> (-0.29% of the bank)" in blk, blk
+        assert "\nnet -$8.05: the early band bets skipped would have lost $10.23 (4 won, 1 lost); pin's own bets they wou" in blk, blk
         assert "—" not in s and "not live yet" not in blk
         P = next(c for c in F.report(now=TF.NOW_P) if c["id"] == "P")
         whole = FC.block(P, BANK, 1, None)
         assert whole[1].startswith("the band99 leg (a tenth of the bet at up to 99c) only with 30 s or less left"), whole[1]
-        assert whole[5:7] == ["net -$2.72: the early band bets skipped would have lost $15.56 (4 won, 1 lost); pin's own "
+        assert whole[5:7] == ["net -$8.05: the early band bets skipped would have lost $10.23 (4 won, 1 lost); pin's own "
                               "bets they would have blocked lost $18.28 · 1 open",
-                              "gross, before pin's hedges win back 41% of a band loss: they would have lost $27.72; "
-                              "blocked: 2 early legs (top-ups: 1 not at the full bet: not counted), 1 3rd fill, 1 later "
+                              "gross, before hedges (the market's own, pro rata, where pin held the side; else 41% of a "
+                              "band loss): they would have lost $27.72; blocked: 2 early legs (top-ups: 1 not at the full bet: not counted), 1 3rd fill, 1 later "
                               "band leg"], whole
         assert whole[-1] == ("  Nov 14 2:14 PM ET · SOL · open · an early band bet skipped: 30 No at 98.5c with 40 s left "
                              "(it would have been the market's early leg); it would have blocked none of pin's own bets; not "
@@ -429,7 +429,7 @@ def test_q_midnight_reset_and_the_full_page():
         assert FC.block(next(c for c in F.report(now=TF.NOW_Q) if c["id"] == "Q"), BANK, 0, None, None)[-1].endswith(
             "(the old code stayed halted): +$12.04 over 1 reset since Nov 14 12:53 PM ET (4 markets settled)"), "Q's line whole"
         assert "withdrawn 11-14" in s.split("<b>O ")[1].split("\n\n")[0] and "⚠️" not in s
-        assert "\nnet -$2.72: the early band bets skipped would have lost $15.56" in s.split("<b>P ")[1].split("\n\n")[0]
+        assert "\nnet -$8.05: the early band bets skipped would have lost $10.23" in s.split("<b>P ")[1].split("\n\n")[0]
         Q = next(c for c in F.report(now=TF.NOW_Q) if c["id"] == "Q")
         assert FC.block(Q, BANK, 1, None)[-1] == (
             "  Nov 15 12:00 AM ET · ladder · +$12.04 · the day stop of Nov 14 (the day at -$280.00) ended at midnight ET "
@@ -486,7 +486,7 @@ def test_page_room_retired_fold_and_money_cut():
         # P's net first: the 120-char cut keeps it whole
         P = next(c for c in rep if c["id"] == "P")
         cut = FC.block(P, BANK, 0, None, 120)
-        assert any(x.startswith("net -$2.72: the early band bets skipped would have lost $15.56") and x.endswith("…")
+        assert any(x.startswith("net -$8.05: the early band bets skipped would have lost $10.23") and x.endswith("…")
                    for x in cut), cut
         # never inside a money figure: at every cut point of a money line the figures left are whole
         for text in P["extra"] + [e["words"] for e in P["events"]] + ["-$1,234.56 opens it: then words"]:

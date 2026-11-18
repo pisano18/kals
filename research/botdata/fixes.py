@@ -116,7 +116,10 @@ THE CHANGES and when each counts as engaged (the push-11-04 scoring table):
                         changing it, once the market settles:
                         (a) GIVEN UP: what the skipped band leg would have made at the market's result: n x (1 - ask) -
                         fee if it won, -(n x ask) - fee if it lost (pinrules_watch.value, at the ask it saw: the cheapest
-                        price, so never flattering the rule either way), a loss less the P_HEDGE_BACK (41%) pin's hedges
+                        price, so never flattering the rule either way); when pin held that side in the market, plus
+                        its pro-rata share of the market's real hedges, won or lost (the old code's leg would have
+                        drawn them as pin's blocked legs do in (b); fixed 11-18 after the BNB 2:45 AM close charged the
+                        rule -$58.19 of hedges); else a loss less the P_HEDGE_BACK (41%) pin's hedges
                         win back on a band loss (the 11-14 band99 read; the gross is said too). The result: pin's own
                         settled record, else the trajectory's last second (fair at 1.0 / 0.0), else missed.py's cache.
                         The trajectory is the pintraj log beside the shadow's pin log, wherever it is now
@@ -3382,17 +3385,22 @@ def _c_step_line(t, since):
 
 # ---------------------------------------------------------------------------
 # P (v-0925x band99late, 2026-11-14): each band leg skipped for being too early, against never changing it
-def p_given_up(r, won):
+def p_given_up(r, won, share=None):
     """P (a): what the skipped band leg of band99_shadow `r` would have made at its market's result, fee in
     (pinrules_watch.value): n x (1 - ask) - fee when its side won (`won`), -(n x ask) - fee when it lost, at the ask the
     record saw (the cheapest it could have paid: a won leg's gain and a lost leg's stake both read so, so the rule is
-    never flattered either way). A loss counts less the P_HEDGE_BACK share pin's hedges win back on a band loss (the
-    11-14 band99 read); a won leg's hedges are not known (counted as none). Returns (net, gross); (0.0, 0.0) when the
-    record has no contracts or no usable ask."""
+    never flattered either way). `share`: when pin held this side in the market, its real hedges' money pro rata to the
+    leg's n (_p_share; pin sizes hedges to the position, so the old code's band leg would have drawn the same hedges,
+    won or lost; p_gained charges pin's blocked legs theirs the same way, so the hedges cancel -- 11-18 BNB 2:45 AM:
+    without it the rule was charged -$58.19 of hedges, +$5.39 with it). Without `share`: a loss counts less the
+    P_HEDGE_BACK share pin's hedges win back on a band loss (the 11-14 band99 read); a won leg's hedges are not known
+    (counted as none). Returns (net, gross); (0.0, 0.0) when the record has no contracts or no usable ask."""
     n, ask = _f((r or {}).get("n")), _f((r or {}).get("ask"), None)
     if n <= 0 or ask is None or not 0.0 < ask < 1.0:
         return 0.0, 0.0
     gross = _value(n, ask, bool(won))
+    if share is not None:
+        return gross + share, gross
     return (gross if won else gross * (1.0 - P_HEDGE_BACK)), gross
 
 
@@ -3956,6 +3964,10 @@ def _p(S, now, since, start):
                               tau if tau is not None else "?", _g2(_f(to.get("filled"))), _cents(px)))
         res, how = p_result(S, r, now, memo)
         gained, _parts, wait = p_gained(S, tk, orders, blocked)
+        _lg, n_side, hedge, hedges_in = _p_book(S, tk, orders)
+        share = _p_share(n_side, hedge, side, _f(r.get("n"))) if n_side.get(side) else None
+        if share is not None and not hedges_in("no" if side == "yes" else "yes"):
+            wait += 1
         top_usd = None
         if tp is not None and tp["at_full"] and res is not None:
             top_usd = p_topup_usd(S, tk, orders, tp, res)
@@ -3965,7 +3977,7 @@ def _p(S, now, since, start):
         usd = None
         if st == "scored":
             won = res == side
-            x, gross = p_given_up(r, won)
+            x, gross = p_given_up(r, won, share)
             top = round(top_usd, 2) if top_usd is not None else 0.0
             x, gross, y = round(x, 2) + top, round(gross, 2) + top, round(gained, 2)
             usd = y - x
@@ -3980,7 +3992,14 @@ def _p(S, now, since, start):
                     t["top_usd"] += top
                 else:
                     t["top_not"] += 1
-            if won:
+            if share is not None and abs(share) >= 0.005:
+                words += "; it %s (%s): %s %s, %s with its share of the market's hedges" % (
+                    "WON" if won else "LOST", how, "it would have made" if won else "it would have lost",
+                    _rw.usd(abs(gross - top), False), _rw.usd(x - top))
+            elif share is not None and not won:
+                words += "; it LOST (%s): it would have lost %s (the market had no hedges)" % (
+                    how, _rw.usd(abs(x - top), False))
+            elif won:
                 words += "; it WON (%s): it would have made %s" % (how, _rw.usd(x - top, False))
             else:
                 words += "; it LOST (%s): it would have lost %s, %s after pin's hedges win back %d%%" % (
@@ -4022,8 +4041,8 @@ def _p_extra(t, since):
         tops = " (top-ups: %s)" % ", ".join(
             ([("%d priced %s" % (t["top_n"], _rw.usd(round(t["top_usd"], 2))))] if t["top_n"] else [])
             + ([("%d not at the full bet: not counted" % t["top_not"])] if t["top_not"] else []))
-    second = ("gross, before pin's hedges win back %d%% of a band loss: they would have %s %s; blocked: %d early leg%s%s, "
-              "%d 3rd fill%s, %d later band leg%s" % (
+    second = ("gross, before hedges (the market's own, pro rata, where pin held the side; else %d%% of a band loss): they "
+              "would have %s %s; blocked: %d early leg%s%s, %d 3rd fill%s, %d later band leg%s" % (
                   int(round(100 * P_HEDGE_BACK)), "made" if g >= 0 else "lost", _rw.usd(abs(g), False),
                   t["early_once"], "" if t["early_once"] == 1 else "s", tops, t["max_per_market"],
                   "" if t["max_per_market"] == 1 else "s", t["band99_held"], "" if t["band99_held"] == 1 else "s"))
