@@ -72,6 +72,24 @@ def selftest():
         fails.append("EDT conversion wrong: %s" % et(datetime(2026, 9, 28, 4, 0, tzinfo=timezone.utc)))
     if et(datetime(2026, 12, 1, 5, 0, tzinfo=timezone.utc)) != "Tue 12-01 12:00 AM ET":
         fails.append("EST conversion wrong")
+    # the real file: every open item must carry what the summary prints (11-18: four items stored 'bars' and the
+    # summary died at the first of them once it fell due, hiding every later read)
+    try:
+        real = json.load(open(PATH, encoding="utf-8"))["items"]
+    except (OSError, ValueError) as e:
+        real = []
+        fails.append("READS_DUE.json unreadable: %s" % e)
+    for it in real:
+        if it.get("status") != "open":
+            continue
+        miss = [k for k in ("id", "due", "what", "how", "bar") if not it.get(k)]
+        if miss:
+            fails.append("open item %s lacks %s" % (it.get("id"), ",".join(miss)))
+            continue
+        try:
+            parse(it["due"])
+        except ValueError:
+            fails.append("open item %s: bad due %r" % (it["id"], it["due"]))
     print("readsdue self-test " + ("PASSED" if not fails else "FAILED: " + "; ".join(fails)))
     return not fails
 
@@ -93,8 +111,8 @@ def main():
             print("  (none)")
         for d, it in rows:
             print("  - %s  [%s]  %s" % (et(d), it["id"], it["what"]))
-            print("      how: %s" % it["how"])
-            print("      bar: %s" % it["bar"])
+            print("      how: %s" % it.get("how", "(no how)"))
+            print("      bar: %s" % it.get("bar", it.get("bars", "(no bar)")))
     show("OVERDUE -- report these to the operator now:", o)
     show("DUE IN THE NEXT 24 HOURS:", s)
     print("COMING THIS WEEK:")
